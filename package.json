@@ -76,24 +76,24 @@
     "dmg": {
       "title": "页间 Folio ${version}",
       "window": {
-        "width": 600,
-        "height": 420
+        "width": 540,
+        "height": 380
       },
       "iconSize": 88,
       "contents": [
         {
-          "x": 155,
-          "y": 160
+          "x": 130,
+          "y": 220
         },
         {
-          "x": 445,
-          "y": 160,
+          "x": 410,
+          "y": 220,
           "type": "link",
           "path": "/Applications"
         },
         {
-          "x": 300,
-          "y": 310,
+          "x": 270,
+          "y": 75,
           "type": "file",
           "path": "docs/安装说明.txt"
         }
