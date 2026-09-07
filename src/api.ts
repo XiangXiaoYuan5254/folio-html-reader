@@ -1,0 +1,25 @@
+import type { WorkspaceInfo } from './types';
+let token = '';
+export const isDesktop = !!window.folio;
+export async function invoke<T = any>(action: string, payload: unknown = {}): Promise<T> {
+  if (window.folio) return window.folio.invoke(action, payload, token);
+  const r = await fetch('/__api/' + action, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Folio-Token': token },
+    body: JSON.stringify(payload),
+  });
+  const result = await r.json();
+  if (!r.ok) throw Error(result.error);
+  return result;
+}
+export function useWorkspace(w: WorkspaceInfo) {
+  token = w.token;
+}
+export function documentUrl(path: string, version: number) {
+  return isDesktop
+    ? `folio://document/${token}/${path.split('/').map(encodeURIComponent).join('/')}?v=${version}`
+    : `/__document/${token}/${path.split('/').map(encodeURIComponent).join('/')}?v=${version}`;
+}
+export function subscribe(cb: (e: { type: string }) => void) {
+  return window.folio?.subscribe(cb) || (() => {});
+}

@@ -1,0 +1,16 @@
+node_modules/
+dist/
+release/
+*.tsbuildinfo
+.DS_Store
+.html-reader/
+**/.html-reader/
+
+# Personal reading material and local-only design reference
+测试html/
+docs/concept.png
+.env
+.env.*
+*.dmg
+*.zip
+*.blockmap
