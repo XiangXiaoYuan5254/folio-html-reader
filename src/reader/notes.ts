@@ -1,4 +1,5 @@
 import type { Annotation, Point } from '../types';
+import { defaultColor } from '../colors';
 
 type Patch = Partial<
   Pick<Annotation, 'note' | 'points' | 'size' | 'collapsed' | 'fontSize' | 'color'>
@@ -9,6 +10,7 @@ type Card = {
   pin: HTMLButtonElement;
   title: HTMLElement;
   font?: HTMLSelectElement;
+  measure?: HTMLSpanElement;
 };
 type Callbacks = {
   update: (id: string, patch: Patch, group?: string) => void;
@@ -34,7 +36,9 @@ textarea{width:100%;flex:1;min-height:0;resize:none;border:0;outline:0;backgroun
 .text-note .head{position:absolute;bottom:100%;left:-1px;height:32px;padding:0 5px 0 9px;gap:5px;background:#fff;border:1px solid #d5dce7;border-radius:7px;box-shadow:0 3px 12px #24324715;white-space:nowrap;min-width:245px}
 .text-note .title{font-size:12px}.text-note select{font:12px system-ui;width:49px;height:24px;border:1px solid #e0e4eb;border-radius:4px;background:#fff;color:#394457}
 .text-note .head,.text-note .resize{visibility:hidden}.text-note:hover .head,.text-note:focus-within .head,.text-note:hover .resize,.text-note:focus-within .resize{visibility:visible}
-.text-note textarea{display:block;flex:none;min-height:32px;padding:3px 5px;font-size:var(--font-size,20px);line-height:1.5;color:var(--ink);overflow:hidden;border-radius:0}
+.text-note textarea,.text-note .text-measure{display:block;width:100%;padding:3px 5px;font-size:var(--font-size,20px);line-height:1.5;color:var(--ink);white-space:pre-wrap;overflow-wrap:break-word}
+.text-note textarea{flex:none;min-height:32px;overflow:hidden;border-radius:0}
+.text-note .text-measure{position:absolute;left:0;top:0;visibility:hidden;pointer-events:none}
 .text-note textarea::placeholder{color:#94a3b8}.text-note .resize{color:#718096}
 `;
 
@@ -103,7 +107,11 @@ export class PageNotes {
       const card = this.cards.get(id) || this.create(a);
       if (this.shadow.activeElement !== card.input && card.input.value !== a.note)
         card.input.value = a.note;
-      const ink = a.color || '#edbd39';
+      if (card.measure) {
+        const text = card.input.value.trimEnd() || card.input.placeholder;
+        if (card.measure.textContent !== text) card.measure.textContent = text;
+      }
+      const ink = a.color || defaultColor;
       card.element.style.setProperty('--ink', ink);
       card.element.style.setProperty('--font-size', `${a.fontSize || 20}px`);
       if (card.font) card.font.value = String(a.fontSize || 20);
@@ -152,6 +160,21 @@ export class PageNotes {
     if (focus) this.cards.get(id)?.input.focus({ preventScroll: true });
   }
 
+  rect(id: string) {
+    const card = this.cards.get(id);
+    if (!card) return null;
+    if (!card.element.hidden && card.measure) {
+      // A textarea exposes its editor box, not its rendered text bounds. Mirror
+      // the same font and wrapping so selection follows the visible words.
+      const range = document.createRange();
+      range.selectNodeContents(card.measure);
+      const rect = range.getBoundingClientRect();
+      if (rect.width && rect.height) return rect;
+    }
+    const element = card.element.hidden ? card.pin : card.element;
+    return element.getBoundingClientRect();
+  }
+
   private patch(id: string, patch: Patch, group?: string) {
     const a = this.items.get(id);
     if (!a) return;
@@ -197,6 +220,12 @@ export class PageNotes {
     el.append(head, input, resize);
     const card: Card = { element: el, input, pin, title };
     if (isText) {
+      const measure = document.createElement('div');
+      measure.className = 'text-measure';
+      measure.setAttribute('aria-hidden', 'true');
+      card.measure = document.createElement('span');
+      measure.append(card.measure);
+      el.append(measure);
       const font = document.createElement('select');
       font.setAttribute('aria-label', '文本字号');
       for (const size of [14, 16, 18, 20, 24, 28, 32, 40, 48]) {

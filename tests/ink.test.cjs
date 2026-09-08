@@ -73,3 +73,24 @@ test('legacy rectangles and arrowheads are editable ink without changing saved o
   assert.equal(arrow[1].length, 3);
   assert.deepEqual(rect.points, [p(0), p(100, 60)]);
 });
+
+test('stroke eraser removes the entire original stroke, including disconnected fragments', () => {
+  const paths = [
+    [p(0), p(40)],
+    [p(60), p(100)],
+  ];
+  assert.deepEqual(plain(erasePaths(paths, p(20, -50), p(20, 50), 4, 'stroke')), []);
+  assert.equal(erasePaths(paths, p(50, -50), p(50, 50), 4, 'stroke'), paths);
+  assert.deepEqual(plain(paths), [
+    [p(0), p(40)],
+    [p(60), p(100)],
+  ]);
+  assert.deepEqual(plain(erasePaths([[p(25)]], p(25), p(25), 4, 'stroke')), []);
+});
+
+test('stroke erase detects fast sweeps and treats an arrow and its head as one annotation', () => {
+  const arrow = inkPaths({ type: 'arrow', points: [p(0), p(100)] });
+  assert.deepEqual(plain(erasePaths(arrow, p(90, 7), p(90, 7), 3, 'stroke')), []);
+  assert.deepEqual(plain(erasePaths([[p(0), p(100)]], p(50, -500), p(50, 500), 5, 'stroke')), []);
+  assert.equal(erasePaths(arrow, p(150), p(160), 3, 'stroke'), arrow);
+});

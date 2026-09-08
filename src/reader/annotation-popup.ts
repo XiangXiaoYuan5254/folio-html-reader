@@ -1,4 +1,11 @@
 import type { Annotation } from '../types';
+import {
+  annotationColors,
+  colorPickerStyles,
+  defaultColor,
+  isCustomColor,
+  normalizeColor,
+} from '../colors';
 
 type Rect = { left: number; top: number; right: number; bottom: number };
 type Callbacks = {
@@ -9,6 +16,7 @@ type Callbacks = {
   select: (id: string) => void;
 };
 const css = `
+${colorPickerStyles}
 :host{all:initial;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:#334155}
 *{box-sizing:border-box}[hidden]{display:none!important}button,textarea{font:inherit}
 .popup{position:absolute;pointer-events:auto;width:304px;background:#fff;border:1px solid #dce3e8;border-radius:12px;box-shadow:0 8px 28px #26374c26;overflow:hidden;font-size:14px}
@@ -42,6 +50,9 @@ export class AnnotationPopup {
   private input = element('textarea');
   private actions = element('div', 'actions');
   private colors = element('div', 'colors');
+  private customColor = element('label', 'custom-color');
+  private colorInput = element('input');
+  private colorTarget: { id: string; group: string; value: string } | null = null;
   private footer = element('div', 'footer');
   private title = element('span');
   private noteButton = button('添加笔记', 'note-action');
@@ -74,13 +85,7 @@ export class AnnotationPopup {
       this.close();
     };
     this.actions.append(this.noteButton, remove);
-    for (const [color, label] of [
-      ['#edbd39', '黄色'],
-      ['#ed737a', '珊瑚色'],
-      ['#369b8d', '青色'],
-      ['#598be7', '蓝色'],
-      ['#334155', '墨色'],
-    ]) {
+    for (const { value: color, name: label } of annotationColors) {
       const b = button(`批注颜色：${label}`, 'color', '');
       b.style.background = color;
       b.dataset.color = color;
@@ -89,6 +94,40 @@ export class AnnotationPopup {
       };
       this.colors.append(b);
     }
+    this.colorInput.type = 'color';
+    this.colorInput.setAttribute('aria-label', '批注自定义颜色');
+    this.customColor.title = '自定义批注颜色 · 点击打开选色盘';
+    this.colorInput.onclick = () => {
+      if (this.current)
+        this.colorTarget = {
+          id: this.current.id,
+          group: `quote-color:${crypto.randomUUID()}`,
+          value: this.current.color,
+        };
+    };
+    const changeColor = () => {
+      // The native macOS panel can blur (and dismiss) this popup. Keep the
+      // original annotation as the target until that color choice finishes.
+      if (!this.colorTarget && this.current)
+        this.colorTarget = {
+          id: this.current.id,
+          group: `quote-color:${crypto.randomUUID()}`,
+          value: this.current.color,
+        };
+      const target = this.colorTarget;
+      const color = normalizeColor(this.colorInput.value);
+      if (target && color && target.value !== color) {
+        target.value = color;
+        this.callbacks.update(target.id, { color }, target.group);
+      }
+    };
+    this.colorInput.oninput = changeColor;
+    this.colorInput.onchange = () => {
+      changeColor();
+      this.colorTarget = null;
+    };
+    this.customColor.append(this.colorInput);
+    this.colors.append(this.customColor);
     this.input.setAttribute('aria-label', '批注笔记内容');
     this.input.placeholder = '写下与这段原文有关的想法…';
     this.input.spellcheck = false;
@@ -124,6 +163,8 @@ export class AnnotationPopup {
   }
 
   sync(annotations: Annotation[]) {
+    if (this.colorTarget && !annotations.some((a) => a.id === this.colorTarget?.id))
+      this.colorTarget = null;
     if (this.current) {
       const a = annotations.find((a) => a.id === this.current?.id);
       if (!a) {
@@ -172,8 +213,11 @@ export class AnnotationPopup {
     if (this.shadow.activeElement !== this.input) this.input.value = a.note;
     this.noteButton.textContent = a.note.trim() ? '编辑笔记' : '添加笔记';
     this.noteButton.setAttribute('aria-label', this.noteButton.textContent);
-    for (const b of this.colors.children)
+    for (const b of this.colors.querySelectorAll('button'))
       b.setAttribute('aria-pressed', String((b as HTMLElement).dataset.color === a.color));
+    this.colorInput.value = normalizeColor(a.color) || defaultColor;
+    this.customColor.dataset.selected = String(isCustomColor(a.color));
+    this.customColor.style.setProperty('--custom-ink', a.color);
   }
 
   show(a: Annotation, edit = false, focus = true) {

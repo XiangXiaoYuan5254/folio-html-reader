@@ -53,17 +53,36 @@ test('源码保存保留原始备份，并阻止覆盖外部修改', async (t) =
   assert.equal(await fs.readFile(path.join(root, d.path), 'utf8'), '外部修改');
 });
 test('移动目录与文档保留稳定身份和笔记，不覆盖已存在目标', async (t) => {
-  const { w } = await setup(t);
+  const { w, root } = await setup(t);
   const d = await w.document('示例.html');
   await w.saveData({ id: d.id, data: { ...d.data, note: '不能丢' } });
   await w.create({ path: '论文', kind: 'folder' });
   await w.move({ from: '示例.html', to: '论文/改名.html' });
+  await w.saveSession({ paths: ['论文/改名.html'], active: '论文/改名.html' });
   await w.move({ from: '论文', to: '归档' });
   const moved = await w.document('归档/改名.html');
   assert.equal(moved.id, d.id);
   assert.equal(moved.data.note, '不能丢');
+  const reopened = await new Workspace().open(root);
+  assert.deepEqual(reopened.session, { paths: ['归档/改名.html'], active: '归档/改名.html' });
   await w.create({ path: '已存在.html', kind: 'file' });
   await assert.rejects(w.move({ from: moved.path, to: '已存在.html' }), /已存在/);
+});
+
+test('拖拽移动拒绝根目录和子目录循环；冲突时保留两个文件及批注', async (t) => {
+  const { w, root } = await setup(t);
+  const original = await w.document('示例.html');
+  await w.saveData({ id: original.id, data: { ...original.data, note: '原批注' } });
+  await w.create({ path: '归档', kind: 'folder' });
+  await w.create({ path: '归档/子目录', kind: 'folder' });
+  await w.create({ path: '归档/示例.html', kind: 'file' });
+  const other = await w.document('归档/示例.html');
+  await assert.rejects(w.move({ from: '示例.html', to: '归档/示例.html' }), /已存在/);
+  await assert.rejects(w.move({ from: '归档', to: '归档/子目录/归档' }), /子文件夹/);
+  await assert.rejects(w.move({ from: '.', to: '根目录副本' }), /根目录/);
+  assert.equal((await w.document('示例.html')).data.note, '原批注');
+  assert.equal((await w.document('归档/示例.html')).id, other.id);
+  assert.equal(await fs.readFile(path.join(root, '示例.html'), 'utf8'), original.source);
 });
 test('恢复外部重命名文件的批注', async (t) => {
   const { w, root } = await setup(t);
@@ -73,6 +92,31 @@ test('恢复外部重命名文件的批注', async (t) => {
   const renamed = await w.document('外部改名.html');
   assert.equal(renamed.id, d.id);
   assert.equal(renamed.data.note, '外部移动');
+});
+test('双栏会话在重启和目录移动后保留两篇文档，退出后清除布局', async (t) => {
+  const { w, root } = await setup(t);
+  await w.create({ path: '论文', kind: 'folder' });
+  await w.create({ path: '论文/对照.html', kind: 'file' });
+  await w.saveSession({
+    paths: ['示例.html', '论文/对照.html'],
+    active: '论文/对照.html',
+    split: { left: '示例.html', right: '论文/对照.html' },
+  });
+  await w.move({ from: '论文', to: '归档' });
+  const reopened = await new Workspace().open(root);
+  assert.deepEqual(reopened.session, {
+    paths: ['示例.html', '归档/对照.html'],
+    active: '归档/对照.html',
+    split: { left: '示例.html', right: '归档/对照.html' },
+  });
+  await w.saveSession({ paths: ['示例.html', '归档/对照.html'], active: '示例.html' });
+  assert.equal((await new Workspace().open(root)).session.split, undefined);
+  await w.saveSession({
+    paths: ['示例.html'],
+    active: '示例.html',
+    split: { left: '示例.html', right: '不存在.html' },
+  });
+  assert.equal((await new Workspace().open(root)).session.split, undefined);
 });
 test('阻止路径穿越、隐藏数据访问和外部符号链接', async (t) => {
   const { w, root } = await setup(t);

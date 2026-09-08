@@ -21,6 +21,7 @@ import { useState } from 'react';
 import type { Annotation, OutlineItem, OpenDocument } from '../types';
 import { IconButton } from './IconButton';
 import { PenIcon } from './PenIcon';
+import { InkThumbnail } from './InkThumbnail';
 export type InspectorTab = 'annotations' | 'note' | 'outline';
 const labels: Record<string, string> = {
   highlight: '高亮',
@@ -216,12 +217,17 @@ function AnnotationCard({
       className={`annotation-card ${selected ? 'selected' : ''}`}
       style={{ '--annotation-color': a.color } as React.CSSProperties}
       data-annotation={a.id}
+      aria-label={`${labels[a.type]}批注${selected ? '，已选中' : ''}`}
+      onClick={(e) => {
+        if (!(e.target as Element).closest('button,textarea,input,select')) onSelect();
+      }}
     >
       <div className="annotation-meta">
         <button onClick={onSelect}>
           <Icon size={13} />
           {labels[a.type]}
         </button>
+        {selected ? <span className="annotation-selected-label">已选中</span> : null}
         <time>
           {new Date(a.createdAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}{' '}
           {new Date(a.createdAt).toLocaleTimeString('zh-CN', {
@@ -236,6 +242,18 @@ function AnnotationCard({
       {a.quote ? (
         <button className="annotation-quote" onClick={onSelect}>
           {a.quote.exact}
+        </button>
+      ) : ['pen', 'arrow', 'rectangle'].includes(a.type) ? (
+        <button
+          className="drawing-preview"
+          aria-label={`定位${labels[a.type]}批注`}
+          onClick={onSelect}
+        >
+          <InkThumbnail annotation={a} />
+          <span>
+            查看页面中的{labels[a.type]}
+            <ArrowUpRight size={13} />
+          </span>
         </button>
       ) : (
         <button className="drawing-link" onClick={onSelect}>

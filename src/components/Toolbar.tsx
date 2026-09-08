@@ -17,17 +17,13 @@ import {
   Type,
   Sparkles,
 } from 'lucide-react';
-import { useEffect, useRef } from 'react';
-import type { Tool } from '../types';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { EraserMode, Tool } from '../types';
 import { IconButton } from './IconButton';
 import { PenIcon } from './PenIcon';
-export const colors = [
-  { value: '#edbd39', name: '黄色' },
-  { value: '#ed737a', name: '珊瑚色' },
-  { value: '#369b8d', name: '青色' },
-  { value: '#598be7', name: '蓝色' },
-  { value: '#334155', name: '墨色' },
-];
+import { annotationColors as colors } from '../colors';
+import { ColorPicker } from './ColorPicker';
+import { zoomLabel, zoomPresets } from '../zoom';
 const tools = [
   {
     id: 'select',
@@ -63,7 +59,7 @@ const tools = [
   },
   { id: 'arrow', label: '箭头', help: '按住拖动，指向你想标记的位置', icon: MoveUpRight },
   { id: 'rectangle', label: '矩形', help: '按住拖动，框选一块页面区域', icon: Square },
-  { id: 'eraser', label: '橡皮擦', help: '按住拖动，只擦掉擦头经过的局部笔迹', icon: Eraser },
+  { id: 'eraser', label: '橡皮擦', help: '在笔触设置中切换局部擦除或笔画擦除', icon: Eraser },
 ] as const;
 export function Toolbar(p: {
   mode: 'read' | 'source';
@@ -87,6 +83,8 @@ export function Toolbar(p: {
   disabled: boolean;
   strokeWidth: number;
   eraserSize: number;
+  eraserMode: EraserMode;
+  onEraserMode: (mode: EraserMode) => void;
   onStrokeWidth: (width: number) => void;
   onEraserSize: (size: number) => void;
   settingsOpen: boolean;
@@ -94,6 +92,27 @@ export function Toolbar(p: {
 }) {
   const { settingsOpen: settings, onSettingsOpenChange: setSettings } = p;
   const settingsHost = useRef<HTMLDivElement>(null);
+  const [settingsPosition, setSettingsPosition] = useState({ left: 8, top: 140 });
+  useLayoutEffect(() => {
+    if (!settings || !settingsHost.current) return;
+    const place = () => {
+      const rect = settingsHost.current?.getBoundingClientRect();
+      if (!rect) return;
+      const left = Math.max(8, Math.min(innerWidth - 252, rect.left));
+      const top = rect.bottom + 8;
+      setSettingsPosition((prev) =>
+        prev.left === left && prev.top === top ? prev : { left, top },
+      );
+    };
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(settingsHost.current.parentElement!);
+    window.addEventListener('resize', place);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', place);
+    };
+  }, [settings]);
   useEffect(() => {
     setSettings(false);
   }, [p.tool, p.mode, setSettings]);
@@ -126,7 +145,11 @@ export function Toolbar(p: {
               <IconButton
                 key={t.id}
                 label={t.label}
-                help={t.help}
+                help={
+                  t.id === 'eraser'
+                    ? `${p.eraserMode === 'stroke' ? '笔画擦除：碰到即擦除整笔' : '局部擦除：只擦掉经过的部分'}；在笔触设置中切换`
+                    : t.help
+                }
                 active={p.tool === t.id}
                 disabled={p.disabled}
                 onMouseDown={(e) => e.preventDefault()}
@@ -140,7 +163,7 @@ export function Toolbar(p: {
             <div className="ink-settings" ref={settingsHost}>
               <IconButton
                 label="笔触与橡皮擦大小"
-                help="调整画线粗细和擦除范围"
+                help="调整画线粗细、擦除范围和擦除方式"
                 active={settings}
                 onClick={() => setSettings(!settings)}
               >
@@ -151,16 +174,7 @@ export function Toolbar(p: {
                   className="ink-settings-popover"
                   role="group"
                   aria-label="笔触设置"
-                  style={{
-                    left: Math.max(
-                      8,
-                      Math.min(
-                        innerWidth - 252,
-                        settingsHost.current?.getBoundingClientRect().left || 8,
-                      ),
-                    ),
-                    top: (settingsHost.current?.getBoundingClientRect().bottom || 140) + 8,
-                  }}
+                  style={settingsPosition}
                 >
                   <label>
                     画笔粗细 <output>{p.strokeWidth} px</output>
@@ -186,7 +200,44 @@ export function Toolbar(p: {
                       onChange={(e) => p.onEraserSize(Number(e.target.value))}
                     />
                   </label>
-                  <p>画笔模式下按住 E 可临时擦除</p>
+                  <div className="eraser-mode-setting">
+                    <span>擦除方式</span>
+                    <div className="eraser-mode-switch" role="radiogroup" aria-label="擦除方式">
+                      {(
+                        [
+                          ['partial', '局部擦除'],
+                          ['stroke', '笔画擦除'],
+                        ] as const
+                      ).map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          role="radio"
+                          aria-checked={p.eraserMode === value}
+                          onClick={() => p.onEraserMode(value)}
+                          onKeyDown={(e) => {
+                            if (
+                              !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)
+                            )
+                              return;
+                            e.preventDefault();
+                            p.onEraserMode(value === 'partial' ? 'stroke' : 'partial');
+                            const buttons =
+                              e.currentTarget.parentElement?.querySelectorAll('button');
+                            buttons?.[value === 'partial' ? 1 : 0]?.focus();
+                          }}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <p>
+                      {p.eraserMode === 'stroke'
+                        ? '碰到一笔，擦除这一整笔；可连续擦多笔。'
+                        : '擦头经过哪里，就只擦掉哪里的笔迹。'}
+                    </p>
+                  </div>
+                  <p>画笔模式下按住 E，使用当前擦除方式</p>
                 </div>
               ) : null}
             </div>
@@ -204,6 +255,7 @@ export function Toolbar(p: {
                 onClick={() => p.onColor(c.value)}
               />
             ))}
+            <ColorPicker color={p.color} onColor={p.onColor} />
           </div>
           <span className="toolbar-divider optional" />
           <div className="history-tools">
@@ -231,13 +283,17 @@ export function Toolbar(p: {
       {p.mode === 'read' ? (
         <select
           aria-label="阅读缩放"
+          title="按住 ⌘ 滚动鼠标滚轮缩放 · 25%–400%"
           value={p.zoom}
           onChange={(e) => p.onZoom(Number(e.target.value))}
         >
           <option value={0}>适合宽度</option>
-          {[0.5, 0.75, 1, 1.25, 1.5, 2].map((v) => (
+          {p.zoom > 0 && !zoomPresets.includes(p.zoom) ? (
+            <option value={p.zoom}>{zoomLabel(p.zoom)}</option>
+          ) : null}
+          {zoomPresets.map((v) => (
             <option key={v} value={v}>
-              {v * 100}%
+              {zoomLabel(v)}
             </option>
           ))}
         </select>

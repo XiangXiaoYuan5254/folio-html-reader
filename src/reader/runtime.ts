@@ -1,18 +1,24 @@
-import type { Anchor, Annotation, Point, Tool } from '../types';
-import { erasePaths, inkPaths, inkPathData, smoothPoints } from './ink';
+import type { Anchor, Annotation, EraserMode, Point, Tool } from '../types';
+import { erasePaths, inkPaths, inkPathData, inkBounds, smoothPoints } from './ink';
 import { PageNotes } from './notes';
 import { AnnotationPopup } from './annotation-popup';
 import { stickyNoteSize } from './note-size';
 import { penCursor } from './pen-cursor';
+import { defaultColor } from '../colors';
+import { SelectionIndicator } from './selection-indicator';
+import type { SelectionRect } from './selection-indicator';
+import { ReaderZoom } from './zoom';
 (() => {
   const channel = 'folio-reader-v1';
   const send = (type: string, payload: Record<string, unknown> = {}) =>
     parent.postMessage({ channel, type, ...payload }, '*');
   let annotations: Annotation[] = [];
   let tool: Tool = 'select';
-  let color = '#edbd39';
+  let color = defaultColor;
   let strokeWidth = 2.5;
   let eraserSize = 24;
+  let eraserMode: EraserMode = 'partial';
+  let gestureEraserMode: EraserMode = 'partial';
   let stickySize = stickyNoteSize(null);
   let selection: Anchor | null = null;
   let selectionClick = false;
@@ -35,6 +41,12 @@ import { penCursor } from './pen-cursor';
   let cursor: SVGCircleElement;
   let notes: PageNotes;
   let popup: AnnotationPopup;
+  let indicator: SelectionIndicator;
+  let readerZoom: ReaderZoom;
+  // Only an explicit sidebar jump enables the visual locator. The active
+  // annotation also changes during drawing/editing and must not enable it.
+  let located: string | null = null;
+  let attentionPending = false;
   let hitRegions: {
     id: string;
     rects: { left: number; top: number; right: number; bottom: number }[];
@@ -245,6 +257,69 @@ import { penCursor } from './pen-cursor';
     }
     notes?.sync(annotations);
     popup?.sync(annotations);
+    const current = annotations.find((a) => a.id === located);
+    indicator?.sync(current?.id || null, current ? selectionRects(current) : []);
+    if (attentionPending && current) indicator.flash();
+    attentionPending = false;
+  }
+  function selectionRects(a: Annotation): SelectionRect[] {
+    if (a.quote)
+      return Array.from(locate(a.quote)?.getClientRects() || [])
+        .filter((r) => r.width && r.height)
+        .map((r) => ({
+          left: r.left + scrollX,
+          top: r.top + scrollY,
+          width: r.width,
+          height: r.height,
+        }));
+    if (['text', 'sticky'].includes(a.type)) {
+      const r = notes.rect(a.id);
+      return r
+        ? [{ left: r.left + scrollX, top: r.top + scrollY, width: r.width, height: r.height }]
+        : [];
+    }
+    const bounds = inkBounds(inkPaths(a));
+    if (!bounds) return [];
+    const o = offset(a),
+      pad = (a.strokeWidth || 2.5) / 2;
+    return [
+      {
+        left: bounds.left + o.x - pad,
+        top: bounds.top + o.y - pad,
+        width: bounds.width + pad * 2,
+        height: bounds.height + pad * 2,
+      },
+    ];
+  }
+  function clearLocation() {
+    located = null;
+    attentionPending = false;
+    schedule();
+  }
+  function selectAnnotation(id: string | null) {
+    clearLocation();
+    send('select-annotation', { id });
+  }
+  function revealAnnotation(a: Annotation) {
+    // Already-visible neighbors stay still, making rapid comparisons easy.
+    const rects = selectionRects(a);
+    const r =
+      rects.find((r) => r.top >= scrollY + 24 && r.top + r.height <= scrollY + innerHeight - 24) ||
+      rects[0];
+    if (!r) return;
+    const top = r.top - scrollY,
+      left = r.left - scrollX;
+    if (
+      top < 24 ||
+      top + r.height > innerHeight - 24 ||
+      left < 16 ||
+      left + r.width > innerWidth - 16
+    )
+      scrollTo({
+        top: Math.max(0, r.top - Math.max(32, (innerHeight - r.height) / 2)),
+        left: Math.max(0, r.left - Math.max(16, (innerWidth - r.width) / 2)),
+        behavior: 'auto',
+      });
   }
   function schedule() {
     if (!pending) {
@@ -262,7 +337,7 @@ import { penCursor } from './pen-cursor';
   }
   function annotate(type: string) {
     if (type !== 'highlight' && type !== 'underline') return;
-    const q = captureSelection() || selection;
+    const q = captureSelection();
     if (!q) return;
     const a: Annotation = {
       id: crypto.randomUUID(),
@@ -340,6 +415,7 @@ import { penCursor } from './pen-cursor';
     return null;
   }
   function create(a: Annotation, focus = false) {
+    clearLocation();
     annotations = [...annotations, a];
     send('create', { annotation: a });
     schedule();
@@ -370,28 +446,24 @@ import { penCursor } from './pen-cursor';
     return annotations.find((a) => a.id === hit?.id) || null;
   }
   function pointerCursor(e: PointerEvent) {
-    if (!['pen', 'eraser', 'laser'].includes(tool)) {
+    // The pen already has a native crosshair with a center dot. A second
+    // DOM dot repaints behind the native cursor and appears to chase it.
+    // Only tools that hide the native cursor need this rendered indicator.
+    if (!['eraser', 'laser'].includes(tool)) {
       cursor.style.display = 'none';
       return;
     }
     cursor.style.display = '';
     cursor.setAttribute('cx', String(e.clientX));
     cursor.setAttribute('cy', String(e.clientY));
+    cursor.setAttribute('r', String(tool === 'eraser' ? eraserSize / 2 : 5));
+    cursor.setAttribute('fill', tool === 'eraser' ? '#ffffff66' : '#fff');
+    cursor.setAttribute('stroke', tool === 'eraser' ? '#566a72' : '#ff4b57');
+    cursor.setAttribute('stroke-width', tool === 'eraser' ? '1.3' : '3');
     cursor.setAttribute(
-      'r',
-      String(
-        tool === 'eraser' ? eraserSize / 2 : tool === 'laser' ? 5 : Math.max(2, strokeWidth / 2),
-      ),
+      'stroke-dasharray',
+      tool === 'eraser' && eraserMode === 'stroke' ? '3 2' : 'none',
     );
-    cursor.setAttribute(
-      'fill',
-      tool === 'eraser' ? '#ffffff66' : tool === 'laser' ? '#fff' : color,
-    );
-    cursor.setAttribute(
-      'stroke',
-      tool === 'eraser' ? '#566a72' : tool === 'laser' ? '#ff4b57' : '#ffffff',
-    );
-    cursor.setAttribute('stroke-width', tool === 'eraser' ? '1.3' : tool === 'laser' ? '3' : '1');
     cursor.style.filter = tool === 'laser' ? 'drop-shadow(0 0 5px #ff3b49)' : '';
   }
   function erase(from: Point, to: Point) {
@@ -405,6 +477,7 @@ import { penCursor } from './pen-cursor';
         { x: from.x - o.x, y: from.y - o.y },
         { x: to.x - o.x, y: to.y - o.y },
         eraserSize / 2 + (a.strokeWidth || 2.5) / 2,
+        gestureEraserMode,
       );
       if (next === paths) return [a];
       changed = true;
@@ -535,10 +608,11 @@ import { penCursor } from './pen-cursor';
     }) as SVGCircleElement;
     cursor.style.display = 'none';
     svg.append(layer, laserLayer, previewLayer, cursor);
+    indicator = new SelectionIndicator(svg);
     document.body.append(svg);
     notes = new PageNotes({
       position: notePosition,
-      select: (id) => send('select-annotation', { id }),
+      select: selectAnnotation,
       remove: (id) => {
         annotations = annotations.filter((a) => a.id !== id);
         send('delete', { id });
@@ -570,7 +644,7 @@ import { penCursor } from './pen-cursor';
           : null;
       },
       update: updateAnnotation,
-      select: (id) => send('select-annotation', { id }),
+      select: selectAnnotation,
       remove: (id) => {
         annotations = annotations.filter((a) => a.id !== id);
         send('delete', { id });
@@ -579,22 +653,44 @@ import { penCursor } from './pen-cursor';
     });
     // Pointer events inside the sandboxed reader do not bubble to the app shell.
     // Notify it without consuming the gesture, so the first stroke still draws.
-    document.addEventListener('pointerdown', () => send('pointerdown'), {
-      capture: true,
-      passive: true,
-    });
+    document.addEventListener(
+      'pointerdown',
+      (e) => {
+        send('pointerdown');
+        clearLocation();
+        if (
+          !e
+            .composedPath()
+            .some(
+              (node) =>
+                node instanceof Element &&
+                node.matches('[data-folio-ui="notes"],[data-folio-ui="annotation-popup"]'),
+            )
+        )
+          selectAnnotation(null);
+      },
+      {
+        capture: true,
+        passive: true,
+      },
+    );
     document.addEventListener('mousedown', () => {
       selectionClick = false;
+    });
+    document.addEventListener('selectionchange', () => {
+      if (selection && window.getSelection()?.isCollapsed) {
+        selection = null;
+        send('selection', { quote: null });
+      }
     });
     document.addEventListener('mouseup', () => {
       if (isDrawing || isErasing || !['select', 'highlight', 'underline'].includes(tool)) return;
       selectionClick = !!window.getSelection()?.toString();
       setTimeout(() => {
         const q = captureSelection();
-        if (!q) return;
         selection = q;
         send('selection', { quote: q });
-        if (['highlight', 'underline'].includes(tool)) annotate(tool);
+        if (q && ['highlight', 'underline'].includes(tool)) annotate(tool);
       }, 0);
     });
     svg.addEventListener('pointerdown', (e) => {
@@ -654,6 +750,7 @@ import { penCursor } from './pen-cursor';
       pointerCursor(e);
       if (tool === 'eraser') {
         isErasing = true;
+        gestureEraserMode = eraserMode;
         eraseOriginal = annotations;
         erased.clear();
         eraseLast = p;
@@ -696,6 +793,11 @@ import { penCursor } from './pen-cursor';
     svg.addEventListener('pointerleave', () => {
       if (activePointer < 0) cursor.style.display = 'none';
     });
+    readerZoom = new ReaderZoom((delta) => {
+      finishGesture();
+      popup.close();
+      send('zoom-wheel', { delta });
+    }, schedule);
     window.addEventListener(
       'scroll',
       () => {
@@ -780,9 +882,32 @@ import { penCursor } from './pen-cursor';
       send('link', { url: a.href });
     });
     window.addEventListener('keydown', (e) => {
-      const input = e
-        .composedPath()
-        .some((t) => t instanceof Element && t.matches('input,textarea,[contenteditable="true"]'));
+      const path = e.composedPath();
+      const input = path.some(
+        (t) => t instanceof Element && t.matches('input,textarea,select,[contenteditable]'),
+      );
+      const pageNote = path.some(
+        (t) => t instanceof Element && t.matches('[data-folio-ui="notes"]'),
+      );
+      if (
+        e.key === 'Tab' &&
+        (!input || pageNote) &&
+        !e.isComposing &&
+        !e.shiftKey &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey
+      ) {
+        e.preventDefault();
+        if (!e.repeat) {
+          finishGesture();
+          temporaryEraser = false;
+          // Leave the note editor immediately so a second Tab also switches
+          // tools, instead of walking through its resize/delete controls.
+          if (pageNote) svg.focus({ preventScroll: true });
+          send('switch-tool');
+        }
+      }
       if (
         !input &&
         !e.metaKey &&
@@ -798,6 +923,7 @@ import { penCursor } from './pen-cursor';
         setTool('eraser');
       }
       if (e.key === 'Escape') {
+        selectAnnotation(null);
         finishGesture(true);
         laserLayer.replaceChildren();
         popup.close();
@@ -837,14 +963,22 @@ import { penCursor } from './pen-cursor';
     if (e.source !== parent || e.data?.channel !== channel) return;
     const m = e.data;
     if (!ready) return;
+    if (m.type === 'request-ready') {
+      outline();
+      send('ready', { title: document.title });
+    }
+    if (m.type === 'zoom-state') readerZoom.apply(m.scale, m.enabled);
     if (m.type === 'sync') {
       const currentInk = new Map(annotations.map((a) => [a.id, a]));
       annotations = (m.annotations || []).flatMap((a: Annotation) =>
         isErasing && erased.has(a.id) ? (currentInk.has(a.id) ? [currentInk.get(a.id)] : []) : [a],
       );
+      if (located && (m.selected !== located || !annotations.some((a) => a.id === located)))
+        clearLocation();
       color = m.color || color;
       strokeWidth = Math.max(1, Math.min(12, Number(m.strokeWidth) || 2.5));
       eraserSize = Math.max(8, Math.min(64, Number(m.eraserSize) || 24));
+      eraserMode = m.eraserMode === 'stroke' ? 'stroke' : 'partial';
       stickySize = stickyNoteSize(m.stickySize);
       if (!temporaryEraser) setTool(m.tool || 'select');
       schedule();
@@ -853,22 +987,34 @@ import { penCursor } from './pen-cursor';
       restoreScroll = Number(m.scroll) || 0;
       requestAnimationFrame(restorePosition);
     }
+    if (m.type === 'temporary-eraser') {
+      if (m.active && tool === 'pen' && !temporaryEraser) {
+        finishGesture();
+        temporaryEraser = true;
+        setTool('eraser');
+      } else if (!m.active && temporaryEraser) {
+        finishGesture();
+        temporaryEraser = false;
+        setTool('pen');
+      }
+    }
     if (m.type === 'annotate') annotate(m.tool);
+    if (m.type === 'clear-selection') {
+      window.getSelection()?.removeAllRanges();
+      selection = null;
+      send('selection', { quote: null });
+    }
     if (m.type === 'jump') {
       const a = annotations.find((a) => a.id === m.id);
-      if (a?.quote) {
-        locate(a.quote)?.startContainer.parentElement?.scrollIntoView({
-          block: 'center',
-          behavior: 'auto',
-        });
-      } else if (a?.points?.length)
-        scrollTo({ top: a.points[0].y + offset(a).y - innerHeight / 3, behavior: 'auto' });
-      if (a?.quote) {
-        popup.show(a, true, false);
-      } else if (a && ['sticky', 'text'].includes(a.type)) {
+      popup.close();
+      if (a && ['sticky', 'text'].includes(a.type)) {
         notes.sync(annotations);
         notes.open(a.id, false);
       }
+      located = a?.id || null;
+      if (a) revealAnnotation(a);
+      attentionPending = !!a;
+      schedule();
     }
     if (m.type === 'heading')
       document

@@ -11,6 +11,7 @@ export type Tool =
   | 'eraser';
 export type Anchor = { exact: string; prefix: string; suffix: string; start: number; end: number };
 export type Point = { x: number; y: number };
+export type EraserMode = 'partial' | 'stroke';
 export type Annotation = {
   id: string;
   type: Exclude<Tool, 'select' | 'eraser' | 'laser'>;
@@ -46,7 +47,7 @@ export type WorkspaceInfo = {
   root: string;
   token: string;
   tree: FileNode[];
-  session?: { paths: string[]; active: string } | null;
+  session?: { paths: string[]; active: string; split?: { left: string; right: string } } | null;
 };
 export type OpenDocument = {
   path: string;

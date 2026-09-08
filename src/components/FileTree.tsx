@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { DragEvent } from 'react';
 import {
   FolderOpen,
   Folder,
@@ -24,20 +25,117 @@ export function FileTree({
   onOpen,
   onFolder,
   onAction,
+  onMove,
   onRefresh,
   onClose,
+  onReadingDrag,
 }: {
   workspace: WorkspaceInfo | null;
   active?: string;
   onOpen: (p: string) => void;
   onFolder: () => void;
   onAction: (action: FileAction, path: string) => void;
+  onMove: (from: string, to: string) => Promise<boolean>;
   onRefresh: () => void;
   onClose: () => void;
+  onReadingDrag: (path: string | null) => void;
 }) {
   const [query, setQuery] = useState('');
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [menu, setMenu] = useState<string | null>(null);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [moving, setMoving] = useState(false);
+  const dragSource = useRef<FileNode | null>(null);
+  const folderHover = useRef<{ path: string; timer: ReturnType<typeof setTimeout> } | null>(null);
+  const parentOf = (path: string) =>
+    path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+  function clearHover() {
+    if (folderHover.current) clearTimeout(folderHover.current.timer);
+    folderHover.current = null;
+  }
+  useEffect(() => () => clearHover(), []);
+  function endDrag() {
+    onReadingDrag(null);
+    dragSource.current = null;
+    setDragging(null);
+    setDropTarget(null);
+    clearHover();
+  }
+  function canDrop(folder: string) {
+    const source = dragSource.current;
+    return (
+      !!source &&
+      !moving &&
+      parentOf(source.path) !== folder &&
+      source.path !== folder &&
+      !(source.kind === 'folder' && folder.startsWith(source.path + '/'))
+    );
+  }
+  function dropHandlers(folder: string) {
+    return {
+      onDragOver: (e: DragEvent<HTMLElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!canDrop(folder)) {
+          e.dataTransfer.dropEffect = 'none';
+          setDropTarget(null);
+          clearHover();
+          return;
+        }
+        e.dataTransfer.dropEffect = 'move';
+        setDropTarget(folder);
+        if (folderHover.current?.path !== folder) {
+          clearHover();
+          if (folder && collapsed.has(folder)) {
+            folderHover.current = {
+              path: folder,
+              timer: setTimeout(() => {
+                setCollapsed((prev) => {
+                  const next = new Set(prev);
+                  next.delete(folder);
+                  return next;
+                });
+              }, 650),
+            };
+          }
+        }
+      },
+      onDragLeave: (e: DragEvent<HTMLElement>) => {
+        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+        setDropTarget((current) => (current === folder ? null : current));
+        clearHover();
+      },
+      onDrop: async (e: DragEvent<HTMLElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const source = dragSource.current;
+        const valid = canDrop(folder);
+        endDrag();
+        if (!source || !valid) return;
+        setMoving(true);
+        try {
+          const target = (folder ? folder + '/' : '') + source.name;
+          if (await onMove(source.path, target)) {
+            setCollapsed(
+              (prev) =>
+                new Set(
+                  [...prev]
+                    .map((p) =>
+                      p === source.path || p.startsWith(source.path + '/')
+                        ? target + p.slice(source.path.length)
+                        : p,
+                    )
+                    .filter((p) => p !== folder),
+                ),
+            );
+          }
+        } finally {
+          setMoving(false);
+        }
+      },
+    };
+  }
   function match(n: FileNode): boolean {
     return n.name.toLowerCase().includes(query.toLowerCase()) || !!n.children?.some(match);
   }
@@ -45,12 +143,25 @@ export function FileTree({
     return nodes.filter(match).map((n) => (
       <div key={n.path}>
         <div
-          className={`tree-row ${n.path === active ? 'selected' : ''} ${n.kind === 'asset' ? 'asset' : ''}`}
+          className={`tree-row ${n.kind} ${n.path === active ? 'selected' : ''} ${dragging === n.path ? 'dragging' : ''} ${n.kind === 'folder' && dropTarget === n.path ? 'drop-target' : ''}`}
+          data-file-path={n.path}
           style={{ paddingLeft: 12 + depth * 16 }}
+          draggable={!moving}
+          onDragStart={(e) => {
+            dragSource.current = n;
+            e.dataTransfer.effectAllowed = n.kind === 'html' ? 'copyMove' : 'move';
+            e.dataTransfer.setData('application/x-folio-file', n.path);
+            onReadingDrag(n.kind === 'html' ? n.path : null);
+            setDragging(n.path);
+            setMenu(null);
+          }}
+          onDragEnd={endDrag}
+          {...dropHandlers(n.kind === 'folder' ? n.path : parentOf(n.path))}
         >
           <button
             className="tree-item"
             title={n.path}
+            aria-expanded={n.kind === 'folder' ? !collapsed.has(n.path) : undefined}
             onClick={() =>
               n.kind === 'folder'
                 ? setCollapsed((prev) => {
@@ -66,12 +177,20 @@ export function FileTree({
             {n.kind === 'folder' ? (
               <>
                 {collapsed.has(n.path) ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
-                <Folder size={16} />
+                {collapsed.has(n.path) ? (
+                  <Folder className="tree-icon-folder" size={17} />
+                ) : (
+                  <FolderOpen className="tree-icon-folder" size={17} />
+                )}
               </>
             ) : (
               <>
-                {depth === 0 ? <span className="tree-spacer" /> : null}
-                {n.kind === 'html' ? <FileCode2 size={16} /> : <File size={16} />}
+                <span className="tree-spacer" />
+                {n.kind === 'html' ? (
+                  <FileCode2 className="tree-icon-html" size={16} />
+                ) : (
+                  <File size={16} />
+                )}
               </>
             )}
             <span>{n.name}</span>
@@ -141,7 +260,10 @@ export function FileTree({
           onChange={(e) => setQuery(e.target.value)}
         />
       </label>
-      <div className="project-label">
+      <div
+        className={`project-label ${dropTarget === '' ? 'drop-target' : ''}`}
+        {...dropHandlers('')}
+      >
         <FolderOpen size={16} />
         <span title={workspace?.root}>{workspace?.name || '选择一个项目'}</span>
         <IconButton
@@ -159,12 +281,30 @@ export function FileTree({
           <Folder size={14} />
         </IconButton>
       </div>
-      <div className="file-tree" role="navigation" aria-label="项目文件">
+      <div
+        className={`file-tree ${dropTarget === '' ? 'drop-target' : ''}`}
+        role="navigation"
+        aria-label="项目文件"
+        aria-description="将文件或文件夹拖到目标文件夹；拖到项目名称或空白处可移回根目录"
+        aria-busy={moving}
+        {...dropHandlers('')}
+      >
         {workspace ? rows(workspace.tree) : null}
         {workspace && !workspace.tree.some(match) ? (
           <div className="tree-empty">没有找到文件</div>
         ) : null}
       </div>
+      {dragging !== null || moving ? (
+        <div className="tree-drop-hint" role="status">
+          {moving
+            ? '正在移动…'
+            : dropTarget !== null
+              ? `移动到：${dropTarget || '项目根目录'}`
+              : dragSource.current?.kind === 'html'
+                ? '拖到阅读区并排打开，或拖到文件夹移动'
+                : '拖到文件夹或项目名称移动'}
+        </div>
+      ) : null}
       <div className="sidebar-footer">
         <div>
           <HardDrive size={16} />

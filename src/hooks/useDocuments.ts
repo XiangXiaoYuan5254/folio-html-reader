@@ -9,6 +9,14 @@ export function useDocuments(onError: (s: string) => void) {
   const queue = useRef(Promise.resolve());
   const failed = useRef<string | null>(null);
   const annotationGroups = useRef(new Map<string, string>());
+  const pendingData = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  function cancelPending(id: string) {
+    const timer = pendingData.current.get(id);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    pendingData.current.delete(id);
+    setSaving((n) => n - 1);
+  }
   function commit(next: OpenDocument[]) {
     docsRef.current = next;
     setDocs(next);
@@ -17,6 +25,7 @@ export function useDocuments(onError: (s: string) => void) {
     commit(docsRef.current.map((d) => (d.id === id ? fn(d) : d)));
   }
   function persist(id: string, data: DocumentData) {
+    cancelPending(id);
     setSaving((n) => n + 1);
     queue.current = queue.current.then(async () => {
       try {
@@ -30,24 +39,29 @@ export function useDocuments(onError: (s: string) => void) {
       }
     });
   }
-  function session(paths: string[], active: string) {
+  function session(paths: string[], active: string, split?: { left: string; right: string }) {
     queue.current = queue.current.then(async () => {
       try {
-        await invoke('save-session', { paths, active });
+        await invoke('save-session', { paths, active, split });
       } catch (e) {
         onError('阅读会话保存失败：' + (e as Error).message);
       }
     });
   }
   async function flush() {
+    for (const id of pendingData.current.keys()) {
+      const doc = docsRef.current.find((d) => d.id === id);
+      if (doc) persist(id, doc.data);
+      else cancelPending(id);
+    }
     await queue.current;
     if (failed.current) throw Error(failed.current);
   }
-  async function open(path: string) {
+  async function open(path: string, activate = true) {
     const existing = docsRef.current.find((d) => d.path === path);
     if (existing) {
-      setActive(existing.id);
-      return;
+      if (activate) setActive(existing.id);
+      return existing.id;
     }
     const raw = await invoke<OpenDocument>('document', { path });
     // Another click may have completed the same read while IPC was in flight.
@@ -56,14 +70,30 @@ export function useDocuments(onError: (s: string) => void) {
         ...docsRef.current,
         { ...raw, draft: raw.source, preview: 0, history: [], future: [] },
       ]);
-    setActive(raw.id);
+    if (activate) setActive(raw.id);
+    return raw.id;
   }
-  function data(id: string, patch: Partial<DocumentData>) {
+  function data(id: string, patch: Partial<DocumentData>, defer = false) {
     const d = docsRef.current.find((d) => d.id === id);
     if (!d) return;
     const next = { ...d.data, ...patch };
     update(id, (d) => ({ ...d, data: next }));
-    persist(id, next);
+    if (!defer) persist(id, next);
+    else {
+      // Wheel zoom updates the view on each frame, but writes once it settles.
+      // flush() also drains these timers before closing a document/the app.
+      const previous = pendingData.current.get(id);
+      if (previous === undefined) setSaving((n) => n + 1);
+      else clearTimeout(previous);
+      pendingData.current.set(
+        id,
+        setTimeout(() => {
+          const latest = docsRef.current.find((d) => d.id === id);
+          if (latest) persist(id, latest.data);
+          else cancelPending(id);
+        }, 220),
+      );
+    }
   }
   function annotate(id: string, fn: (a: Annotation[]) => Annotation[], group?: string) {
     const d = docsRef.current.find((d) => d.id === id);

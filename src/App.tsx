@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import {
   BookOpen,
   Check,
@@ -13,13 +13,22 @@ import {
   AlertCircle,
   ChevronDown,
 } from 'lucide-react';
-import { invoke, subscribe, useWorkspace, documentUrl, isDesktop } from './api';
-import type { Anchor, FrameEvent, OpenDocument, OutlineItem, Tool, WorkspaceInfo } from './types';
+import { invoke, subscribe, useWorkspace, isDesktop } from './api';
+import type {
+  Anchor,
+  EraserMode,
+  FrameEvent,
+  OpenDocument,
+  OutlineItem,
+  Tool,
+  WorkspaceInfo,
+} from './types';
 import { FileTree } from './components/FileTree';
 import type { FileAction } from './components/FileTree';
 import { DocumentTabs } from './components/DocumentTabs';
 import { Toolbar } from './components/Toolbar';
-import { ReaderFrame } from './components/ReaderFrame';
+import { DocumentReader } from './components/DocumentReader';
+import { ReadingResizer } from './components/ReadingResizer';
 import { stickyNoteSize } from './reader/note-size';
 import type { ReaderHandle } from './components/ReaderFrame';
 import { Inspector } from './components/Inspector';
@@ -28,6 +37,8 @@ import { Dialog } from './components/Dialog';
 import type { DialogOptions } from './components/Dialog';
 import { IconButton } from './components/IconButton';
 import { useDocuments } from './hooks/useDocuments';
+import { annotationColors, defaultColor, normalizeColor } from './colors';
+import { zoomAfterWheel } from './zoom';
 const SourceEditor = lazy(() => import('./components/SourceEditor'));
 const toolHints: Record<Tool, string> = {
   select: '选中文字开始批注',
@@ -48,6 +59,26 @@ function firstHTML(tree: WorkspaceInfo['tree']): string | undefined {
     if (found) return found;
   }
 }
+function htmlFiles(tree: WorkspaceInfo['tree']): string[] {
+  return tree.flatMap((n) => (n.kind === 'html' ? [n.path] : htmlFiles(n.children || [])));
+}
+type PaneSide = 'left' | 'right';
+type ReaderState = {
+  selected: string | null;
+  selection: Anchor | null;
+  rebind: string | null;
+  outline: OutlineItem[];
+  orphans: string[];
+  progress: number;
+};
+const emptyReaderState: ReaderState = {
+  selected: null,
+  selection: null,
+  rebind: null,
+  outline: [],
+  orphans: [],
+  progress: 0,
+};
 export default function App() {
   const [workspace, setWorkspace] = useState<WorkspaceInfo | null>(null);
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null);
@@ -55,9 +86,43 @@ export default function App() {
   const onError = useCallback((s: string) => notify(s, true), [notify]);
   const model = useDocuments(onError);
   const doc = model.docs.find((d) => d.id === model.active);
+  const [split, setSplit] = useState<{ left: string; right: string | null } | null>(null);
+  const focusedSide = useRef<PaneSide>('left');
+  const [splitRatio, setSplitRatio] = useState(() => {
+    try {
+      const saved = Number(localStorage.getItem('folio.reading-split-ratio'));
+      return saved >= 0.2 && saved <= 0.8 ? saved : 0.5;
+    } catch {
+      return 0.5;
+    }
+  });
   const [mode, setMode] = useState<'read' | 'source'>('read');
   const [tool, setTool] = useState<Tool>('select');
-  const [color, setColor] = useState('#edbd39');
+  const recentTools = useRef<{ current: Tool; previous: Tool | null }>({
+    current: 'select',
+    previous: null,
+  });
+  const [readingDrag, setReadingDrag] = useState<string | null>(null);
+  const [readingDropSide, setReadingDropSide] = useState<PaneSide | null>(null);
+  function activateTool(next: Tool) {
+    const history = recentTools.current;
+    if (next !== history.current) {
+      recentTools.current = { current: next, previous: history.current };
+      setTool(next);
+    }
+  }
+  function switchRecentTool() {
+    const previous = recentTools.current.previous;
+    if (previous) activateTool(previous);
+    setInkSettingsOpen(false);
+  }
+  const [color, setColor] = useState(() => {
+    try {
+      return normalizeColor(localStorage.getItem('folio.ink-color')) || defaultColor;
+    } catch {
+      return defaultColor;
+    }
+  });
   const [left, setLeft] = useState(true);
   const [right, setRight] = useState(() => {
     try {
@@ -68,6 +133,13 @@ export default function App() {
   });
   const [strokeWidth, setStrokeWidth] = useState(2.5);
   const [eraserSize, setEraserSize] = useState(24);
+  const [eraserMode, setEraserMode] = useState<EraserMode>(() => {
+    try {
+      return localStorage.getItem('folio.eraser-mode') === 'stroke' ? 'stroke' : 'partial';
+    } catch {
+      return 'partial';
+    }
+  });
   const [inkSettingsOpen, setInkSettingsOpen] = useState(false);
   const [stickySize, setStickySize] = useState(() => {
     try {
@@ -77,23 +149,46 @@ export default function App() {
     }
   });
   const [tab, setTab] = useState<InspectorTab>('annotations');
-  const [selected, setSelected] = useState<string | null>(null);
-  const [outline, setOutline] = useState<OutlineItem[]>([]);
-  const [orphans, setOrphans] = useState<string[]>([]);
-  const [selection, setSelection] = useState<Anchor | null>(null);
-  const [rebind, setRebind] = useState<string | null>(null);
-  const [progress, setProgress] = useState(0);
+  const [readerStates, setReaderStates] = useState<Record<string, ReaderState>>({});
+  const { selected, outline, orphans, selection, rebind, progress } =
+    readerStates[doc?.id || ''] || emptyReaderState;
+  function patchReader(id: string, patch: Partial<ReaderState>) {
+    setReaderStates((states) => ({
+      ...states,
+      [id]: { ...(states[id] || emptyReaderState), ...patch },
+    }));
+  }
+  const setSelected = (selected: string | null) => doc && patchReader(doc.id, { selected });
+  const setSelection = (selection: Anchor | null) => doc && patchReader(doc.id, { selection });
+  const setRebind = (rebind: string | null) => doc && patchReader(doc.id, { rebind });
   const [dialog, setDialog] = useState<DialogOptions | null>(null);
   const [finding, setFinding] = useState(false);
   const [query, setQuery] = useState('');
   const [findMissing, setFindMissing] = useState(false);
-  const [preview, setPreview] = useState<{ id: string; url: string } | null>(null);
-  const reader = useRef<ReaderHandle>(null);
+  const readers = useRef(new Map<string, ReaderHandle>());
   const findInput = useRef<HTMLInputElement>(null);
   const initialized = useRef(false);
   const sessionReady = useRef(false);
-  const current = useRef({ model, doc });
-  current.current = { model, doc };
+  const current = useRef({ model, doc, tool, mode });
+  current.current = { model, doc, tool, mode };
+  function sendToActive(type: string, payload?: Record<string, unknown>) {
+    readers.current.get(current.current.doc?.id || '')?.send(type, payload);
+  }
+  useEffect(() => {
+    try {
+      localStorage.setItem('folio.reading-split-ratio', String(splitRatio));
+    } catch {}
+  }, [splitRatio]);
+  useEffect(() => {
+    try {
+      localStorage.setItem('folio.ink-color', color);
+    } catch {}
+  }, [color]);
+  useEffect(() => {
+    try {
+      localStorage.setItem('folio.eraser-mode', eraserMode);
+    } catch {}
+  }, [eraserMode]);
   useEffect(() => {
     try {
       localStorage.setItem('folio.right-panel', right ? 'open' : 'closed');
@@ -113,8 +208,7 @@ export default function App() {
     run(async () => {
       const w = await invoke<WorkspaceInfo>('workspace');
       useWorkspace(w);
-      const paths =
-        w.session?.paths || ([firstHTML(w.tree)].filter(Boolean) as string[]);
+      const paths = w.session?.paths || ([firstHTML(w.tree)].filter(Boolean) as string[]);
       for (const p of paths) {
         try {
           await model.open(p);
@@ -124,52 +218,47 @@ export default function App() {
       }
       const activeDoc = model.docsRef.current.find((d) => d.path === w.session?.active);
       if (activeDoc) model.setActive(activeDoc.id);
+      restoreSplit(w);
       sessionReady.current = true;
       setWorkspace(w);
     });
   }, []);
   const sessionSignature = model.docs.map((d) => d.path).join('\0');
+  const splitLeftPath = model.docs.find((d) => d.id === split?.left)?.path;
+  const splitRightPath = model.docs.find((d) => d.id === split?.right)?.path;
   useEffect(() => {
     if (workspace && sessionReady.current)
       model.session(
         model.docs.map((d) => d.path),
         doc?.path || '',
+        splitLeftPath && splitRightPath
+          ? { left: splitLeftPath, right: splitRightPath }
+          : undefined,
       );
-  }, [sessionSignature, model.active, workspace?.token]);
+  }, [sessionSignature, model.active, workspace?.token, splitLeftPath, splitRightPath]);
   useEffect(() => {
     if (!notice || notice.error) return;
     const timer = setTimeout(() => setNotice(null), 3500);
     return () => clearTimeout(timer);
   }, [notice]);
+  const previousActive = useRef('');
   useEffect(() => {
-    setOutline([]);
-    setOrphans([]);
-    setSelection(null);
-    setProgress(0);
-    setSelected(null);
-    setRebind(null);
+    const previous = previousActive.current;
+    if (previous && previous !== doc?.id) {
+      readers.current.get(previous)?.send('clear-selection');
+      patchReader(previous, { selection: null, rebind: null });
+    }
+    previousActive.current = doc?.id || '';
+    setFindMissing(false);
   }, [doc?.id]);
   useEffect(() => {
-    if (!doc || doc.draft === doc.source) {
-      setPreview(null);
-      return;
-    }
-    let cancelled = false;
-    const id = doc.id;
-    const timer = setTimeout(() => {
-      invoke<string>('preview', { path: doc.path, source: doc.draft })
-        .then((url) => {
-          if (!cancelled) setPreview({ id, url });
-        })
-        .catch((e) => {
-          if (!cancelled) notify(e.message, true);
-        });
-    }, 500);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [doc?.id, doc?.draft, doc?.source, doc?.path]);
+    if (
+      split &&
+      (!model.docs.some((d) => d.id === split.left) ||
+        (split.right && !model.docs.some((d) => d.id === split.right)))
+    )
+      setSplit(null);
+  }, [sessionSignature, split]);
   useEffect(() => {
     if (finding) findInput.current?.focus();
   }, [finding]);
@@ -193,7 +282,36 @@ export default function App() {
   );
   useEffect(() => {
     function keys(e: KeyboardEvent) {
-      const input = (e.target as Element)?.closest('input,textarea,.cm-editor');
+      const target = e.target instanceof Element ? e.target : null;
+      const input = target?.closest('input,textarea,select,[contenteditable],.cm-editor');
+      if (
+        e.key === 'Tab' &&
+        !e.shiftKey &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        !input &&
+        !document.querySelector('[role="dialog"]') &&
+        !target?.closest('.file-sidebar,.inspector,.find-bar,.reading-column-header') &&
+        current.current.mode === 'read' &&
+        current.current.doc
+      ) {
+        e.preventDefault();
+        if (!e.repeat) switchRecentTool();
+      }
+      if (
+        !input &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        !e.repeat &&
+        e.key.toLowerCase() === 'e' &&
+        current.current.tool === 'pen' &&
+        current.current.mode === 'read'
+      ) {
+        e.preventDefault();
+        sendToActive('temporary-eraser', { active: true });
+      }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
         liveActions.current.save();
@@ -212,13 +330,30 @@ export default function App() {
         if (doc) model.undo(doc.id, e.shiftKey);
       }
       if (e.key === 'Escape') {
-        setTool('select');
+        window.getSelection()?.removeAllRanges();
+        activateTool('select');
+        setReadingDrag(null);
+        setReadingDropSide(null);
         setFinding(false);
-        setSelection(null);
+        sendToActive('clear-selection');
+        patchReader(current.current.doc?.id || '', { selection: null, selected: null });
       }
     }
+    const keyUp = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === 'e') sendToActive('temporary-eraser', { active: false });
+    };
+    const blur = () => {
+      if (document.activeElement?.tagName !== 'IFRAME')
+        sendToActive('temporary-eraser', { active: false });
+    };
     window.addEventListener('keydown', keys);
-    return () => window.removeEventListener('keydown', keys);
+    window.addEventListener('keyup', keyUp);
+    window.addEventListener('blur', blur);
+    return () => {
+      window.removeEventListener('keydown', keys);
+      window.removeEventListener('keyup', keyUp);
+      window.removeEventListener('blur', blur);
+    };
   }, []);
   function guardDirty(
     docs: OpenDocument[],
@@ -239,6 +374,69 @@ export default function App() {
   async function refresh() {
     setWorkspace(await invoke<WorkspaceInfo>('tree'));
   }
+  function restoreSplit(w: WorkspaceInfo) {
+    const saved = w.session?.split;
+    const left = model.docsRef.current.find((d) => d.path === saved?.left);
+    const right = model.docsRef.current.find((d) => d.path === saved?.right);
+    setSplit(left && right && left.id !== right.id ? { left: left.id, right: right.id } : null);
+    focusedSide.current = saved?.right === w.session?.active ? 'right' : 'left';
+  }
+  function selectDocument(id: string, side?: PaneSide) {
+    if (split) {
+      const visibleSide = split.left === id ? 'left' : split.right === id ? 'right' : null;
+      if (visibleSide) focusedSide.current = visibleSide;
+      else {
+        const target = side || focusedSide.current;
+        focusedSide.current = target;
+        setSplit((s) => (s ? { ...s, [target]: id } : s));
+      }
+    }
+    model.setActive(id);
+  }
+  async function openDocument(path: string, side?: PaneSide) {
+    const id = await model.open(path, false);
+    selectDocument(id, side);
+  }
+  function closeDocument(id: string) {
+    model.close(id);
+    if (split && (split.left === id || split.right === id)) {
+      const other = split.left === id ? split.right : split.left;
+      setSplit(null);
+      if (other && model.docsRef.current.some((d) => d.id === other)) model.setActive(other);
+    }
+  }
+  function requestCloseDocument(id: string) {
+    const closing = model.docsRef.current.find((d) => d.id === id);
+    if (closing)
+      guardDirty([closing], async () => {
+        await model.flush();
+        closeDocument(id);
+      });
+  }
+  async function dropIntoReading(path: string, side: PaneSide) {
+    if (!doc || !htmlFiles(workspace?.tree || []).includes(path)) return;
+    const id = await model.open(path, false);
+    setMode('read');
+    if (id === doc.id && !split) return;
+    const existingSide = split?.left === id ? 'left' : split?.right === id ? 'right' : null;
+    focusedSide.current = existingSide || side;
+    setSplit((current) => {
+      if (current) return existingSide ? current : { ...current, [side]: id };
+      return side === 'left' ? { left: id, right: doc.id } : { left: doc.id, right: id };
+    });
+    model.setActive(id);
+  }
+  function toggleSplit() {
+    setMode('read');
+    if (split) {
+      setSplit(null);
+      return;
+    }
+    if (!doc) return;
+    const other = model.docs.find((d) => d.id !== doc.id);
+    focusedSide.current = 'left';
+    setSplit({ left: doc.id, right: other?.id || null });
+  }
   function openFolder() {
     guardDirty(model.docs, async () => {
       await model.flush();
@@ -246,6 +444,8 @@ export default function App() {
       if (!w) return;
       sessionReady.current = false;
       model.clear();
+      setSplit(null);
+      setReaderStates({});
       useWorkspace(w);
       setMode('read');
       const paths = w.session?.paths || ([firstHTML(w.tree)].filter(Boolean) as string[]);
@@ -258,11 +458,16 @@ export default function App() {
       }
       const activeDoc = model.docsRef.current.find((d) => d.path === w.session?.active);
       if (activeDoc) model.setActive(activeDoc.id);
+      restoreSplit(w);
       sessionReady.current = true;
       setWorkspace(w);
     });
   }
   function save() {
+    saveDocument(model.active);
+  }
+  function saveDocument(id: string) {
+    const doc = model.docsRef.current.find((d) => d.id === id);
     if (doc?.draft === doc?.source) {
       notify('没有未保存的源码修改');
       return;
@@ -303,7 +508,7 @@ export default function App() {
         onConfirm: async () => {
           await model.flush();
           setWorkspace(await invoke('trash', { path }));
-          affected.forEach((d) => model.close(d.id));
+          affected.forEach((d) => closeDocument(d.id));
         },
       });
       return;
@@ -335,41 +540,72 @@ export default function App() {
         await model.flush();
         if (create) {
           setWorkspace(await invoke('create', { path: target, kind: folder ? 'folder' : 'file' }));
-          if (!folder) await model.open(target);
+          if (!folder) await openDocument(target);
         } else {
-          setWorkspace(await invoke('move', { from: path, to: target }));
-          model.move(path, target);
+          await relocate(path, target);
         }
       },
     });
   }
-  function chooseTool(next: Tool) {
-    setTool(next);
-    if (next === 'text' && color === '#edbd39') setColor('#334155');
-    if (selection && ['highlight', 'underline'].includes(next)) {
-      reader.current?.send('annotate', { tool: next });
-      setSelection(null);
-    }
+  async function relocate(from: string, to: string) {
+    await model.flush();
+    setWorkspace(await invoke('move', { from, to }));
+    model.move(from, to);
   }
-  function event(e: FrameEvent) {
+  function chooseTool(next: Tool) {
+    if (selection && ['highlight', 'underline'].includes(next)) {
+      annotateSelection(next as 'highlight' | 'underline');
+      return;
+    }
+    activateTool(next);
+    if (next === 'text' && color === defaultColor) setColor(annotationColors[4].value);
+  }
+  function annotateSelection(type: 'highlight' | 'underline') {
+    sendToActive('annotate', { tool: type });
+    setSelection(null);
+  }
+  function clearSelection() {
+    window.getSelection()?.removeAllRanges();
+    sendToActive('clear-selection');
+    setSelection(null);
+  }
+  function event(id: string, e: FrameEvent) {
+    const doc = model.docsRef.current.find((d) => d.id === id);
     if (!doc) return;
-    const id = doc.id;
     switch (e.type) {
+      case 'activate':
+        if (model.active !== id) selectDocument(id);
+        break;
       case 'pointerdown':
+        window.getSelection()?.removeAllRanges();
+        if (model.active !== id) selectDocument(id);
         setInkSettingsOpen(false);
         break;
       case 'outline':
-        setOutline(e.items);
+        patchReader(id, { outline: e.items });
         break;
       case 'selection':
-        setSelection(e.quote);
+        patchReader(id, { selection: e.quote });
         break;
+      case 'zoom-wheel': {
+        if (!Number.isFinite(e.delta)) break;
+        const zoom = mode === 'read' ? zoomAfterWheel(doc.data.zoom, e.delta) : 0;
+        if (mode === 'read' && zoom !== doc.data.zoom) {
+          if (model.active !== id) selectDocument(id);
+          model.data(id, { zoom }, true);
+          setInkSettingsOpen(false);
+        } else
+          readers.current
+            .get(id)
+            ?.send('zoom-state', { scale: zoom || 1, enabled: mode === 'read' });
+        break;
+      }
       case 'scroll':
         if (Math.abs(e.scroll - doc.data.scroll) > 3) model.data(id, { scroll: e.scroll });
-        setProgress(Math.max(0, Math.min(100, e.progress || 0)));
+        patchReader(id, { progress: Math.max(0, Math.min(100, e.progress || 0)) });
         break;
       case 'orphans':
-        setOrphans(e.ids);
+        patchReader(id, { orphans: e.ids });
         break;
       case 'create': {
         const a = e.annotation;
@@ -381,12 +617,11 @@ export default function App() {
         )
           return;
         model.annotate(id, (all) => [...all, a]);
-        setSelected(a.id);
-        setSelection(null);
+        patchReader(id, { selected: a.id, selection: null });
         break;
       }
       case 'select-annotation':
-        setSelected(e.id);
+        patchReader(id, { selected: e.id });
         break;
       case 'update-annotation':
         if (e.patch?.size && doc.data.annotations.find((a) => a.id === e.id)?.type === 'sticky')
@@ -415,11 +650,17 @@ export default function App() {
         model.annotate(id, (all) => all.filter((a) => a.id !== e.id));
         break;
       case 'escape':
-        setTool('select');
-        setSelection(null);
+        window.getSelection()?.removeAllRanges();
+        activateTool('select');
+        patchReader(id, { selection: null });
+        break;
+      case 'switch-tool':
+        if (mode !== 'read') break;
+        if (model.active !== id) selectDocument(id);
+        switchRecentTool();
         break;
       case 'shortcut':
-        if (e.key === 's') save();
+        if (e.key === 's') saveDocument(id);
         if (e.key === 'f') startFind();
         if (e.key === 'z') model.undo(id, e.shift);
         break;
@@ -433,11 +674,12 @@ export default function App() {
             const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
             if (parts.shift() !== workspace?.token) return;
             const path = parts.join('/');
-            if (/\.html?$/i.test(path)) await model.open(path);
+            if (/\.html?$/i.test(path))
+              await openDocument(path, split?.right === id ? 'right' : 'left');
             else notify('该链接不是 HTML 文档');
           } else if (!isDesktop && url.pathname.startsWith('/__asset/')) {
             const path = url.pathname.split('/').slice(3).map(decodeURIComponent).join('/');
-            await model.open(path);
+            await openDocument(path, split?.right === id ? 'right' : 'left');
           } else if (['https:', 'http:'].includes(url.protocol)) {
             if (isDesktop) await invoke('external', { url: url.toString() });
             else window.open(url.toString(), '_blank', 'noopener');
@@ -478,11 +720,19 @@ export default function App() {
       URL.revokeObjectURL(url);
     }
   }
-  const url = doc
-    ? preview?.id === doc.id
-      ? preview.url
-      : documentUrl(doc.path, doc.preview)
-    : '';
+  const files = htmlFiles(workspace?.tree || []);
+  const readingSplit = mode === 'read' && split;
+  const panes: { side: PaneSide; doc: OpenDocument | undefined }[] = readingSplit
+    ? [
+        { side: 'left', doc: model.docs.find((d) => d.id === readingSplit.left) },
+        { side: 'right', doc: model.docs.find((d) => d.id === readingSplit.right) },
+      ]
+    : [{ side: 'left', doc }];
+  const existingDragPane = readingDrag
+    ? panes.find((pane) => pane.doc?.path === readingDrag)
+    : undefined;
+  const dropPreviewSide = existingDragPane?.side || readingDropSide || 'right';
+  const dropBoundary = readingSplit ? splitRatio : 0.5;
   return (
     <div className={`app-shell ${left ? '' : 'hide-left'} ${right ? '' : 'hide-right'}`}>
       <header className="titlebar">
@@ -502,28 +752,40 @@ export default function App() {
       </header>
       <div className="workspace-layout">
         <FileTree
+          key={workspace?.token || 'empty'}
           onClose={() => setLeft(true)}
           workspace={workspace}
           active={doc?.path}
-          onOpen={(p) => run(() => model.open(p))}
+          onOpen={(p) => run(() => openDocument(p))}
           onFolder={openFolder}
           onAction={fileAction}
+          onReadingDrag={(path) => {
+            setReadingDrag(path);
+            setReadingDropSide(null);
+          }}
+          onMove={async (from, to) => {
+            try {
+              await relocate(from, to);
+              notify(
+                `已移动到 ${to.includes('/') ? to.slice(0, to.lastIndexOf('/')) : '项目根目录'}`,
+              );
+              return true;
+            } catch (e) {
+              notify((e as Error).message, true);
+              return false;
+            }
+          }}
           onRefresh={() => run(refresh)}
         />
         <main className="main-panel">
           <DocumentTabs
             docs={model.docs}
             active={model.active}
-            onSelect={model.setActive}
-            onClose={(id) => {
-              const d = model.docs.find((d) => d.id === id);
-              if (d)
-                guardDirty([d], async () => {
-                  await model.flush();
-                  model.close(id);
-                });
-            }}
+            onSelect={selectDocument}
+            onClose={requestCloseDocument}
             onNew={() => fileAction('create-file', '')}
+            split={!!split}
+            onSplit={toggleSplit}
           />
           <Toolbar
             mode={mode}
@@ -547,6 +809,8 @@ export default function App() {
             disabled={!doc}
             strokeWidth={strokeWidth}
             eraserSize={eraserSize}
+            eraserMode={eraserMode}
+            onEraserMode={setEraserMode}
             onStrokeWidth={setStrokeWidth}
             onEraserSize={setEraserSize}
             settingsOpen={inkSettingsOpen}
@@ -564,21 +828,17 @@ export default function App() {
                   setFindMissing(false);
                 }}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter')
-                    reader.current?.send('find', { query, backwards: e.shiftKey });
+                  if (e.key === 'Enter') sendToActive('find', { query, backwards: e.shiftKey });
                 }}
               />
               {findMissing ? <span>未找到</span> : null}
               <IconButton
                 label="上一个结果"
-                onClick={() => reader.current?.send('find', { query, backwards: true })}
+                onClick={() => sendToActive('find', { query, backwards: true })}
               >
                 <ChevronLeft size={16} />
               </IconButton>
-              <IconButton
-                label="下一个结果"
-                onClick={() => reader.current?.send('find', { query })}
-              >
+              <IconButton label="下一个结果" onClick={() => sendToActive('find', { query })}>
                 <ChevronRight size={16} />
               </IconButton>
               <IconButton label="关闭查找" onClick={() => setFinding(false)}>
@@ -587,7 +847,9 @@ export default function App() {
             </div>
           ) : null}
           {doc ? (
-            <div className={`document-workbench ${mode === 'source' ? 'split-editor' : ''}`}>
+            <div
+              className={`document-workbench ${mode === 'source' ? 'split-editor' : ''} ${readingSplit ? 'split-reading' : ''}`}
+            >
               {mode === 'source' ? (
                 <div className="editor-pane">
                   <div className="pane-caption">
@@ -604,57 +866,199 @@ export default function App() {
                   </Suspense>
                 </div>
               ) : null}
-              <div className="reader-pane">
-                {mode === 'source' ? (
-                  <div className="pane-caption">
-                    <BookOpen size={13} />
-                    实时预览<span>修改后自动更新</span>
-                  </div>
-                ) : null}
-                <ReaderFrame
-                  key={doc.id}
-                  ref={reader}
-                  url={url}
-                  annotations={doc.data.annotations}
-                  tool={mode === 'source' ? 'select' : tool}
-                  color={color}
-                  strokeWidth={strokeWidth}
-                  eraserSize={eraserSize}
-                  stickySize={stickySize}
-                  zoom={mode === 'source' ? 0 : doc.data.zoom}
-                  scroll={doc.data.scroll}
-                  onEvent={event}
-                />
-              </div>
-              {selection && mode === 'read' ? (
-                <div className="selection-toolbar" onMouseDown={(e) => e.preventDefault()}>
-                  <span>已选 {selection.exact.length} 字</span>
-                  {rebind ? (
-                    <button
-                      onClick={() => {
-                        model.annotate(doc.id, (all) =>
-                          all.map((a) => (a.id === rebind ? { ...a, quote: selection } : a)),
-                        );
-                        setSelection(null);
-                        setRebind(null);
-                        notify('批注已关联到新的原文');
-                      }}
-                    >
-                      <MessageSquare size={15} />
-                      关联此批注
-                    </button>
+              {panes.map(({ side, doc: paneDoc }, index) => (
+                <Fragment key={side}>
+                  {index === 1 ? (
+                    <ReadingResizer ratio={splitRatio} onChange={setSplitRatio} />
                   ) : null}
-                  <button onClick={() => chooseTool('highlight')}>
-                    <Highlighter size={15} />
-                    高亮
-                  </button>
-                  <button onClick={() => chooseTool('underline')}>
-                    <Underline size={15} />
-                    划线
-                  </button>
-                  <IconButton label="取消文字选择" onClick={() => setSelection(null)}>
-                    <X size={13} />
-                  </IconButton>
+                  <div
+                    className={`reader-pane${readingSplit ? ' reading-column' : ''}${paneDoc?.id === doc.id ? ' active-column' : ''}`}
+                    data-pane={side}
+                    data-document-id={paneDoc?.id}
+                    style={
+                      readingSplit && index === 0
+                        ? { flex: `0 0 calc(${splitRatio * 100}% - 3px)` }
+                        : undefined
+                    }
+                  >
+                    {readingSplit ? (
+                      <div
+                        className="reading-column-header"
+                        onPointerDown={() => {
+                          focusedSide.current = side;
+                          if (paneDoc) selectDocument(paneDoc.id);
+                        }}
+                      >
+                        <button
+                          className="pane-focus"
+                          aria-label={`激活${side === 'left' ? '左' : '右'}栏`}
+                          onClick={() => {
+                            if (paneDoc) selectDocument(paneDoc.id);
+                          }}
+                        >
+                          <BookOpen size={14} />
+                          {side === 'left' ? '左栏' : '右栏'}
+                        </button>
+                        {paneDoc ? (
+                          <button
+                            className="pane-document-title"
+                            title={paneDoc.path}
+                            onClick={() => selectDocument(paneDoc.id)}
+                          >
+                            {paneDoc.path.split('/').at(-1)}
+                          </button>
+                        ) : (
+                          <select
+                            aria-label={`${side === 'left' ? '左' : '右'}栏文档`}
+                            value=""
+                            onChange={(e) => {
+                              if (e.target.value) run(() => openDocument(e.target.value, side));
+                            }}
+                          >
+                            <option value="" disabled>
+                              选择另一篇文档…
+                            </option>
+                            {files
+                              .filter(
+                                (path) =>
+                                  !panes.some((p) => p.side !== side && p.doc?.path === path),
+                              )
+                              .map((path) => (
+                                <option key={path} value={path}>
+                                  {path}
+                                </option>
+                              ))}
+                          </select>
+                        )}
+                        <span className="pane-active-label">
+                          {paneDoc?.id === doc.id ? '当前' : ''}
+                        </span>
+                        <IconButton
+                          label={`关闭${side === 'left' ? '左' : '右'}栏文档`}
+                          help="关闭这篇文档，另一篇继续单栏阅读"
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={() =>
+                            paneDoc ? requestCloseDocument(paneDoc.id) : setSplit(null)
+                          }
+                        >
+                          <X size={14} />
+                        </IconButton>
+                      </div>
+                    ) : mode === 'source' ? (
+                      <div className="pane-caption">
+                        <BookOpen size={13} />
+                        实时预览<span>修改后自动更新</span>
+                      </div>
+                    ) : null}
+                    {paneDoc ? (
+                      <DocumentReader
+                        key={paneDoc.id}
+                        ref={(handle) => {
+                          if (handle) readers.current.set(paneDoc.id, handle);
+                          else readers.current.delete(paneDoc.id);
+                        }}
+                        doc={paneDoc}
+                        onError={onError}
+                        annotations={paneDoc.data.annotations}
+                        selected={readerStates[paneDoc.id]?.selected || null}
+                        tool={mode === 'source' ? 'select' : tool}
+                        color={color}
+                        strokeWidth={strokeWidth}
+                        eraserSize={eraserSize}
+                        eraserMode={eraserMode}
+                        stickySize={stickySize}
+                        zoom={mode === 'source' ? 0 : paneDoc.data.zoom}
+                        zoomable={mode === 'read'}
+                        scroll={paneDoc.data.scroll}
+                        onEvent={(e) => event(paneDoc.id, e)}
+                      />
+                    ) : (
+                      <div className="reading-column-empty">
+                        <BookOpen size={30} />
+                        <strong>选择另一篇文档</strong>
+                        <span>从工作空间拖入 HTML 文件，也可以在上方选择。</span>
+                      </div>
+                    )}
+                    {paneDoc?.id === doc.id && selection && mode === 'read' ? (
+                      <div className="selection-toolbar" onMouseDown={(e) => e.preventDefault()}>
+                        <span>已选 {selection.exact.length} 字</span>
+                        {rebind ? (
+                          <button
+                            onClick={() => {
+                              model.annotate(doc.id, (all) =>
+                                all.map((a) => (a.id === rebind ? { ...a, quote: selection } : a)),
+                              );
+                              clearSelection();
+                              setRebind(null);
+                              notify('批注已关联到新的原文');
+                            }}
+                          >
+                            <MessageSquare size={15} />
+                            关联此批注
+                          </button>
+                        ) : null}
+                        <button onClick={() => annotateSelection('highlight')}>
+                          <Highlighter size={15} />
+                          高亮
+                        </button>
+                        <button onClick={() => annotateSelection('underline')}>
+                          <Underline size={15} />
+                          划线
+                        </button>
+                        <IconButton label="取消文字选择" onClick={clearSelection}>
+                          <X size={13} />
+                        </IconButton>
+                      </div>
+                    ) : null}
+                  </div>
+                </Fragment>
+              ))}
+              {readingDrag ? (
+                <div
+                  className="reading-drop-overlay"
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.dataTransfer.dropEffect = 'copy';
+                    const bounds = e.currentTarget.getBoundingClientRect();
+                    setReadingDropSide(
+                      e.clientX < bounds.left + bounds.width * dropBoundary ? 'left' : 'right',
+                    );
+                  }}
+                  onDragLeave={(e) => {
+                    if (!e.currentTarget.contains(e.relatedTarget as Node | null))
+                      setReadingDropSide(null);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const path = e.dataTransfer.getData('application/x-folio-file');
+                    const bounds = e.currentTarget.getBoundingClientRect();
+                    const side =
+                      e.clientX < bounds.left + bounds.width * dropBoundary ? 'left' : 'right';
+                    setReadingDrag(null);
+                    setReadingDropSide(null);
+                    if (path === readingDrag) run(() => dropIntoReading(path, side));
+                  }}
+                >
+                  <div
+                    className={`reading-drop-preview ${readingDropSide ? 'hovered' : ''}`}
+                    style={{
+                      left: dropPreviewSide === 'left' ? 0 : `${dropBoundary * 100}%`,
+                      right:
+                        dropPreviewSide === 'left' && (readingSplit || !existingDragPane)
+                          ? `${(1 - dropBoundary) * 100}%`
+                          : 0,
+                    }}
+                  >
+                    <BookOpen size={30} />
+                    <strong>
+                      {existingDragPane
+                        ? '松开，切换到已打开的文章'
+                        : `松开，在${dropPreviewSide === 'left' ? '左' : '右'}栏打开`}
+                    </strong>
+                    <span>{readingDrag.split('/').at(-1)}</span>
+                  </div>
                 </div>
               ) : null}
             </div>
@@ -677,7 +1081,7 @@ export default function App() {
           onClose={() => setRight(false)}
           onRebind={(id) => {
             setRebind(id);
-            setTool('select');
+            activateTool('select');
             setMode('read');
             notify('请选中新的原文，然后点击“关联此批注”');
           }}
@@ -688,7 +1092,7 @@ export default function App() {
           selected={selected}
           onSelect={(id) => {
             setSelected(id);
-            reader.current?.send('jump', { id });
+            sendToActive('jump', { id });
           }}
           onUpdate={(id, note) =>
             doc &&
@@ -696,7 +1100,7 @@ export default function App() {
           }
           onDelete={(id) => doc && model.annotate(doc.id, (all) => all.filter((a) => a.id !== id))}
           onNote={(note) => doc && model.data(doc.id, { note })}
-          onHeading={(id) => reader.current?.send('heading', { id })}
+          onHeading={(id) => sendToActive('heading', { id })}
           onExport={exportNotes}
           orphans={orphans}
           saving={model.saving}
@@ -713,7 +1117,10 @@ export default function App() {
             ? doc?.draft !== doc?.source
               ? '源码有未保存的修改'
               : '源码修改会自动保留历史备份'
-            : toolHints[tool]}
+            : tool === 'eraser'
+              ? `${eraserMode === 'stroke' ? '笔画擦除 · 碰到即擦除整笔' : '局部擦除 · 只擦掉经过的部分'} · 一次拖动可一次撤销`
+              : toolHints[tool]}
+          {mode === 'read' ? ' · Tab 切换最近两个工具' : ''}
         </span>
         <div className="status-spacer" />
         <span>{doc?.data.annotations.length || 0} 条批注</span>

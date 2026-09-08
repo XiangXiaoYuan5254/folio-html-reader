@@ -121,6 +121,20 @@ async function lineDraw(label, from, to) {
   await page.getByLabel(label, { exact: true }).click();
   const f = await rendered();
   const box = await screenBox(f.locator('#draw-area'));
+  if (label === '画笔')
+    await f.evaluate(() => {
+      window.penCursorSamples = [];
+      window.samplePenCursor = true;
+      const sample = () => {
+        window.penCursorSamples.push({
+          extraDot:
+            getComputedStyle(document.querySelector('[data-folio-cursor]')).display !== 'none',
+          native: getComputedStyle(document.querySelector('[data-folio-ui=overlay]')).cursor,
+        });
+        if (window.samplePenCursor) requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
   await page.mouse.move(box.x + from[0], box.y + from[1]);
   await page.mouse.down();
   for (let i = 1; i <= 10; i++)
@@ -129,6 +143,42 @@ async function lineDraw(label, from, to) {
       box.y + from[1] + ((to[1] - from[1]) * i) / 10,
     );
   await page.mouse.up();
+  await noLocator(f, 'completed stroke does not enable sidebar locator');
+  if (label === '画笔') {
+    const samples = await f.evaluate(() => {
+      window.samplePenCursor = false;
+      return window.penCursorSamples;
+    });
+    assert.ok(samples.length > 0);
+    assert.ok(
+      samples.every((s) => !s.extraDot && s.native.includes('data:image/svg+xml')),
+      'moving and drawing use one native pen cursor without a trailing dot',
+    );
+  }
+}
+
+async function noLocator(f, label) {
+  await f.locator('[data-selection-outline]').waitFor({ state: 'hidden' });
+  // Keep observing through the create event, React sync, and subsequent paints.
+  // An immediate assertion after pointerup missed the original regression.
+  const appeared = await f.evaluate(
+    () =>
+      new Promise((resolve) => {
+        let seen = !!document.querySelector('[data-selection-outline]');
+        const observer = new MutationObserver(() => {
+          seen ||= !!document.querySelector('[data-selection-outline]');
+        });
+        observer.observe(document.querySelector('[data-folio-ui=overlay]'), {
+          childList: true,
+          subtree: true,
+        });
+        setTimeout(() => {
+          observer.disconnect();
+          resolve(seen);
+        }, 300);
+      }),
+  );
+  assert.equal(appeared, false, label);
 }
 
 const sampleName = '00_批注测试.html';
@@ -200,6 +250,7 @@ try {
     'sticky typing saved',
   );
   assert.equal(await page.locator('.inspector').isVisible(), false);
+  await noLocator(f, 'creating and typing a sticky note does not show a locator');
   let sticky = (await dataFor(sampleName)).data.annotations[0];
   const stickyId = sticky.id,
     startPosition = sticky.points[0];
@@ -245,6 +296,7 @@ try {
     'highlight saved',
   );
   assert.equal(await popup.isVisible(), false, 'highlight creation leaves the popup closed');
+  await noLocator(f, 'creating a highlight does not show a locator');
   await page.mouse.click(target.x + 40, target.y + target.height / 2);
   await popup.waitFor();
   await popup.getByLabel('添加笔记', { exact: true }).click();
@@ -258,6 +310,7 @@ try {
   );
   assert.equal(await page.locator('.inspector').isVisible(), false);
   await popup.getByLabel('完成笔记', { exact: true }).click();
+  await noLocator(f, 'editing a highlight note on the page does not show a locator');
   const indicator = f.getByLabel('查看批注笔记', { exact: true });
   await indicator.waitFor();
   await page.mouse.move(target.x + 40, target.y + target.height / 2);
@@ -291,6 +344,12 @@ try {
   );
   assert.equal(await page.locator('.inspector').isVisible(), false);
   const beforeErase = (await dataFor(sampleName)).data.annotations.filter((a) => a.type === 'pen');
+  await page.getByLabel('显示或隐藏批注栏', { exact: true }).click();
+  const selectedPen = page.locator(`[data-annotation="${beforeErase[0].id}"]`);
+  await selectedPen.getByRole('button', { name: '定位画笔批注', exact: true }).click();
+  await f.locator(`[data-selection-outline="${beforeErase[0].id}"]`).waitFor();
+  assert.ok((await selectedPen.getAttribute('class')).includes('selected'));
+  await page.getByLabel('收起批注栏', { exact: true }).click();
   await page.getByLabel('橡皮擦', { exact: true }).click();
   const box = await screenBox(f.locator('#draw-area'));
   // A fast single move across both long strokes must cut both, not delete either.
@@ -368,9 +427,13 @@ try {
   await page.mouse.up();
   await page.keyboard.up('e');
   await page.mouse.move(box.x + 500, box.y + 65);
+  await f.locator('[data-folio-cursor]').waitFor({ state: 'hidden' });
   await waitFor(
-    async () => (await f.locator('[data-folio-cursor]').getAttribute('r')) === '6',
-    'release E restores 12 px pen',
+    async () =>
+      (
+        await f.locator('[data-folio-ui=overlay]').evaluate((e) => getComputedStyle(e).cursor)
+      ).includes('data:image/svg+xml'),
+    'release E restores the single native pen cursor',
   );
   await waitFor(
     async () =>
@@ -429,6 +492,30 @@ try {
   );
   console.log(
     'PASS: deletion undo, document reopen and application restart retain notes, positions, sizes, erased fragments and hidden inspector',
+  );
+
+  await noLocator(f, 'restarting does not restore the sidebar locator');
+  await page.getByLabel('文本注释', { exact: true }).click();
+  const textLocation = await framePoint(f, 100, 500);
+  await page.mouse.click(textLocation.x, textLocation.y);
+  const textCard = f.getByRole('group', { name: '页面文本注释', exact: true });
+  const textEditor = textCard.getByLabel('文本注释内容', { exact: true });
+  await textEditor.fill('这条文字只在列表定位时显示虚线');
+  await noLocator(f, 'creating and editing page text does not show a locator');
+  await page.getByLabel('显示或隐藏批注栏', { exact: true }).click();
+  await page.getByRole('button', { name: '查看页面中的文本注释', exact: true }).click();
+  await f.locator('[data-selection-outline]').waitFor();
+  await textEditor.click();
+  await textEditor.fill('继续编辑也不显示虚线');
+  await noLocator(f, 'editing page text clears a previous sidebar locator');
+  await page.getByLabel('显示或隐藏文件树', { exact: true }).click();
+  await noLocator(f, 'later layout sync does not re-enable the locator');
+  await textCard.hover();
+  await textCard.getByLabel('删除文本注释', { exact: true }).click();
+  await page.getByLabel('显示或隐藏文件树', { exact: true }).click();
+  await page.getByLabel('收起批注栏', { exact: true }).click();
+  console.log(
+    'PASS: only explicit sidebar navigation enables the dashed locator; drawing, highlights, sticky notes, page text editing and later sync stay clear',
   );
 
   const legacy = sampleFiles.find((name) => name.startsWith('55_L1_')) || '03_内嵌便签示例.html';

@@ -135,7 +135,7 @@ class Workspace {
       session: this.index.session || null,
     };
   }
-  async saveSession({ paths, active }) {
+  async saveSession({ paths, active, split }) {
     return this.serial(async () => {
       if (
         !Array.isArray(paths) ||
@@ -145,6 +145,15 @@ class Workspace {
       )
         throw Error('无效的阅读会话');
       this.index.session = { paths, active };
+      if (
+        split &&
+        typeof split.left === 'string' &&
+        typeof split.right === 'string' &&
+        split.left !== split.right &&
+        paths.includes(split.left) &&
+        paths.includes(split.right)
+      )
+        this.index.session.split = { left: split.left, right: split.right };
       await this.persistIndex();
       return true;
     });
@@ -248,6 +257,8 @@ class Workspace {
       if (!from || !to || from === to) throw Error('请输入不同的目标路径');
       const src = await this.resolve(from),
         dst = await this.resolve(to, { create: true });
+      if (src === this.root) throw Error('不能移动项目根目录');
+      if (dst.startsWith(src + path.sep)) throw Error('不能把文件夹移动到它自己或它的子文件夹中');
       if (await fs.stat(dst).catch(() => null)) throw Error('目标名称已存在');
       if (isHtml(from) && !isHtml(to)) throw Error('请保留 .html 或 .htm 扩展名');
       await fs.rename(src, dst);
@@ -256,6 +267,22 @@ class Workspace {
           this.index.files[to + key.slice(from.length)] = this.index.files[key];
           delete this.index.files[key];
         }
+      if (this.index.session) {
+        const movedPath = (p) =>
+          p === from || p.startsWith(from + '/') ? to + p.slice(from.length) : p;
+        this.index.session = {
+          paths: this.index.session.paths.map(movedPath),
+          active: movedPath(this.index.session.active),
+          ...(this.index.session.split
+            ? {
+                split: {
+                  left: movedPath(this.index.session.split.left),
+                  right: movedPath(this.index.session.split.right),
+                },
+              }
+            : {}),
+        };
+      }
       await this.persistIndex();
       return this.summary();
     });

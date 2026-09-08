@@ -1,4 +1,19 @@
-import type { Annotation, Point } from '../types';
+import type { Annotation, EraserMode, Point } from '../types';
+
+export function inkBounds(paths: Point[][]) {
+  let left = Infinity,
+    top = Infinity,
+    right = -Infinity,
+    bottom = -Infinity;
+  for (const path of paths)
+    for (const p of path) {
+      left = Math.min(left, p.x);
+      top = Math.min(top, p.y);
+      right = Math.max(right, p.x);
+      bottom = Math.max(bottom, p.y);
+    }
+  return Number.isFinite(left) ? { left, top, width: right - left, height: bottom - top } : null;
+}
 
 export function inkPaths(a: Annotation): Point[][] {
   if (a.paths) return a.paths;
@@ -84,14 +99,22 @@ function sweptIntervals(a: Point, b: Point, from: Point, to: Point, r: number) {
   return merged;
 }
 
-export function erasePaths(paths: Point[][], from: Point, to: Point, radius: number): Point[][] {
+export function erasePaths(
+  paths: Point[][],
+  from: Point,
+  to: Point,
+  radius: number,
+  mode: EraserMode = 'partial',
+): Point[][] {
   let changed = false;
   const result: Point[][] = [];
   for (const path of paths) {
     if (!path.length) continue;
     if (path.length === 1) {
-      if (sweptIntervals(path[0], path[0], from, to, radius).length) changed = true;
-      else result.push(path);
+      if (sweptIntervals(path[0], path[0], from, to, radius).length) {
+        if (mode === 'stroke') return [];
+        changed = true;
+      } else result.push(path);
       continue;
     }
     let fragment: Point[] = [];
@@ -103,6 +126,8 @@ export function erasePaths(paths: Point[][], from: Point, to: Point, radius: num
       const a = path[i - 1],
         b = path[i];
       const removed = sweptIntervals(a, b, from, to, radius);
+      // All fragments and arrowheads still belong to one original annotation.
+      if (mode === 'stroke' && removed.length) return [];
       if (removed.length) changed = true;
       const kept: Interval[] = [];
       let cursor = 0;
