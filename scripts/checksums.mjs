@@ -5,9 +5,9 @@ import path from 'node:path';
 
 const { version } = JSON.parse(await fs.readFile('package.json', 'utf8'));
 const files = (await fs.readdir('release'))
-  .filter((name) => name.startsWith(`Folio-${version}-mac-`) && /\.(dmg|zip)$/.test(name))
+  .filter((name) => name.startsWith(`Folio-${version}-mac-arm64.`) && /\.(dmg|zip)$/.test(name))
   .sort();
-if (!files.length) throw Error('No installers found; run npm run dist:mac first.');
+if (files.length !== 2) throw Error('Expected arm64 DMG and ZIP; run npm run dist:mac first.');
 const lines = [];
 for (const file of files) {
   const hash = createHash('sha256');

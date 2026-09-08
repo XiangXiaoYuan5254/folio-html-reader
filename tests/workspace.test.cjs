@@ -259,3 +259,60 @@ test('旧原文笔记合并为高亮，保留所有内容、定位和身份，�
   assert.deepEqual(JSON.parse(await fs.readFile(file, 'utf8')), expected);
   assert.equal(await fs.readFile(path.join(root, d.path), 'utf8'), d.source);
 });
+
+test('PDF 二进制保持原样，批注、缩放与混合双栏随移动和重启恢复', async (t) => {
+  const { w, root } = await setup(t);
+  const bytes = Buffer.from('%PDF-1.7\n\x00\x80\xff binary fixture\n%%EOF', 'binary');
+  await fs.writeFile(path.join(root, '资料.PDF'), bytes);
+  const info = await w.summary();
+  assert.equal(info.tree.find((f) => f.path === '资料.PDF').kind, 'pdf');
+  const d = await w.document('资料.PDF');
+  assert.equal(d.kind, 'pdf');
+  assert.equal(d.source, '');
+  assert.equal(d.version, require('node:crypto').createHash('sha256').update(bytes).digest('hex'));
+  const data = {
+    ...d.data,
+    zoom: 1.37,
+    scroll: 1250,
+    note: 'PDF 阅读笔记',
+    annotations: [
+      {
+        id: 'pdf-highlight',
+        type: 'highlight',
+        color: '#db374d',
+        note: '原文笔记',
+        quote: {
+          exact: 'test',
+          prefix: '',
+          suffix: '',
+          start: 0,
+          end: 4,
+          pdfRects: [{ page: 2, left: 50, top: 80, width: 100, height: 20 }],
+        },
+      },
+    ],
+  };
+  await w.saveData({ id: d.id, data });
+  await w.saveSession({
+    paths: ['示例.html', '资料.PDF'],
+    active: '资料.PDF',
+    split: { left: '资料.PDF', right: '示例.html' },
+  });
+  await assert.rejects(
+    w.saveSource({ path: '资料.PDF', source: '<h1>Oops</h1>', version: d.version }),
+    /HTML/,
+  );
+  await assert.rejects(w.move({ from: '资料.PDF', to: '资料.html' }), /pdf/);
+  await w.create({ path: 'PDF归档', kind: 'folder' });
+  await w.move({ from: '资料.PDF', to: 'PDF归档/资料.pdf' });
+  const fresh = new Workspace();
+  await fresh.open(root);
+  const again = await fresh.document('PDF归档/资料.pdf');
+  assert.equal(again.id, d.id);
+  assert.deepEqual(again.data, data);
+  assert.deepEqual(await fs.readFile(path.join(root, 'PDF归档/资料.pdf')), bytes);
+  assert.deepEqual((await fresh.summary()).session.split, {
+    left: 'PDF归档/资料.pdf',
+    right: '示例.html',
+  });
+});

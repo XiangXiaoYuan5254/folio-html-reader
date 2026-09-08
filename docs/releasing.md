@@ -1,6 +1,6 @@
 # 发布 macOS 安装包
 
-环境：macOS、Node.js 22.12+。仅包含 JavaScript 依赖，使用 electron-builder 为 arm64 和 x64 分别打包。
+环境：macOS、Node.js 22.13+。PDF 渲染资源随应用离线打包，使用 electron-builder 只为 Apple 芯片 arm64 打包。
 
 ```sh
 npm ci
@@ -9,7 +9,7 @@ npm run test:e2e
 npm run dist:mac
 ```
 
-`release/` 会包含两个架构各自的 DMG / ZIP，以及 `SHA256SUMS.txt`。DMG 中包含页间、Applications 文件夹快捷方式和中文安装说明。安装包只包含 `samples/` 中的原创演示资料。
+`release/` 会包含arm64 的 DMG / ZIP，以及 `SHA256SUMS.txt`。DMG 中包含页间、Applications 文件夹快捷方式和中文安装说明。安装包只包含 `samples/` 中的原创演示资料。
 
 发布前检查：
 
@@ -18,11 +18,11 @@ hdiutil verify release/Folio-版本号-mac-arm64.dmg
 codesign --verify --deep --strict release/mac-arm64/页间.app
 ```
 
-在独立的临时用户目录启动打包应用，检查首次启动、演示文档和批注保存。Intel 版本需要单独检查架构；Apple Silicon 上的 Rosetta 测试不能替代 Intel 真机测试。
+在独立的临时用户目录启动打包应用，检查首次启动、演示文档和批注保存。当前不构建或发布 Intel 版本。
 
 ## GitHub Release
 
-更新 `package.json` 与锁文件的版本，提交后创建同版本标签。通过 GitHub CLI 创建草稿 Release，上传两种架构的 DMG / ZIP、中文安装说明和校验文件；检查附件后再发布。发布说明应注明最低系统版本、芯片选择、签名状态及本次变更。
+更新 `package.json` 与锁文件的版本，提交后创建同版本标签。通过 GitHub CLI 创建草稿 Release，上传arm64 的 DMG / ZIP、中文安装说明和校验文件；检查附件后再发布。发布说明应注明最低系统版本、Apple 芯片要求、签名状态及本次变更。
 
 源码仓库忽略本地阅读材料、`.html-reader`、构建目录和个人环境配置。请勿把整份个人工作空间作为附件上传。
 

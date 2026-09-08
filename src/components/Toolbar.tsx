@@ -16,6 +16,8 @@ import {
   SlidersHorizontal,
   Type,
   Sparkles,
+  Maximize,
+  Minimize,
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { EraserMode, Tool } from '../types';
@@ -63,6 +65,9 @@ const tools = [
 ] as const;
 export function Toolbar(p: {
   mode: 'read' | 'source';
+  pdf?: boolean;
+  focusMode: boolean;
+  onFocusMode: () => void;
   onMode: (v: 'read' | 'source') => void;
   tool: Tool;
   onTool: (v: Tool) => void;
@@ -126,14 +131,19 @@ export function Toolbar(p: {
   }, [settings, setSettings]);
   return (
     <div className="reader-toolbar">
-      <IconButton label="显示或隐藏文件树" onClick={p.onLeft}>
+      <IconButton className="focus-hide" label="显示或隐藏文件树" onClick={p.onLeft}>
         <PanelLeft size={17} />
       </IconButton>
-      <div className="mode-switch">
+      <div className="mode-switch focus-hide">
         <button className={p.mode === 'read' ? 'active' : ''} onClick={() => p.onMode('read')}>
           阅读
         </button>
-        <button className={p.mode === 'source' ? 'active' : ''} onClick={() => p.onMode('source')}>
+        <button
+          disabled={p.pdf}
+          title={p.pdf ? 'PDF 支持阅读和批注，源码编辑仅适用于 HTML' : '编辑 HTML 源码'}
+          className={p.mode === 'source' ? 'active' : ''}
+          onClick={() => p.onMode('source')}
+        >
           源码
         </button>
       </div>
@@ -301,8 +311,17 @@ export function Toolbar(p: {
       <IconButton label="查找文内文字" onClick={p.onFind} disabled={p.disabled}>
         <Search size={17} />
       </IconButton>
-      <IconButton label="显示或隐藏批注栏" onClick={p.onRight}>
+      <IconButton className="focus-hide" label="显示或隐藏批注栏" onClick={p.onRight}>
         <PanelRight size={17} />
+      </IconButton>
+      <IconButton
+        label={p.focusMode ? '退出专注阅读' : '专注阅读'}
+        help="全屏沉浸阅读 · ⌘ ⇧ F 切换 · Esc 退出"
+        active={p.focusMode}
+        disabled={p.disabled}
+        onClick={p.onFocusMode}
+      >
+        {p.focusMode ? <Minimize size={17} /> : <Maximize size={17} />}
       </IconButton>
     </div>
   );

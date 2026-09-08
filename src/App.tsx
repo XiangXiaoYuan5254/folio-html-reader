@@ -12,6 +12,8 @@ import {
   X,
   AlertCircle,
   ChevronDown,
+  Minimize,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { invoke, subscribe, useWorkspace, isDesktop } from './api';
 import type {
@@ -37,6 +39,8 @@ import { Dialog } from './components/Dialog';
 import type { DialogOptions } from './components/Dialog';
 import { IconButton } from './components/IconButton';
 import { useDocuments } from './hooks/useDocuments';
+import { useFocusMode } from './hooks/useFocusMode';
+import { ReadingStatus } from './components/ReadingStatus';
 import { annotationColors, defaultColor, normalizeColor } from './colors';
 import { zoomAfterWheel } from './zoom';
 const SourceEditor = lazy(() => import('./components/SourceEditor'));
@@ -52,15 +56,17 @@ const toolHints: Record<Tool, string> = {
   rectangle: '拖动绘制矩形 · Esc 返回选择',
   eraser: '拖动擦除局部笔迹 · 一次拖动可一次撤销',
 };
-function firstHTML(tree: WorkspaceInfo['tree']): string | undefined {
+function firstDocument(tree: WorkspaceInfo['tree']): string | undefined {
   for (const n of tree) {
-    if (n.kind === 'html') return n.path;
-    const found = firstHTML(n.children || []);
+    if (n.kind === 'html' || n.kind === 'pdf') return n.path;
+    const found = firstDocument(n.children || []);
     if (found) return found;
   }
 }
-function htmlFiles(tree: WorkspaceInfo['tree']): string[] {
-  return tree.flatMap((n) => (n.kind === 'html' ? [n.path] : htmlFiles(n.children || [])));
+function readableFiles(tree: WorkspaceInfo['tree']): string[] {
+  return tree.flatMap((n) =>
+    n.kind === 'html' || n.kind === 'pdf' ? [n.path] : readableFiles(n.children || []),
+  );
 }
 type PaneSide = 'left' | 'right';
 type ReaderState = {
@@ -86,6 +92,7 @@ export default function App() {
   const onError = useCallback((s: string) => notify(s, true), [notify]);
   const model = useDocuments(onError);
   const doc = model.docs.find((d) => d.id === model.active);
+  const focus = useFocusMode(onError);
   const [split, setSplit] = useState<{ left: string; right: string | null } | null>(null);
   const focusedSide = useRef<PaneSide>('left');
   const [splitRatio, setSplitRatio] = useState(() => {
@@ -96,7 +103,8 @@ export default function App() {
       return 0.5;
     }
   });
-  const [mode, setMode] = useState<'read' | 'source'>('read');
+  const [htmlMode, setMode] = useState<'read' | 'source'>('read');
+  const mode = focus.enabled || doc?.kind === 'pdf' ? 'read' : htmlMode;
   const [tool, setTool] = useState<Tool>('select');
   const recentTools = useRef<{ current: Tool; previous: Tool | null }>({
     current: 'select',
@@ -208,7 +216,7 @@ export default function App() {
     run(async () => {
       const w = await invoke<WorkspaceInfo>('workspace');
       useWorkspace(w);
-      const paths = w.session?.paths || ([firstHTML(w.tree)].filter(Boolean) as string[]);
+      const paths = w.session?.paths || ([firstDocument(w.tree)].filter(Boolean) as string[]);
       for (const p of paths) {
         try {
           await model.open(p);
@@ -268,7 +276,16 @@ export default function App() {
     find: () => {},
     close: () => {},
     refresh: () => {},
+    focus: () => {},
+    exitFocus: () => {},
   });
+  liveActions.current.focus = () => {
+    if (!doc) return;
+    setFinding(false);
+    setInkSettingsOpen(false);
+    focus.setEnabled((value) => !value);
+  };
+  liveActions.current.exitFocus = () => focus.setEnabled(false);
   useEffect(
     () =>
       subscribe((e) => {
@@ -277,6 +294,7 @@ export default function App() {
         if (e.type === 'find') liveActions.current.find();
         if (e.type === 'close-request') liveActions.current.close();
         if (e.type === 'files-changed') liveActions.current.refresh();
+        if (e.type === 'toggle-focus') liveActions.current.focus();
       }),
     [],
   );
@@ -322,7 +340,9 @@ export default function App() {
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f' && !input) {
         e.preventDefault();
-        liveActions.current.find();
+        if (e.shiftKey) {
+          if (!isDesktop) liveActions.current.focus();
+        } else liveActions.current.find();
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !input) {
         e.preventDefault();
@@ -330,6 +350,8 @@ export default function App() {
         if (doc) model.undo(doc.id, e.shiftKey);
       }
       if (e.key === 'Escape') {
+        if (e.defaultPrevented || document.querySelector('[role="dialog"]')) return;
+        liveActions.current.exitFocus();
         window.getSelection()?.removeAllRanges();
         activateTool('select');
         setReadingDrag(null);
@@ -414,7 +436,7 @@ export default function App() {
       });
   }
   async function dropIntoReading(path: string, side: PaneSide) {
-    if (!doc || !htmlFiles(workspace?.tree || []).includes(path)) return;
+    if (!doc || !readableFiles(workspace?.tree || []).includes(path)) return;
     const id = await model.open(path, false);
     setMode('read');
     if (id === doc.id && !split) return;
@@ -448,7 +470,7 @@ export default function App() {
       setReaderStates({});
       useWorkspace(w);
       setMode('read');
-      const paths = w.session?.paths || ([firstHTML(w.tree)].filter(Boolean) as string[]);
+      const paths = w.session?.paths || ([firstDocument(w.tree)].filter(Boolean) as string[]);
       for (const p of paths) {
         try {
           await model.open(p);
@@ -483,6 +505,7 @@ export default function App() {
     setFinding(true);
   }
   liveActions.current = {
+    ...liveActions.current,
     save,
     folder: openFolder,
     find: startFind,
@@ -580,6 +603,7 @@ export default function App() {
         window.getSelection()?.removeAllRanges();
         if (model.active !== id) selectDocument(id);
         setInkSettingsOpen(false);
+        focus.setToolsVisible(false);
         break;
       case 'outline':
         patchReader(id, { outline: e.items });
@@ -589,7 +613,7 @@ export default function App() {
         break;
       case 'zoom-wheel': {
         if (!Number.isFinite(e.delta)) break;
-        const zoom = mode === 'read' ? zoomAfterWheel(doc.data.zoom, e.delta) : 0;
+        const zoom = mode === 'read' ? zoomAfterWheel(doc.data.zoom || e.scale, e.delta) : 0;
         if (mode === 'read' && zoom !== doc.data.zoom) {
           if (model.active !== id) selectDocument(id);
           model.data(id, { zoom }, true);
@@ -650,6 +674,7 @@ export default function App() {
         model.annotate(id, (all) => all.filter((a) => a.id !== e.id));
         break;
       case 'escape':
+        focus.setEnabled(false);
         window.getSelection()?.removeAllRanges();
         activateTool('select');
         patchReader(id, { selection: null });
@@ -661,7 +686,10 @@ export default function App() {
         break;
       case 'shortcut':
         if (e.key === 's') saveDocument(id);
-        if (e.key === 'f') startFind();
+        if (e.key === 'f') {
+          if (e.shift) liveActions.current.focus();
+          else startFind();
+        }
         if (e.key === 'z') model.undo(id, e.shift);
         break;
       case 'found':
@@ -674,9 +702,9 @@ export default function App() {
             const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
             if (parts.shift() !== workspace?.token) return;
             const path = parts.join('/');
-            if (/\.html?$/i.test(path))
+            if (/\.(html?|pdf)$/i.test(path))
               await openDocument(path, split?.right === id ? 'right' : 'left');
-            else notify('该链接不是 HTML 文档');
+            else notify('该链接不是 HTML 或 PDF 文档');
           } else if (!isDesktop && url.pathname.startsWith('/__asset/')) {
             const path = url.pathname.split('/').slice(3).map(decodeURIComponent).join('/');
             await openDocument(path, split?.right === id ? 'right' : 'left');
@@ -720,7 +748,7 @@ export default function App() {
       URL.revokeObjectURL(url);
     }
   }
-  const files = htmlFiles(workspace?.tree || []);
+  const files = readableFiles(workspace?.tree || []);
   const readingSplit = mode === 'read' && split;
   const panes: { side: PaneSide; doc: OpenDocument | undefined }[] = readingSplit
     ? [
@@ -734,7 +762,9 @@ export default function App() {
   const dropPreviewSide = existingDragPane?.side || readingDropSide || 'right';
   const dropBoundary = readingSplit ? splitRatio : 0.5;
   return (
-    <div className={`app-shell ${left ? '' : 'hide-left'} ${right ? '' : 'hide-right'}`}>
+    <div
+      className={`app-shell ${left ? '' : 'hide-left'} ${right ? '' : 'hide-right'}${focus.enabled ? ' focus-mode' : ''}${focus.toolsVisible ? ' focus-tools-visible' : ''}`}
+    >
       <header className="titlebar">
         {!isDesktop ? (
           <div className="traffic-lights">
@@ -776,6 +806,24 @@ export default function App() {
             }
           }}
           onRefresh={() => run(refresh)}
+          status={
+            <ReadingStatus
+              format={doc?.kind === 'pdf' ? 'PDF' : 'HTML'}
+              saving={model.saving}
+              error={!!notice?.error}
+              annotations={doc?.data.annotations.length || 0}
+              progress={progress}
+              hint={
+                mode === 'source'
+                  ? doc?.draft !== doc?.source
+                    ? '源码有未保存的修改'
+                    : '源码修改会自动保留历史备份'
+                  : tool === 'eraser'
+                    ? `${eraserMode === 'stroke' ? '笔画擦除 · 碰到即擦除整笔' : '局部擦除 · 只擦掉经过的部分'} · 一次拖动可一次撤销`
+                    : toolHints[tool]
+              }
+            />
+          }
         />
         <main className="main-panel">
           <DocumentTabs
@@ -787,35 +835,67 @@ export default function App() {
             split={!!split}
             onSplit={toggleSplit}
           />
-          <Toolbar
-            mode={mode}
-            onMode={setMode}
-            tool={tool}
-            onTool={chooseTool}
-            color={color}
-            onColor={setColor}
-            zoom={doc?.data.zoom || 0}
-            onZoom={(zoom) => doc && model.data(doc.id, { zoom })}
-            onLeft={() => setLeft((v) => !v)}
-            onRight={() => setRight((v) => !v)}
-            onFind={startFind}
-            onSave={save}
-            onReload={() => doc && guardDirty([doc], () => model.reload(doc.id), '重新载入文件？')}
-            dirty={!!doc && doc.draft !== doc.source}
-            onUndo={() => doc && model.undo(doc.id)}
-            onRedo={() => doc && model.undo(doc.id, true)}
-            canUndo={!!doc?.history.length}
-            canRedo={!!doc?.future.length}
-            disabled={!doc}
-            strokeWidth={strokeWidth}
-            eraserSize={eraserSize}
-            eraserMode={eraserMode}
-            onEraserMode={setEraserMode}
-            onStrokeWidth={setStrokeWidth}
-            onEraserSize={setEraserSize}
-            settingsOpen={inkSettingsOpen}
-            onSettingsOpenChange={setInkSettingsOpen}
-          />
+          {focus.enabled ? (
+            <>
+              <div className="focus-top-edge" onPointerEnter={() => focus.setToolsVisible(true)} />
+              {!focus.toolsVisible ? (
+                <div className="focus-controls">
+                  <button
+                    aria-label="显示批注工具"
+                    title="鼠标移到顶部也可显示批注工具"
+                    onClick={() => focus.setToolsVisible(true)}
+                  >
+                    <SlidersHorizontal size={15} />
+                    工具
+                  </button>
+                  <button
+                    aria-label="退出专注阅读"
+                    title="Esc / ⌘ ⇧ F 退出"
+                    onClick={() => focus.setEnabled(false)}
+                  >
+                    <Minimize size={15} />
+                    退出专注
+                  </button>
+                </div>
+              ) : null}
+            </>
+          ) : null}
+          <div className="toolbar-host" inert={focus.enabled && !focus.toolsVisible}>
+            <Toolbar
+              focusMode={focus.enabled}
+              onFocusMode={() => liveActions.current.focus()}
+              pdf={doc?.kind === 'pdf'}
+              mode={mode}
+              onMode={setMode}
+              tool={tool}
+              onTool={chooseTool}
+              color={color}
+              onColor={setColor}
+              zoom={doc?.data.zoom || 0}
+              onZoom={(zoom) => doc && model.data(doc.id, { zoom })}
+              onLeft={() => setLeft((v) => !v)}
+              onRight={() => setRight((v) => !v)}
+              onFind={startFind}
+              onSave={save}
+              onReload={() =>
+                doc && guardDirty([doc], () => model.reload(doc.id), '重新载入文件？')
+              }
+              dirty={!!doc && doc.draft !== doc.source}
+              onUndo={() => doc && model.undo(doc.id)}
+              onRedo={() => doc && model.undo(doc.id, true)}
+              canUndo={!!doc?.history.length}
+              canRedo={!!doc?.future.length}
+              disabled={!doc}
+              strokeWidth={strokeWidth}
+              eraserSize={eraserSize}
+              eraserMode={eraserMode}
+              onEraserMode={setEraserMode}
+              onStrokeWidth={setStrokeWidth}
+              onEraserSize={setEraserSize}
+              settingsOpen={inkSettingsOpen}
+              onSettingsOpenChange={setInkSettingsOpen}
+            />
+          </div>
           {finding ? (
             <div className="find-bar">
               <input
@@ -976,7 +1056,7 @@ export default function App() {
                       <div className="reading-column-empty">
                         <BookOpen size={30} />
                         <strong>选择另一篇文档</strong>
-                        <span>从工作空间拖入 HTML 文件，也可以在上方选择。</span>
+                        <span>从工作空间拖入 HTML 或 PDF，也可以在上方选择。</span>
                       </div>
                     )}
                     {paneDoc?.id === doc.id && selection && mode === 'read' ? (
@@ -1068,7 +1148,7 @@ export default function App() {
                 <BookOpen size={38} />
               </div>
               <h1>在文字之间，留下思考。</h1>
-              <p>打开一个文件夹，让 HTML 成为你的阅读工作空间。</p>
+              <p>打开一个文件夹，开始阅读和批注 HTML、PDF。</p>
               <button className="primary-button" onClick={openFolder}>
                 <FolderOpen size={17} />
                 打开文件夹
@@ -1106,29 +1186,6 @@ export default function App() {
           saving={model.saving}
         />
       </div>
-      <footer className="statusbar">
-        <span className="status-format">HTML</span>
-        <span className={`save-state ${notice?.error ? 'error' : ''}`}>
-          <i />
-          {model.saving ? '正在保存…' : notice?.error ? '请检查提示' : '本地保存'}
-        </span>
-        <span className="status-hint">
-          {mode === 'source'
-            ? doc?.draft !== doc?.source
-              ? '源码有未保存的修改'
-              : '源码修改会自动保留历史备份'
-            : tool === 'eraser'
-              ? `${eraserMode === 'stroke' ? '笔画擦除 · 碰到即擦除整笔' : '局部擦除 · 只擦掉经过的部分'} · 一次拖动可一次撤销`
-              : toolHints[tool]}
-          {mode === 'read' ? ' · Tab 切换最近两个工具' : ''}
-        </span>
-        <div className="status-spacer" />
-        <span>{doc?.data.annotations.length || 0} 条批注</span>
-        <span>阅读进度 {progress}%</span>
-        <div className="reading-progress">
-          <i style={{ width: progress + '%' }} />
-        </div>
-      </footer>
       {notice ? (
         <div
           className={`toast ${notice.error ? 'error' : ''}`}

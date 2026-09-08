@@ -7,6 +7,24 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { Workspace } = require('./electron/workspace.cjs');
 const { renderDocument, mime } = require('./electron/render.cjs');
+const { renderPDFDocument, pdfAssetPath } = require('./electron/pdf.cjs');
+async function buildPDF(minify = false) {
+  await bundle({
+    entryPoints: ['src/pdf/pdf.ts'],
+    outfile: 'dist/pdf/pdf.js',
+    bundle: true,
+    format: 'esm',
+    target: 'chrome130',
+    minify,
+  });
+  for (const name of ['cmaps', 'standard_fonts', 'wasm', 'iccs']) {
+    const source = path.resolve('node_modules/pdfjs-dist', name);
+    if (await fs.stat(source).catch(() => null))
+      await fs.cp(source, path.resolve('dist/pdf', name), { recursive: true });
+  }
+  await fs.copyFile('node_modules/pdfjs-dist/build/pdf.worker.mjs', 'dist/pdf/pdf.worker.mjs');
+  await fs.copyFile('node_modules/pdfjs-dist/LICENSE', 'dist/pdf/LICENSE.pdfjs');
+}
 export default defineConfig({
   base: './',
   plugins: [
@@ -14,6 +32,7 @@ export default defineConfig({
     {
       name: 'folio-reader',
       async closeBundle() {
+        await buildPDF(true);
         await bundle({
           entryPoints: ['src/reader/runtime.ts'],
           outfile: 'dist/reader.js',
@@ -24,6 +43,7 @@ export default defineConfig({
         });
       },
       async configureServer(server) {
+        await buildPDF();
         const w = new Workspace();
         await w.open(process.env.FOLIO_WORKSPACE || path.resolve('samples'));
         const previews = new Map();
@@ -102,6 +122,13 @@ export default defineConfig({
               token = parts.shift();
             if (token !== w.token) throw Error('项目已切换');
             const relative = parts.map(decodeURIComponent).join('/');
+            if (mode === '__pdfjs') {
+              const file = pdfAssetPath(path.resolve('dist'), relative);
+              res.setHeader('Access-Control-Allow-Origin', '*');
+              res.setHeader('Content-Type', mime(file));
+              res.end(await fs.readFile(file));
+              return;
+            }
             if (mode === '__asset') {
               const file = await w.asset(relative);
               res.setHeader('Access-Control-Allow-Origin', '*');
@@ -117,6 +144,19 @@ export default defineConfig({
               docPath = p.path;
             } else {
               docPath = relative;
+              if (/\.pdf$/i.test(relative)) {
+                await w.asset(relative);
+                const base = `http://${req.headers.host}`;
+                res.setHeader('Content-Type', 'text/html; charset=utf-8');
+                res.end(
+                  renderPDFDocument(
+                    `${base}/__asset/${w.token}/${relative.split('/').map(encodeURIComponent).join('/')}`,
+                    `${base}/__pdfjs/${w.token}/`,
+                    path.basename(relative),
+                  ),
+                );
+                return;
+              }
               source = await fs.readFile(await w.asset(relative), 'utf8');
             }
             const dir = docPath.includes('/') ? docPath.slice(0, docPath.lastIndexOf('/') + 1) : '';

@@ -14,12 +14,14 @@ const fs = require('node:fs/promises');
 const { pathToFileURL } = require('node:url');
 const { Workspace, atomicWrite } = require('./workspace.cjs');
 const { renderDocument, mime } = require('./render.cjs');
+const { renderPDFDocument, pdfAssetPath } = require('./pdf.cjs');
 const workspace = new Workspace();
 let win;
 let allowClose = false;
 let quitting = false;
 let watcher;
 let refreshTimer;
+let focusWindowState = null;
 const previews = new Map();
 if (process.env.FOLIO_USER_DATA) app.setPath('userData', process.env.FOLIO_USER_DATA);
 app.setName('页间');
@@ -115,7 +117,7 @@ function menu() {
             click: () => win.webContents.send('folio:event', { type: 'open-folder' }),
           },
           {
-            label: '保存 HTML',
+            label: '保存文档',
             accelerator: 'CmdOrCtrl+S',
             click: () => win.webContents.send('folio:event', { type: 'save' }),
           },
@@ -142,6 +144,11 @@ function menu() {
             label: '查找',
             accelerator: 'CmdOrCtrl+F',
             click: () => win.webContents.send('folio:event', { type: 'find' }),
+          },
+          {
+            label: '切换专注阅读',
+            accelerator: 'CmdOrCtrl+Shift+F',
+            click: () => win.webContents.send('folio:event', { type: 'toggle-focus' }),
           },
           { role: 'togglefullscreen' },
           ...(!app.isPackaged ? [{ role: 'toggleDevTools' }] : []),
@@ -176,6 +183,12 @@ app
         const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
         const token = parts.shift();
         if (token !== workspace.token) return new Response('项目已关闭', { status: 403 });
+        if (url.host === 'pdfjs') {
+          const file = pdfAssetPath(path.join(__dirname, '../dist'), parts.join('/'));
+          return new Response(await fs.readFile(file), {
+            headers: { 'Content-Type': mime(file), 'Access-Control-Allow-Origin': '*' },
+          });
+        }
         if (url.host === 'asset') {
           const file = await workspace.asset(parts.join('/'));
           return new Response(await fs.readFile(file), {
@@ -189,6 +202,24 @@ app
           ({ source, path: relative } = p);
         } else if (url.host === 'document') {
           relative = parts.join('/');
+          if (/\.pdf$/i.test(relative)) {
+            await workspace.asset(relative);
+            const encoded = relative.split('/').map(encodeURIComponent).join('/');
+            return new Response(
+              renderPDFDocument(
+                `folio://asset/${workspace.token}/${encoded}`,
+                `folio://pdfjs/${workspace.token}/`,
+                path.basename(relative),
+              ),
+              {
+                headers: {
+                  'Content-Type': 'text/html; charset=utf-8',
+                  'Content-Security-Policy':
+                    "default-src 'none'; script-src folio: blob: 'wasm-unsafe-eval'; worker-src blob: folio:; style-src 'unsafe-inline' folio:; img-src data: blob: folio:; font-src data: blob: folio:; connect-src folio:; frame-src 'none'; object-src 'none'; form-action 'none'",
+                },
+              },
+            );
+          }
           source = await fs.readFile(await workspace.asset(relative), 'utf8');
         } else return new Response('', { status: 404 });
         const dir = relative.includes('/') ? relative.slice(0, relative.lastIndexOf('/') + 1) : '';
@@ -213,7 +244,9 @@ app
     ipcMain.handle('folio:invoke', async (event, action, payload, token) => {
       uiSender(event);
       if (
-        !['workspace', 'choose-folder', 'close', 'minimize', 'maximize'].includes(action) &&
+        !['workspace', 'choose-folder', 'close', 'minimize', 'maximize', 'focus-mode'].includes(
+          action,
+        ) &&
         token !== workspace.token
       )
         throw Error('项目已切换，请重新打开文件');
@@ -223,7 +256,7 @@ app
         case 'choose-folder': {
           const r = await dialog.showOpenDialog(win, {
             properties: ['openDirectory'],
-            title: '打开 HTML 项目',
+            title: '打开阅读项目（HTML / PDF）',
           });
           return r.canceled ? null : openWorkspace(r.filePaths[0]);
         }
@@ -253,7 +286,7 @@ app
           return shell.showItemInFolder(await workspace.resolve(payload.path));
         case 'export': {
           const r = await dialog.showSaveDialog(win, {
-            defaultPath: path.basename(payload.path, '.html') + '-笔记.md',
+            defaultPath: path.basename(payload.path, path.extname(payload.path)) + '-笔记.md',
             filters: [{ name: 'Markdown', extensions: ['md'] }],
           });
           if (r.canceled) return false;
@@ -264,6 +297,19 @@ app
           const url = new URL(payload.url);
           if (!['http:', 'https:'].includes(url.protocol)) throw Error('只支持网页链接');
           await shell.openExternal(url.toString());
+          return true;
+        }
+        case 'focus-mode': {
+          if (payload.enabled === true && !focusWindowState) {
+            focusWindowState = { fullscreen: win.isFullScreen() };
+            win.setWindowButtonVisibility?.(false);
+            win.setFullScreen(true);
+          } else if (payload.enabled !== true && focusWindowState) {
+            const previous = focusWindowState;
+            focusWindowState = null;
+            win.setWindowButtonVisibility?.(true);
+            if (!previous.fullscreen) win.setFullScreen(false);
+          }
           return true;
         }
         case 'minimize':
@@ -282,6 +328,7 @@ app
     });
     function createWindow() {
       allowClose = false;
+      focusWindowState = null;
       win = new BrowserWindow({
         width: 1536,
         height: 1024,
@@ -299,6 +346,16 @@ app
         },
       });
       win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+      win.on('enter-full-screen', () => {
+        if (focusWindowState) win.setWindowButtonVisibility?.(false);
+      });
+      win.on('leave-full-screen', () => {
+        if (focusWindowState) {
+          focusWindowState = null;
+          win.setWindowButtonVisibility?.(true);
+          win.webContents.send('folio:event', { type: 'focus-ended' });
+        }
+      });
       win.webContents.on('will-navigate', (e) => e.preventDefault());
       win.on('close', (e) => {
         if (!allowClose) {

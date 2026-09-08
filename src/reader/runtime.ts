@@ -8,6 +8,7 @@ import { defaultColor } from '../colors';
 import { SelectionIndicator } from './selection-indicator';
 import type { SelectionRect } from './selection-indicator';
 import { ReaderZoom } from './zoom';
+import { capturePdfRects, pdfQuoteRects, pdfPageAnchor } from './pdf-anchors';
 (() => {
   const channel = 'folio-reader-v1';
   const send = (type: string, payload: Record<string, unknown> = {}) =>
@@ -100,6 +101,7 @@ import { ReaderZoom } from './zoom';
       suffix: text.slice(end, end + 48),
       start,
       end,
+      ...(document.documentElement.dataset.folioPdf ? { pdfRects: capturePdfRects(r) } : {}),
     };
   }
   function locate(quote: Anchor, index = textIndex()) {
@@ -151,6 +153,9 @@ import { ReaderZoom } from './zoom';
       x: Math.round((e.clientX + scrollX) * 10) / 10,
       y: Math.round((e.clientY + scrollY) * 10) / 10,
     };
+  }
+  function quoteRects(quote: Anchor): DOMRect[] {
+    return pdfQuoteRects(quote) || Array.from(locate(quote)?.getClientRects() || []);
   }
   function selector(el: Element): string {
     if (el.id) return '#' + CSS.escape(el.id);
@@ -216,12 +221,13 @@ import { ReaderZoom } from './zoom';
     hitRegions = [];
     for (const a of annotations) {
       if (a.quote) {
-        const r = locate(a.quote, index);
-        if (!r) {
+        const rects =
+          pdfQuoteRects(a.quote) || Array.from(locate(a.quote, index)?.getClientRects() || []);
+        if (!rects.length) {
           missing.push(a.id);
           continue;
         }
-        for (const rect of r.getClientRects()) {
+        for (const rect of rects) {
           if (!rect.width || !rect.height) continue;
           const e = svgEl('rect', {
             x: rect.left + scrollX,
@@ -237,7 +243,7 @@ import { ReaderZoom } from './zoom';
         }
         hitRegions.push({
           id: a.id,
-          rects: Array.from(r.getClientRects())
+          rects: rects
             .filter((r) => r.width && r.height)
             .map((r) => ({
               left: r.left + scrollX,
@@ -264,7 +270,7 @@ import { ReaderZoom } from './zoom';
   }
   function selectionRects(a: Annotation): SelectionRect[] {
     if (a.quote)
-      return Array.from(locate(a.quote)?.getClientRects() || [])
+      return quoteRects(a.quote)
         .filter((r) => r.width && r.height)
         .map((r) => ({
           left: r.left + scrollX,
@@ -374,6 +380,7 @@ import { ReaderZoom } from './zoom';
     schedule();
   }
   function anchorAt(p: Point): Annotation['anchor'] {
+    if (document.documentElement.dataset.folioPdf) return pdfPageAnchor(p);
     const target = document
       .elementsFromPoint(p.x - scrollX, p.y - scrollY)
       .find((el) => !el.closest('[data-folio-ui]'))
@@ -434,7 +441,7 @@ import { ReaderZoom } from './zoom';
   }
   function quoteRect(a: Annotation) {
     if (!a.quote) return null;
-    const rects = Array.from(locate(a.quote)?.getClientRects() || []);
+    const rects = quoteRects(a.quote);
     return rects.find((r) => r.bottom > 0 && r.top < innerHeight) || rects[0] || null;
   }
   function hitAnnotation(e: MouseEvent) {
@@ -571,6 +578,10 @@ import { ReaderZoom } from './zoom';
     points = [];
   }
   function outline() {
+    if (document.documentElement.dataset.folioPdf) {
+      document.dispatchEvent(new Event('folio:pdf-outline'));
+      return;
+    }
     const headings = Array.from(document.querySelectorAll('h1,h2,h3')).filter(
       (e) => !e.closest('[data-folio-ui]'),
     );
@@ -1021,6 +1032,10 @@ import { ReaderZoom } from './zoom';
         .querySelector(`[data-folio-heading="${CSS.escape(m.id)}"]`)
         ?.scrollIntoView({ behavior: 'auto', block: 'start' });
     if (m.type === 'find') {
+      if (document.documentElement.dataset.folioPdf) {
+        document.dispatchEvent(new CustomEvent('folio:pdf-find', { detail: m }));
+        return;
+      }
       const ok = (
         window as unknown as Window & {
           find: (

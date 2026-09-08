@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { FileCode2, X, Plus, Columns2 } from 'lucide-react';
+import { FileCode2, FileText, X, Plus, Columns2 } from 'lucide-react';
 import type { OpenDocument } from '../types';
 import { IconButton } from './IconButton';
 export function DocumentTabs({
@@ -41,7 +41,11 @@ export function DocumentTabs({
               title={d.path}
               onClick={() => onSelect(d.id)}
             >
-              <FileCode2 size={14} />
+              {d.kind === 'pdf' ? (
+                <FileText className="tree-icon-pdf" size={14} />
+              ) : (
+                <FileCode2 size={14} />
+              )}
               <span>{d.path.split('/').at(-1)}</span>
               {d.draft !== d.source ? (
                 <span className="dirty-dot" aria-label="有未保存的修改" />
@@ -61,7 +65,7 @@ export function DocumentTabs({
         disabled={!docs.length}
         aria-pressed={split}
         onClick={onSplit}
-        title={split ? '退出双栏，保留当前文档' : '左右同时阅读两篇 HTML；点击任一栏切换操作对象'}
+        title={split ? '退出双栏，保留当前文档' : '左右同时阅读两篇文档；点击任一栏切换操作对象'}
       >
         <Columns2 size={16} />
         {split ? '退出双栏' : '双栏阅读'}

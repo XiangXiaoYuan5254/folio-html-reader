@@ -34,5 +34,12 @@ export const DocumentReader = forwardRef<
       clearTimeout(timer);
     };
   }, [doc.path, doc.draft, doc.source, onError]);
-  return <ReaderFrame ref={ref} {...props} url={preview || documentUrl(doc.path, doc.preview)} />;
+  return (
+    <ReaderFrame
+      ref={ref}
+      {...props}
+      kind={doc.kind}
+      url={preview || documentUrl(doc.path, doc.preview)}
+    />
+  );
 });

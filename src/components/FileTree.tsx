@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import type { DragEvent } from 'react';
+import type { DragEvent, ReactNode } from 'react';
 import {
   FolderOpen,
   Folder,
   ChevronDown,
   ChevronRight,
   FileCode2,
+  FileText,
   File,
   Search,
   Plus,
@@ -29,6 +30,7 @@ export function FileTree({
   onRefresh,
   onClose,
   onReadingDrag,
+  status,
 }: {
   workspace: WorkspaceInfo | null;
   active?: string;
@@ -39,6 +41,7 @@ export function FileTree({
   onRefresh: () => void;
   onClose: () => void;
   onReadingDrag: (path: string | null) => void;
+  status?: ReactNode;
 }) {
   const [query, setQuery] = useState('');
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -149,9 +152,10 @@ export function FileTree({
           draggable={!moving}
           onDragStart={(e) => {
             dragSource.current = n;
-            e.dataTransfer.effectAllowed = n.kind === 'html' ? 'copyMove' : 'move';
+            e.dataTransfer.effectAllowed =
+              n.kind === 'html' || n.kind === 'pdf' ? 'copyMove' : 'move';
             e.dataTransfer.setData('application/x-folio-file', n.path);
-            onReadingDrag(n.kind === 'html' ? n.path : null);
+            onReadingDrag(n.kind === 'html' || n.kind === 'pdf' ? n.path : null);
             setDragging(n.path);
             setMenu(null);
           }}
@@ -169,7 +173,7 @@ export function FileTree({
                     s.has(n.path) ? s.delete(n.path) : s.add(n.path);
                     return s;
                   })
-                : n.kind === 'html'
+                : n.kind === 'html' || n.kind === 'pdf'
                   ? onOpen(n.path)
                   : onAction('reveal', n.path)
             }
@@ -186,7 +190,9 @@ export function FileTree({
             ) : (
               <>
                 <span className="tree-spacer" />
-                {n.kind === 'html' ? (
+                {n.kind === 'pdf' ? (
+                  <FileText className="tree-icon-pdf" size={16} />
+                ) : n.kind === 'html' ? (
                   <FileCode2 className="tree-icon-html" size={16} />
                 ) : (
                   <File size={16} />
@@ -235,7 +241,10 @@ export function FileTree({
     ));
   }
   const count = (nodes: FileNode[]): number =>
-    nodes.reduce((n, f) => n + (f.kind === 'html' ? 1 : count(f.children || [])), 0);
+    nodes.reduce(
+      (n, f) => n + (f.kind === 'html' || f.kind === 'pdf' ? 1 : count(f.children || [])),
+      0,
+    );
   return (
     <aside className="file-sidebar" id="project-file-sidebar">
       <div className="sidebar-heading">
@@ -300,7 +309,7 @@ export function FileTree({
             ? '正在移动…'
             : dropTarget !== null
               ? `移动到：${dropTarget || '项目根目录'}`
-              : dragSource.current?.kind === 'html'
+              : dragSource.current?.kind === 'html' || dragSource.current?.kind === 'pdf'
                 ? '拖到阅读区并排打开，或拖到文件夹移动'
                 : '拖到文件夹或项目名称移动'}
         </div>
@@ -313,10 +322,11 @@ export function FileTree({
         </div>
         <p>
           <BookOpen size={13} />
-          {workspace ? count(workspace.tree) : 0} 份 HTML 文档
+          {workspace ? count(workspace.tree) : 0} 份文档（HTML / PDF）
         </p>
       </div>
       <SidebarResizer />
+      {status}
     </aside>
   );
 }

@@ -9,7 +9,15 @@ export type Tool =
   | 'arrow'
   | 'rectangle'
   | 'eraser';
-export type Anchor = { exact: string; prefix: string; suffix: string; start: number; end: number };
+export type PdfRect = { page: number; left: number; top: number; width: number; height: number };
+export type Anchor = {
+  exact: string;
+  prefix: string;
+  suffix: string;
+  start: number;
+  end: number;
+  pdfRects?: PdfRect[];
+};
 export type Point = { x: number; y: number };
 export type EraserMode = 'partial' | 'stroke';
 export type Annotation = {
@@ -39,7 +47,7 @@ export type DocumentData = {
 export type FileNode = {
   name: string;
   path: string;
-  kind: 'folder' | 'html' | 'asset';
+  kind: 'folder' | 'html' | 'pdf' | 'asset';
   children?: FileNode[];
 };
 export type WorkspaceInfo = {
@@ -50,6 +58,7 @@ export type WorkspaceInfo = {
   session?: { paths: string[]; active: string; split?: { left: string; right: string } } | null;
 };
 export type OpenDocument = {
+  kind: 'html' | 'pdf';
   path: string;
   id: string;
   source: string;

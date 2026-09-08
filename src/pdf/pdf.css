@@ -1,0 +1,194 @@
+:root {
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
+  background: #edf0f4;
+  color: #334155;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  padding: 0;
+}
+#pdf-pages {
+  padding: 24px;
+  min-height: 100vh;
+}
+.pdf-page {
+  position: relative;
+  margin: 0 auto 30px;
+  background: white;
+  box-shadow: 0 1px 7px #25334220;
+  isolation: isolate;
+}
+.pdf-page:last-child {
+  margin-bottom: 0;
+}
+.pdf-canvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.pdf-canvas canvas {
+  display: block;
+}
+.pdf-page-label {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  padding-top: 7px;
+  color: #7b8796;
+  font-size: 11px;
+  user-select: none;
+  pointer-events: none;
+}
+#pdf-message {
+  position: fixed;
+  top: 20vh;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 22px 28px;
+  border-radius: 12px;
+  border: 1px solid #dae1e8;
+  background: white;
+  color: #617082;
+  box-shadow: 0 8px 32px #34425612;
+  text-align: center;
+  max-width: 90vw;
+}
+.pdf-password h2 {
+  font-size: 18px;
+  margin: 0 0 12px;
+}
+.pdf-password p {
+  font-size: 13px;
+  margin: 0 0 16px;
+}
+.pdf-password-fields {
+  display: flex;
+  gap: 8px;
+}
+.pdf-password input {
+  min-width: 0;
+  width: 170px;
+  padding: 9px;
+  border: 1px solid #cdd8de;
+  border-radius: 6px;
+  font: inherit;
+}
+.pdf-password button {
+  background: #287d73;
+  color: white;
+  border: 0;
+  border-radius: 6px;
+  padding: 8px 14px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.pdf-error {
+  line-height: 1.8;
+}
+/* TextLayer positioning follows PDF.js (Apache-2.0); keep transparent glyphs
+   aligned with the canvas, including rotated text and Chromium minimum fonts. */
+.textLayer {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  text-align: initial;
+  opacity: 1;
+  line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  z-index: 1;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+.textLayer > :not(.markedContent),
+.textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.textLayer .markedContent {
+  display: contents;
+}
+.textLayer[data-main-rotation='90'] {
+  transform: rotate(90deg) translateY(-100%);
+}
+.textLayer[data-main-rotation='180'] {
+  transform: rotate(180deg) translate(-100%, -100%);
+}
+.textLayer[data-main-rotation='270'] {
+  transform: rotate(270deg) translateX(-100%);
+}
+.textLayer span[role='img'] {
+  user-select: none;
+  cursor: default;
+}
+.textLayer ::selection {
+  background: #2f8b7e3d;
+  color: transparent;
+}
+.textLayer br::selection {
+  background: transparent;
+}
+.pdf-original-annotations {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+.pdf-original-annotation {
+  position: absolute;
+  pointer-events: auto;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+}
+.pdf-original-annotation:hover {
+  background: #287d7312;
+  outline: 1px solid #287d7355;
+}
+.pdf-original-comment {
+  border: 1px solid #c9b55e;
+  background: #fff1a9;
+  border-radius: 3px;
+  font-size: 10px;
+  color: #685520;
+}
+.pdf-original-note {
+  position: absolute;
+  pointer-events: auto;
+  width: 250px;
+  max-height: 210px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font: 14px/1.6 system-ui;
+  background: #fff8ce;
+  color: #4a4229;
+  padding: 14px;
+  border: 1px solid #e1ca71;
+  border-radius: 8px;
+  box-shadow: 0 5px 20px #0002;
+  z-index: 3;
+}

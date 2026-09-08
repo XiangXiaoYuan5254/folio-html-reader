@@ -4,6 +4,8 @@ const crypto = require('node:crypto');
 const hash = (text) => crypto.createHash('sha256').update(text).digest('hex');
 const hidden = new Set(['node_modules', 'dist', 'release', 'build', 'coverage']);
 const isHtml = (p) => /\.html?$/i.test(p);
+const isPdf = (p) => /\.pdf$/i.test(p);
+const isDocument = (p) => isHtml(p) || isPdf(p);
 const clone = (x) => JSON.parse(JSON.stringify(x));
 // Normalize legacy comments at the storage boundary so every UI uses the same types.
 // Reading leaves the original file intact; the next normal save persists the conversion.
@@ -117,7 +119,7 @@ class Workspace {
               kind: 'folder',
               children: await this.tree(p, depth + 1),
             };
-          return { name: e.name, path: p, kind: isHtml(p) ? 'html' : 'asset' };
+          return { name: e.name, path: p, kind: isHtml(p) ? 'html' : isPdf(p) ? 'pdf' : 'asset' };
         }),
     );
     return rows.sort(
@@ -140,7 +142,7 @@ class Workspace {
       if (
         !Array.isArray(paths) ||
         paths.length > 100 ||
-        !paths.every((p) => typeof p === 'string' && isHtml(p)) ||
+        !paths.every((p) => typeof p === 'string' && isDocument(p)) ||
         typeof active !== 'string'
       )
         throw Error('无效的阅读会话');
@@ -163,10 +165,12 @@ class Workspace {
   }
   async document(relative) {
     return this.serial(async () => {
-      if (!isHtml(relative)) throw Error('请选择 HTML 文件');
+      if (!isDocument(relative)) throw Error('请选择 HTML 或 PDF 文件');
       const full = await this.resolve(relative);
-      const source = await fs.readFile(full, 'utf8');
-      const version = hash(source);
+      const bytes = await fs.readFile(full);
+      const kind = isPdf(relative) ? 'pdf' : 'html';
+      const source = kind === 'pdf' ? '' : bytes.toString('utf8');
+      const version = hash(bytes);
       let entry = this.index.files[relative];
       if (!entry) {
         // Recover an externally renamed, unchanged file only when its old path is gone.
@@ -196,7 +200,14 @@ class Workspace {
         if (e.code !== 'ENOENT')
           throw Error('批注文件损坏，已保留原文件；请检查 .html-reader/documents');
       }
-      return { path: relative, id: entry.id, source, version, data: mergeLegacyComments(data) };
+      return {
+        path: relative,
+        id: entry.id,
+        kind,
+        source,
+        version,
+        data: mergeLegacyComments(data),
+      };
     });
   }
   async saveData({ id, data }) {
@@ -261,6 +272,7 @@ class Workspace {
       if (dst.startsWith(src + path.sep)) throw Error('不能把文件夹移动到它自己或它的子文件夹中');
       if (await fs.stat(dst).catch(() => null)) throw Error('目标名称已存在');
       if (isHtml(from) && !isHtml(to)) throw Error('请保留 .html 或 .htm 扩展名');
+      if (isPdf(from) && !isPdf(to)) throw Error('请保留 .pdf 扩展名');
       await fs.rename(src, dst);
       for (const key of Object.keys(this.index.files))
         if (key === from || key.startsWith(from + '/')) {

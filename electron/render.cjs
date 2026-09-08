@@ -30,6 +30,9 @@ function mime(file) {
       '.html': 'text/html; charset=utf-8',
       '.htm': 'text/html; charset=utf-8',
       '.json': 'application/json',
+      '.pdf': 'application/pdf',
+      '.wasm': 'application/wasm',
+      '.bcmap': 'application/octet-stream',
       '.mp4': 'video/mp4',
     }[path.extname(file).toLowerCase()] || 'application/octet-stream'
   );
