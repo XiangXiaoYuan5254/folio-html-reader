@@ -1,8 +1,14 @@
 import type { Annotation, Point } from '../types';
-import { defaultColor } from '../colors';
+import {
+  annotationColors,
+  colorPickerStyles,
+  defaultColor,
+  isCustomColor,
+  normalizeColor,
+} from '../colors';
 
 type Patch = Partial<
-  Pick<Annotation, 'note' | 'points' | 'size' | 'collapsed' | 'fontSize' | 'color'>
+  Pick<Annotation, 'note' | 'points' | 'size' | 'collapsed' | 'fontSize' | 'fontFamily' | 'color'>
 >;
 type Card = {
   element: HTMLDivElement;
@@ -10,6 +16,11 @@ type Card = {
   pin: HTMLButtonElement;
   title: HTMLElement;
   font?: HTMLSelectElement;
+  family?: HTMLSelectElement;
+  settings?: HTMLDivElement;
+  settingsButton?: HTMLButtonElement;
+  colorInput?: HTMLInputElement;
+  customColor?: HTMLLabelElement;
   measure?: HTMLSpanElement;
 };
 type Callbacks = {
@@ -19,7 +30,21 @@ type Callbacks = {
   select: (id: string) => void;
 };
 
+const noteFonts = [
+  {
+    value: 'system',
+    label: '系统默认',
+    css: '-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif',
+  },
+  { value: 'songti', label: '宋体', css: '"Songti SC","STSong",serif' },
+  { value: 'kaiti', label: '楷体', css: '"Kaiti SC","STKaiti",serif' },
+  { value: 'heiti', label: '黑体', css: '"Heiti SC","PingFang SC",sans-serif' },
+  { value: 'serif', label: 'Times New Roman', css: '"Times New Roman","Songti SC",serif' },
+  { value: 'mono', label: '等宽字体', css: 'Menlo,"PingFang SC",monospace' },
+];
+
 const css = `
+${colorPickerStyles}
 :host{all:initial;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:#504a28}
 *{box-sizing:border-box} button,textarea{font:inherit} button{cursor:pointer}
 .card{position:absolute;pointer-events:auto;border:1px solid color-mix(in srgb,var(--ink) 55%,#b39c4f);border-radius:12px;overflow:hidden;background:color-mix(in srgb,var(--ink) 22%,#fffef3);box-shadow:0 8px 25px #40361520;display:flex;flex-direction:column;min-width:220px;min-height:130px}
@@ -27,7 +52,10 @@ const css = `
 .head{display:flex;align-items:center;gap:8px;height:40px;flex-shrink:0;padding:0 9px 0 14px;background:color-mix(in srgb,var(--ink) 35%,#fffdf1);cursor:grab;user-select:none;touch-action:none}
 .head:active{cursor:grabbing}.title{font-size:14px;font-weight:550;flex:1}.head button{display:grid;place-items:center;width:25px;height:25px;border:0;background:transparent;border-radius:5px;color:#756c40;padding:4px}.head button:hover{background:#ffffff80;color:#37301c}
 svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
-textarea{width:100%;flex:1;min-height:0;resize:none;border:0;outline:0;background:transparent;color:#423e2d;padding:13px 15px 20px;font-size:17px;line-height:1.65;user-select:text;cursor:text;overflow:auto} textarea::placeholder{color:#998f60}
+textarea{width:100%;flex:1;min-height:0;resize:none;border:0;outline:0;background:transparent;color:#423e2d;padding:13px 15px 20px;font-size:var(--font-size,17px);font-family:var(--font-family);line-height:1.65;user-select:text;cursor:text;overflow:auto} textarea::placeholder{color:#998f60}
+.note-settings{position:fixed;pointer-events:auto;overflow:auto;padding:10px;background:#fffdf8;border:1px solid #deded3;border-radius:8px;box-shadow:0 5px 15px #40361525;z-index:2;color:#394457;font:12px system-ui}
+.font-controls{display:flex;gap:8px}.font-controls label{display:flex;align-items:center;gap:5px;min-width:0;white-space:nowrap}.font-controls label:first-child{flex:1}.note-settings select{min-width:0;width:100%;height:26px;border:1px solid #dce0e3;border-radius:4px;color:#394457;background:#fff;font:12px system-ui}.font-controls label:last-child select{width:49px}
+.note-colors{display:flex;align-items:center;gap:7px;margin-top:10px}.note-colors button{width:20px;height:20px;border:2px solid white;border-radius:50%;outline:1px solid #dce3e8;padding:0;flex-shrink:0}.note-colors button[aria-pressed=true]{outline:2px solid #607b86}.note-colors .custom-color{width:20px;height:20px}.head button[aria-expanded=true]{background:#ffffffb0;color:#287b71}
 .resize{position:absolute;right:2px;bottom:2px;display:grid;place-items:center;width:22px;height:22px;padding:3px;border:0;background:transparent;color:#a3975c;cursor:nwse-resize;touch-action:none}
 .pin{position:absolute;pointer-events:auto;width:33px;height:33px;border:1px solid color-mix(in srgb,var(--ink) 60%,#aa984b);border-radius:8px;background:color-mix(in srgb,var(--ink) 35%,#fffce4);color:#65572d;box-shadow:0 3px 8px #40361522;display:grid;place-items:center;padding:7px}.pin:hover{filter:brightness(.97);transform:translateY(-1px)}
 [hidden]{display:none!important} button:focus-visible{outline:2px solid #287b71;outline-offset:-2px}
@@ -90,6 +118,18 @@ export class PageNotes {
     window.addEventListener('pointermove', (e) => this.move(e));
     window.addEventListener('pointerup', () => this.finish());
     window.addEventListener('pointercancel', () => this.finish(true));
+    document.addEventListener(
+      'pointerdown',
+      (e) => {
+        for (const card of this.cards.values())
+          if (
+            !e.composedPath().includes(card.settings!) &&
+            !e.composedPath().includes(card.settingsButton!)
+          )
+            this.showSettings(card, false);
+      },
+      true,
+    );
     document.body.append(host);
   }
 
@@ -113,8 +153,19 @@ export class PageNotes {
       }
       const ink = a.color || defaultColor;
       card.element.style.setProperty('--ink', ink);
-      card.element.style.setProperty('--font-size', `${a.fontSize || 20}px`);
-      if (card.font) card.font.value = String(a.fontSize || 20);
+      const fontSize = a.fontSize || (a.type === 'text' ? 20 : 17);
+      const family = noteFonts.find((font) => font.value === a.fontFamily) || noteFonts[0];
+      card.element.style.setProperty('--font-size', `${fontSize}px`);
+      card.element.style.setProperty('--font-family', family.css);
+      if (card.font) card.font.value = String(fontSize);
+      if (card.family) card.family.value = family.value;
+      if (card.colorInput) card.colorInput.value = normalizeColor(ink) || defaultColor;
+      if (card.customColor) {
+        card.customColor.dataset.selected = String(isCustomColor(ink));
+        card.customColor.style.setProperty('--custom-ink', ink);
+      }
+      for (const b of card.settings?.querySelectorAll<HTMLButtonElement>('[data-color]') || [])
+        b.setAttribute('aria-pressed', String(b.dataset.color === ink));
       card.pin.style.setProperty('--ink', ink);
       card.pin.title = a.note ? `展开便签：${a.note.slice(0, 80)}` : '展开便签';
       const collapsed = a.collapsed ?? false;
@@ -143,6 +194,7 @@ export class PageNotes {
       el.style.left = `${p.x - scrollX}px`;
       el.style.top = `${p.y - scrollY}px`;
     }
+    this.positionSettings(card);
   }
 
   reposition() {
@@ -183,6 +235,140 @@ export class PageNotes {
     this.callbacks.update(id, patch, group);
   }
 
+  private showSettings(card: Card, show: boolean) {
+    if (!card.settings) return;
+    card.settings.hidden = !show;
+    card.settingsButton?.setAttribute('aria-expanded', String(show));
+    if (show) this.positionSettings(card);
+  }
+
+  private positionSettings(card: Card) {
+    const panel = card.settings;
+    if (!panel || panel.hidden) return;
+    if (card.element.hidden) {
+      this.showSettings(card, false);
+      return;
+    }
+    const note = card.element.getBoundingClientRect();
+    const gap = 8;
+    if (note.bottom <= 0 || note.top >= innerHeight || note.right <= 0 || note.left >= innerWidth) {
+      this.showSettings(card, false);
+      return;
+    }
+    const width = Math.min(Math.max(note.width, 260), 360, innerWidth - gap * 2);
+    panel.style.width = `${width}px`;
+    panel.style.maxHeight = `${innerHeight - gap * 2}px`;
+    const height = panel.getBoundingClientRect().height;
+    let left = Math.max(gap, Math.min(note.left, innerWidth - width - gap));
+    let top = note.top - height - gap;
+    // Prefer the space above the whole note. At the top edge, use a free side
+    // or the space below the note instead of covering its text editor.
+    if (top < gap) {
+      if (innerWidth - note.right >= width + gap * 2) {
+        left = note.right + gap;
+        top = Math.max(gap, Math.min(note.top, innerHeight - height - gap));
+      } else if (note.left >= width + gap * 2) {
+        left = note.left - width - gap;
+        top = Math.max(gap, Math.min(note.top, innerHeight - height - gap));
+      } else {
+        top = Math.max(gap, Math.min(note.bottom + gap, innerHeight - height - gap));
+        panel.style.maxHeight = `${Math.max(40, innerHeight - top - gap)}px`;
+      }
+    }
+    panel.style.left = `${left}px`;
+    panel.style.top = `${top}px`;
+  }
+
+  private stickySettings(a: Annotation, card: Card, head: HTMLElement, before: HTMLElement) {
+    const toggle = button('便签样式', 'M4 7h16M4 17h16M8 4v6M16 14v6');
+    toggle.setAttribute('aria-expanded', 'false');
+    const panel = document.createElement('div');
+    panel.className = 'note-settings';
+    panel.setAttribute('role', 'group');
+    panel.setAttribute('aria-label', '便签样式设置');
+    panel.hidden = true;
+    card.settings = panel;
+    card.settingsButton = toggle;
+    toggle.onclick = () => {
+      const show = panel.hidden;
+      for (const other of this.cards.values()) this.showSettings(other, false);
+      this.showSettings(card, show);
+      this.callbacks.select(a.id);
+    };
+    const fields = document.createElement('div');
+    fields.className = 'font-controls';
+    const field = (name: string, options: { value: string; label: string }[]) => {
+      const label = document.createElement('label');
+      label.append(name);
+      const select = document.createElement('select');
+      select.setAttribute('aria-label', `便签${name}`);
+      for (const option of options) select.add(new Option(option.label, option.value));
+      label.append(select);
+      fields.append(label);
+      return select;
+    };
+    card.family = field('字体', noteFonts);
+    card.family.onchange = () => this.patch(a.id, { fontFamily: card.family!.value });
+    card.font = field(
+      '字号',
+      [12, 14, 16, 17, 18, 20, 24, 28, 32, 40, 48, 64].map((size) => ({
+        value: String(size),
+        label: String(size),
+      })),
+    );
+    card.font.onchange = () => this.patch(a.id, { fontSize: Number(card.font!.value) });
+    const colors = document.createElement('div');
+    colors.className = 'note-colors';
+    colors.append('底色');
+    for (const { value, name } of annotationColors) {
+      const choice = document.createElement('button');
+      choice.type = 'button';
+      choice.title = name;
+      choice.setAttribute('aria-label', `便签颜色：${name}`);
+      choice.dataset.color = value;
+      choice.style.background = value;
+      choice.onclick = () => this.patch(a.id, { color: value });
+      colors.append(choice);
+    }
+    const custom = document.createElement('label');
+    custom.className = 'custom-color';
+    custom.title = '自定义便签颜色';
+    const input = document.createElement('input');
+    input.type = 'color';
+    input.setAttribute('aria-label', '便签自定义颜色');
+    let colorGroup = '';
+    input.onclick = () => {
+      colorGroup = `sticky-color:${crypto.randomUUID()}`;
+    };
+    const updateColor = () => {
+      const color = normalizeColor(input.value);
+      if (color && color !== this.items.get(a.id)?.color) {
+        colorGroup ||= `sticky-color:${crypto.randomUUID()}`;
+        this.patch(a.id, { color }, colorGroup);
+      }
+    };
+    input.oninput = updateColor;
+    input.onchange = () => {
+      updateColor();
+      colorGroup = '';
+    };
+    custom.append(input);
+    colors.append(custom);
+    card.colorInput = input;
+    card.customColor = custom;
+    panel.append(fields, colors);
+    panel.onkeydown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.showSettings(card, false);
+        toggle.focus({ preventScroll: true });
+      }
+    };
+    head.insertBefore(toggle, before);
+    card.element.append(panel);
+  }
+
   private create(a: Annotation): Card {
     const el = document.createElement('div');
     const isText = a.type === 'text';
@@ -219,6 +405,7 @@ export class PageNotes {
     pin.dataset.notePin = a.id;
     el.append(head, input, resize);
     const card: Card = { element: el, input, pin, title };
+    if (!isText) this.stickySettings(a, card, head, collapse);
     if (isText) {
       const measure = document.createElement('div');
       measure.className = 'text-measure';

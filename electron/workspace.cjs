@@ -1,6 +1,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const documentStore = require('./document-store.cjs');
 const hash = (text) => crypto.createHash('sha256').update(text).digest('hex');
 const hidden = new Set(['node_modules', 'dist', 'release', 'build', 'coverage']);
 const isHtml = (p) => /\.html?$/i.test(p);
@@ -171,34 +172,16 @@ class Workspace {
       const kind = isPdf(relative) ? 'pdf' : 'html';
       const source = kind === 'pdf' ? '' : bytes.toString('utf8');
       const version = hash(bytes);
-      let entry = this.index.files[relative];
-      if (!entry) {
-        // Recover an externally renamed, unchanged file only when its old path is gone.
-        for (const [old, candidate] of Object.entries(this.index.files)) {
-          if (
-            candidate.hash === version &&
-            !(await fs.stat(path.join(this.root, old)).catch(() => null))
-          ) {
-            entry = candidate;
-            delete this.index.files[old];
-            break;
-          }
-        }
-        entry ||= { id: crypto.randomUUID(), hash: version };
-        this.index.files[relative] = entry;
+      const store = await documentStore.locate(this, full, version, atomicWrite);
+      const entry = store.entry;
+      const data = store.data;
+      if (
+        this.index.files[relative]?.id !== entry.id ||
+        this.index.files[relative]?.storage !== 'adjacent'
+      ) {
+        await documentStore.backup(path.join(this.meta, 'workspace.json'), atomicWrite);
+        this.index.files[relative] = { id: entry.id, hash: entry.hash, storage: 'adjacent' };
         await this.persistIndex();
-      }
-      let data = { version: 1, annotations: [], note: '', scroll: 0, zoom: 0 };
-      try {
-        data = {
-          ...data,
-          ...JSON.parse(
-            await fs.readFile(path.join(this.meta, 'documents', `${entry.id}.json`), 'utf8'),
-          ),
-        };
-      } catch (e) {
-        if (e.code !== 'ENOENT')
-          throw Error('批注文件损坏，已保留原文件；请检查 .html-reader/documents');
       }
       return {
         path: relative,
@@ -212,13 +195,14 @@ class Workspace {
   }
   async saveData({ id, data }) {
     return this.serial(async () => {
-      if (!Object.values(this.index.files).some((e) => e.id === id))
-        throw Error('文档不属于当前项目');
+      const relative = Object.keys(this.index.files).find((p) => this.index.files[p].id === id);
+      if (!relative) throw Error('文档不属于当前项目');
+      const full = await this.resolve(relative);
       if (data.version !== 1 || !Array.isArray(data.annotations) || typeof data.note !== 'string')
         throw Error('无效的批注数据');
       const json = JSON.stringify(mergeLegacyComments(data), null, 2);
       if (json.length > 30_000_000) throw Error('批注数据过大');
-      await atomicWrite(path.join(this.meta, 'documents', `${id}.json`), json);
+      await atomicWrite(documentStore.dataPath(path.dirname(full), id), json);
       return true;
     });
   }
@@ -273,7 +257,19 @@ class Workspace {
       if (await fs.stat(dst).catch(() => null)) throw Error('目标名称已存在');
       if (isHtml(from) && !isHtml(to)) throw Error('请保留 .html 或 .htm 扩展名');
       if (isPdf(from) && !isPdf(to)) throw Error('请保留 .pdf 扩展名');
-      await fs.rename(src, dst);
+      const store = isDocument(from)
+        ? await documentStore.locate(this, src, hash(await fs.readFile(src)), atomicWrite)
+        : null;
+      if (store) {
+        await documentStore.relocate(this, src, dst, store, atomicWrite);
+        if (path.dirname(dst) !== this.root) {
+          this.index.files[to] = {
+            id: store.entry.id,
+            hash: store.entry.hash,
+            storage: 'adjacent',
+          };
+        }
+      } else await fs.rename(src, dst);
       for (const key of Object.keys(this.index.files))
         if (key === from || key.startsWith(from + '/')) {
           this.index.files[to + key.slice(from.length)] = this.index.files[key];
@@ -298,6 +294,9 @@ class Workspace {
       await this.persistIndex();
       return this.summary();
     });
+  }
+  async importFiles(payload) {
+    return this.serial(() => require('./file-import.cjs').copyInto(this, payload));
   }
   async trash({ path: relative }, trashItem) {
     return this.serial(async () => {

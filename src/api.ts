@@ -23,3 +23,8 @@ export function documentUrl(path: string, version: number) {
 export function subscribe(cb: (e: { type: string }) => void) {
   return window.folio?.subscribe(cb) || (() => {});
 }
+
+export async function importFiles(files: File[], destination: string) {
+  if (!window.folio) throw Error('请在桌面版中从访达拖入文件');
+  return window.folio.importFiles(files, destination, token);
+}

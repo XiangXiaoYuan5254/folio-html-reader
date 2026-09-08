@@ -18,6 +18,7 @@ import {
   Sparkles,
   Maximize,
   Minimize,
+  Link2,
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { EraserMode, Tool } from '../types';
@@ -49,7 +50,7 @@ const tools = [
   {
     id: 'sticky',
     label: '便签',
-    help: '点击页面任意位置贴便签，可拖动和调整大小',
+    help: '点击页面贴便签，右上角可改字体、字号和底色；支持移动和调整大小',
     icon: StickyNote,
   },
   { id: 'pen', label: '画笔', help: '按住拖动自由画线；按住 E 临时擦除', icon: PenIcon },
@@ -73,6 +74,9 @@ export function Toolbar(p: {
   onTool: (v: Tool) => void;
   color: string;
   onColor: (v: string) => void;
+  canLinkScroll: boolean;
+  linkedScroll: boolean;
+  onLinkedScroll: () => void;
   zoom: number;
   onZoom: (v: number) => void;
   onLeft: () => void;
@@ -290,6 +294,18 @@ export function Toolbar(p: {
         </>
       )}
       <div className="toolbar-flex" />
+      {p.mode === 'read' && p.canLinkScroll ? (
+        <button
+          className="linked-scroll-toggle"
+          aria-label="同步滚动"
+          aria-pressed={p.linkedScroll}
+          title="保留两栏当前的位置，滚动任一栏时两篇一起移动；关闭后可分别定位"
+          onClick={p.onLinkedScroll}
+        >
+          <Link2 size={16} />
+          同步滚动
+        </button>
+      ) : null}
       {p.mode === 'read' ? (
         <select
           aria-label="阅读缩放"

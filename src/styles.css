@@ -587,6 +587,26 @@ kbd {
   color: var(--accent);
   background: var(--accent-soft);
 }
+.linked-scroll-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #617782;
+  font-size: 11px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.linked-scroll-toggle[aria-pressed='true'] {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: #b9d8d1;
+}
+.linked-scroll-toggle:hover {
+  background: var(--accent-soft);
+}
 .reading-column-header {
   height: 37px;
   flex-shrink: 0;
@@ -2115,4 +2135,20 @@ kbd {
   .statusbar > span:nth-last-of-type(2) {
     display: inline;
   }
+}
+
+.tree-row.folder.paste-destination,
+.project-label.paste-destination {
+  background: rgba(185, 132, 42, 0.1);
+  box-shadow: inset 2px 0 rgba(185, 132, 42, 0.55);
+}
+.file-tree:focus-visible,
+.project-label:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.tree-menu button kbd {
+  margin-left: auto;
+  opacity: 0.55;
+  font-size: 11px;
 }

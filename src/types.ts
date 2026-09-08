@@ -31,6 +31,7 @@ export type Annotation = {
   paths?: Point[][];
   strokeWidth?: number;
   fontSize?: number;
+  fontFamily?: string;
   size?: { width: number; height: number };
   collapsed?: boolean;
   note: string;
@@ -73,6 +74,11 @@ export type OutlineItem = { id: string; text: string; level: number };
 export type FrameEvent = { type: string; [key: string]: any };
 export interface FolioBridge {
   platform: string;
+  importFiles: (
+    files: File[],
+    destination: string,
+    token: string,
+  ) => Promise<{ workspace: WorkspaceInfo; imported: string[] }>;
   invoke: (action: string, payload?: unknown, token?: string) => Promise<any>;
   subscribe: (cb: (e: { type: string }) => void) => () => void;
 }

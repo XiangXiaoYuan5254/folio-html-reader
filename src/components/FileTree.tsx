@@ -19,6 +19,7 @@ import {
 import type { FileNode, WorkspaceInfo } from '../types';
 import { IconButton } from './IconButton';
 import { SidebarResizer } from './SidebarResizer';
+import { importFiles, invoke } from '../api';
 export type FileAction = 'create-file' | 'create-folder' | 'rename' | 'move' | 'trash' | 'reveal';
 export function FileTree({
   workspace,
@@ -30,6 +31,8 @@ export function FileTree({
   onRefresh,
   onClose,
   onReadingDrag,
+  onImported,
+  onImportError,
   status,
 }: {
   workspace: WorkspaceInfo | null;
@@ -41,6 +44,8 @@ export function FileTree({
   onRefresh: () => void;
   onClose: () => void;
   onReadingDrag: (path: string | null) => void;
+  onImported: (result: { workspace: WorkspaceInfo; imported: string[] }) => void;
+  onImportError: (message: string) => void;
   status?: ReactNode;
 }) {
   const [query, setQuery] = useState('');
@@ -49,6 +54,41 @@ export function FileTree({
   const [dragging, setDragging] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
+  const [pasteDestination, setPasteDestination] = useState('');
+  const [copying, setCopying] = useState(false);
+  const importing = useRef(false);
+  async function copyFiles(folder: string, files?: File[]) {
+    if (!workspace || importing.current) return;
+    importing.current = true;
+    setCopying(true);
+    setMenu(null);
+    try {
+      const result = files
+        ? await importFiles(files, folder)
+        : await invoke<{ workspace: WorkspaceInfo; imported: string[] }>('paste-files', {
+            destination: folder,
+          });
+      onImported(result);
+      setPasteDestination(folder);
+      setCollapsed((previous) => new Set([...previous].filter((p) => p !== folder)));
+    } catch (error) {
+      onImportError((error as Error).message);
+    } finally {
+      importing.current = false;
+      setCopying(false);
+    }
+  }
+  const pasteAction = useRef(() => {});
+  pasteAction.current = () => {
+    void copyFiles(pasteDestination);
+  };
+  useEffect(() => {
+    const paste = () => pasteAction.current();
+    window.addEventListener('folio-paste-files', paste);
+    return () => window.removeEventListener('folio-paste-files', paste);
+  }, []);
+  const externalFiles = (e: DragEvent<HTMLElement>) =>
+    !dragSource.current && e.dataTransfer.types.includes('Files');
   const dragSource = useRef<FileNode | null>(null);
   const folderHover = useRef<{ path: string; timer: ReturnType<typeof setTimeout> } | null>(null);
   const parentOf = (path: string) =>
@@ -80,13 +120,13 @@ export function FileTree({
       onDragOver: (e: DragEvent<HTMLElement>) => {
         e.preventDefault();
         e.stopPropagation();
-        if (!canDrop(folder)) {
+        if (copying || (!canDrop(folder) && !externalFiles(e))) {
           e.dataTransfer.dropEffect = 'none';
           setDropTarget(null);
           clearHover();
           return;
         }
-        e.dataTransfer.dropEffect = 'move';
+        e.dataTransfer.dropEffect = externalFiles(e) ? 'copy' : 'move';
         setDropTarget(folder);
         if (folderHover.current?.path !== folder) {
           clearHover();
@@ -112,6 +152,12 @@ export function FileTree({
       onDrop: async (e: DragEvent<HTMLElement>) => {
         e.preventDefault();
         e.stopPropagation();
+        if (externalFiles(e)) {
+          const files = Array.from(e.dataTransfer.files);
+          endDrag();
+          await copyFiles(folder, files);
+          return;
+        }
         const source = dragSource.current;
         const valid = canDrop(folder);
         endDrag();
@@ -146,10 +192,19 @@ export function FileTree({
     return nodes.filter(match).map((n) => (
       <div key={n.path}>
         <div
-          className={`tree-row ${n.kind} ${n.path === active ? 'selected' : ''} ${dragging === n.path ? 'dragging' : ''} ${n.kind === 'folder' && dropTarget === n.path ? 'drop-target' : ''}`}
+          className={`tree-row ${n.kind} ${n.path === active ? 'selected' : ''} ${dragging === n.path ? 'dragging' : ''} ${n.kind === 'folder' && pasteDestination === n.path ? 'paste-destination' : ''} ${n.kind === 'folder' && dropTarget === n.path ? 'drop-target' : ''}`}
+          onPointerDownCapture={() =>
+            setPasteDestination(n.kind === 'folder' ? n.path : parentOf(n.path))
+          }
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setPasteDestination(n.kind === 'folder' ? n.path : parentOf(n.path));
+            e.currentTarget.querySelector('button')?.focus();
+            setMenu(n.path);
+          }}
           data-file-path={n.path}
           style={{ paddingLeft: 12 + depth * 16 }}
-          draggable={!moving}
+          draggable={!moving && !copying}
           onDragStart={(e) => {
             dragSource.current = n;
             e.dataTransfer.effectAllowed =
@@ -210,6 +265,12 @@ export function FileTree({
         </div>
         {menu === n.path ? (
           <div className="tree-menu">
+            <button
+              disabled={copying}
+              onClick={() => void copyFiles(n.kind === 'folder' ? n.path : parentOf(n.path))}
+            >
+              粘贴文件 <kbd>⌘ V</kbd>
+            </button>
             {(n.kind === 'folder'
               ? [
                   ['create-file', '新建 HTML'],
@@ -270,7 +331,20 @@ export function FileTree({
         />
       </label>
       <div
-        className={`project-label ${dropTarget === '' ? 'drop-target' : ''}`}
+        className={`project-label ${pasteDestination === '' ? 'paste-destination' : ''} ${dropTarget === '' ? 'drop-target' : ''}`}
+        tabIndex={0}
+        onClick={(e) => {
+          if (!(e.target as Element).closest('button')) {
+            setPasteDestination('');
+            e.currentTarget.focus();
+          }
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setPasteDestination('');
+          e.currentTarget.focus();
+          setMenu(menu === '' ? null : '');
+        }}
         {...dropHandlers('')}
       >
         <FolderOpen size={16} />
@@ -290,12 +364,35 @@ export function FileTree({
           <Folder size={14} />
         </IconButton>
       </div>
+      {menu === '' && workspace ? (
+        <div className="tree-menu">
+          <button disabled={copying} onClick={() => void copyFiles('')}>
+            粘贴到工作空间 <kbd>⌘ V</kbd>
+          </button>
+        </div>
+      ) : null}
       <div
         className={`file-tree ${dropTarget === '' ? 'drop-target' : ''}`}
+        tabIndex={0}
+        onPointerDown={(e) => {
+          if (e.target === e.currentTarget) {
+            setPasteDestination('');
+            setMenu(null);
+            e.currentTarget.focus();
+          }
+        }}
+        onContextMenu={(e) => {
+          if (e.target === e.currentTarget) {
+            e.preventDefault();
+            setPasteDestination('');
+            e.currentTarget.focus();
+            setMenu('');
+          }
+        }}
         role="navigation"
         aria-label="项目文件"
-        aria-description="将文件或文件夹拖到目标文件夹；拖到项目名称或空白处可移回根目录"
-        aria-busy={moving}
+        aria-description="从访达拖入文件，或选择文件夹后按 Command V 粘贴；项目名称和空白处代表根目录"
+        aria-busy={moving || copying}
         {...dropHandlers('')}
       >
         {workspace ? rows(workspace.tree) : null}
@@ -303,15 +400,17 @@ export function FileTree({
           <div className="tree-empty">没有找到文件</div>
         ) : null}
       </div>
-      {dragging !== null || moving ? (
+      {dragging !== null || moving || copying || dropTarget !== null ? (
         <div className="tree-drop-hint" role="status">
-          {moving
-            ? '正在移动…'
-            : dropTarget !== null
-              ? `移动到：${dropTarget || '项目根目录'}`
-              : dragSource.current?.kind === 'html' || dragSource.current?.kind === 'pdf'
-                ? '拖到阅读区并排打开，或拖到文件夹移动'
-                : '拖到文件夹或项目名称移动'}
+          {copying
+            ? '正在复制文件…'
+            : moving
+              ? '正在移动…'
+              : dropTarget !== null
+                ? `${dragSource.current ? '移动' : '复制'}到：${dropTarget || '项目根目录'}`
+                : dragSource.current?.kind === 'html' || dragSource.current?.kind === 'pdf'
+                  ? '拖到阅读区并排打开，或拖到文件夹移动'
+                  : '拖到文件夹或项目名称移动'}
         </div>
       ) : null}
       <div className="sidebar-footer">

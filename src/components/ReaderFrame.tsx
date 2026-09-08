@@ -22,6 +22,7 @@ export type ReaderProps = {
   stickySize: NoteSize;
   zoom: number;
   zoomable?: boolean;
+  linkedScroll?: boolean;
   scroll: number;
   onEvent: (e: FrameEvent) => void;
 };
@@ -42,7 +43,7 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
         channel: 'folio-reader-v1',
         type,
         ...payload,
-        ...(type === 'zoom-state' ? { scale: actualScale.current } : {}),
+        ...(['zoom-state', 'linked-scroll'].includes(type) ? { scale: actualScale.current } : {}),
       },
       '*',
     );
@@ -97,6 +98,7 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
           stickySize: live.current.stickySize,
         });
         send('restore', { scroll: live.current.scroll });
+        send('scroll-link-state', { enabled: !!live.current.linkedScroll });
       }
       live.current.onEvent(
         e.data.type === 'zoom-wheel' ? { ...e.data, scale: actualScale.current } : e.data,
@@ -117,6 +119,9 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
   useLayoutEffect(() => {
     if (ready) send('zoom-state', { scale: p.zoom || 1, enabled: p.zoomable !== false });
   }, [ready, scale, p.zoomable, p.url]);
+  useEffect(() => {
+    if (ready) send('scroll-link-state', { enabled: !!p.linkedScroll });
+  }, [ready, p.linkedScroll]);
   useEffect(() => {
     if (ready)
       send('sync', {

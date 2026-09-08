@@ -94,6 +94,18 @@ export default function App() {
   const doc = model.docs.find((d) => d.id === model.active);
   const focus = useFocusMode(onError);
   const [split, setSplit] = useState<{ left: string; right: string | null } | null>(null);
+  const [linkedScroll, setLinkedScroll] = useState(() => {
+    try {
+      return localStorage.getItem('folio.linked-scroll') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('folio.linked-scroll', String(linkedScroll));
+    } catch {}
+  }, [linkedScroll]);
   const focusedSide = useRef<PaneSide>('left');
   const [splitRatio, setSplitRatio] = useState(() => {
     try {
@@ -289,6 +301,15 @@ export default function App() {
   useEffect(
     () =>
       subscribe((e) => {
+        if (e.type === 'paste') {
+          const target = document.activeElement;
+          if (
+            target?.closest('.file-sidebar') &&
+            !target.closest('input,textarea,[contenteditable]')
+          ) {
+            window.dispatchEvent(new Event('folio-paste-files'));
+          } else void invoke('paste-text');
+        }
         if (e.type === 'save') liveActions.current.save();
         if (e.type === 'open-folder') liveActions.current.folder();
         if (e.type === 'find') liveActions.current.find();
@@ -302,6 +323,16 @@ export default function App() {
     function keys(e: KeyboardEvent) {
       const target = e.target instanceof Element ? e.target : null;
       const input = target?.closest('input,textarea,select,[contenteditable],.cm-editor');
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        e.key.toLowerCase() === 'v' &&
+        !input &&
+        target?.closest('.file-sidebar')
+      ) {
+        e.preventDefault();
+        window.dispatchEvent(new Event('folio-paste-files'));
+        return;
+      }
       if (
         e.key === 'Tab' &&
         !e.shiftKey &&
@@ -628,6 +659,21 @@ export default function App() {
         if (Math.abs(e.scroll - doc.data.scroll) > 3) model.data(id, { scroll: e.scroll });
         patchReader(id, { progress: Math.max(0, Math.min(100, e.progress || 0)) });
         break;
+      case 'linked-wheel': {
+        if (!Number.isFinite(e.delta)) break;
+        // If a pane closes while its last wheel event is in flight, keep that
+        // final movement local instead of applying it to an unrelated document.
+        const targets =
+          linkedScroll &&
+          mode === 'read' &&
+          split?.right &&
+          (split.left === id || split.right === id)
+            ? [split.left, split.right]
+            : [id];
+        for (const target of targets)
+          readers.current.get(target)?.send('linked-scroll', { delta: e.delta });
+        break;
+      }
       case 'orphans':
         patchReader(id, { orphans: e.ids });
         break;
@@ -805,6 +851,11 @@ export default function App() {
               return false;
             }
           }}
+          onImported={(result) => {
+            setWorkspace(result.workspace);
+            notify(`已复制 ${result.imported.length} 个项目到工作空间`);
+          }}
+          onImportError={(message) => notify(message, true)}
           onRefresh={() => run(refresh)}
           status={
             <ReadingStatus
@@ -871,6 +922,9 @@ export default function App() {
               onTool={chooseTool}
               color={color}
               onColor={setColor}
+              canLinkScroll={!!readingSplit && !!readingSplit.right}
+              linkedScroll={linkedScroll}
+              onLinkedScroll={() => setLinkedScroll((v) => !v)}
               zoom={doc?.data.zoom || 0}
               onZoom={(zoom) => doc && model.data(doc.id, { zoom })}
               onLeft={() => setLeft((v) => !v)}
@@ -1049,6 +1103,7 @@ export default function App() {
                         stickySize={stickySize}
                         zoom={mode === 'source' ? 0 : paneDoc.data.zoom}
                         zoomable={mode === 'read'}
+                        linkedScroll={!!readingSplit && !!readingSplit.right && linkedScroll}
                         scroll={paneDoc.data.scroll}
                         onEvent={(e) => event(paneDoc.id, e)}
                       />

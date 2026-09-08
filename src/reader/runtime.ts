@@ -8,6 +8,7 @@ import { defaultColor } from '../colors';
 import { SelectionIndicator } from './selection-indicator';
 import type { SelectionRect } from './selection-indicator';
 import { ReaderZoom } from './zoom';
+import { LinkedScroll } from './linked-scroll';
 import { capturePdfRects, pdfQuoteRects, pdfPageAnchor } from './pdf-anchors';
 (() => {
   const channel = 'folio-reader-v1';
@@ -44,6 +45,7 @@ import { capturePdfRects, pdfQuoteRects, pdfPageAnchor } from './pdf-anchors';
   let popup: AnnotationPopup;
   let indicator: SelectionIndicator;
   let readerZoom: ReaderZoom;
+  let linkedScroll: LinkedScroll;
   // Only an explicit sidebar jump enables the visual locator. The active
   // annotation also changes during drawing/editing and must not enable it.
   let located: string | null = null;
@@ -809,6 +811,7 @@ import { capturePdfRects, pdfQuoteRects, pdfPageAnchor } from './pdf-anchors';
       popup.close();
       send('zoom-wheel', { delta });
     }, schedule);
+    linkedScroll = new LinkedScroll((delta) => send('linked-wheel', { delta }));
     window.addEventListener(
       'scroll',
       () => {
@@ -979,6 +982,8 @@ import { capturePdfRects, pdfQuoteRects, pdfPageAnchor } from './pdf-anchors';
       send('ready', { title: document.title, url: location.href });
     }
     if (m.type === 'zoom-state') readerZoom.apply(m.scale, m.enabled);
+    if (m.type === 'scroll-link-state') linkedScroll.setEnabled(!!m.enabled);
+    if (m.type === 'linked-scroll') linkedScroll.move(m.delta, m.scale);
     if (m.type === 'sync') {
       const currentInk = new Map(annotations.map((a) => [a.id, a]));
       annotations = (m.annotations || []).flatMap((a: Annotation) =>

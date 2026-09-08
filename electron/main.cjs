@@ -8,6 +8,7 @@ const {
   session,
   Menu,
   shell,
+  clipboard,
 } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
@@ -133,7 +134,11 @@ function menu() {
           { type: 'separator' },
           { role: 'cut' },
           { role: 'copy' },
-          { role: 'paste' },
+          {
+            label: '粘贴',
+            accelerator: 'CmdOrCtrl+V',
+            click: () => win.webContents.send('folio:event', { type: 'paste' }),
+          },
           { role: 'selectAll' },
         ],
       },
@@ -244,9 +249,15 @@ app
     ipcMain.handle('folio:invoke', async (event, action, payload, token) => {
       uiSender(event);
       if (
-        !['workspace', 'choose-folder', 'close', 'minimize', 'maximize', 'focus-mode'].includes(
-          action,
-        ) &&
+        ![
+          'workspace',
+          'choose-folder',
+          'close',
+          'minimize',
+          'maximize',
+          'focus-mode',
+          'paste-text',
+        ].includes(action) &&
         token !== workspace.token
       )
         throw Error('项目已切换，请重新打开文件');
@@ -274,6 +285,15 @@ app
           return workspace.create(payload);
         case 'move':
           return workspace.move(payload);
+        case 'import-files':
+          return workspace.importFiles(payload);
+        case 'paste-files': {
+          const paths = await require('./file-import.cjs').clipboardPaths(clipboard);
+          return workspace.importFiles({ paths, destination: payload.destination });
+        }
+        case 'paste-text':
+          win.webContents.paste();
+          return true;
         case 'trash':
           return workspace.trash(payload, (file) => shell.trashItem(file));
         case 'preview': {
