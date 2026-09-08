@@ -46,6 +46,9 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
       if (e.source !== frame.current?.contentWindow || e.data?.channel !== 'folio-reader-v1')
         return;
       if (e.data.type === 'ready') {
+        // During preview navigation, the old document can still reply through
+        // the same WindowProxy. Only initialize the document requested here.
+        if (e.data.url !== new URL(live.current.url, window.location.href).href) return;
         if (initialized) return;
         initialized = true;
         clearTimeout(timeout);

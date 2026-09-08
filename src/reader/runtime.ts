@@ -957,7 +957,7 @@ import { ReaderZoom } from './zoom';
       cursor.style.display = 'none';
     });
     outline();
-    send('ready', { title: document.title });
+    send('ready', { title: document.title, url: location.href });
   }
   window.addEventListener('message', (e) => {
     if (e.source !== parent || e.data?.channel !== channel) return;
@@ -965,7 +965,7 @@ import { ReaderZoom } from './zoom';
     if (!ready) return;
     if (m.type === 'request-ready') {
       outline();
-      send('ready', { title: document.title });
+      send('ready', { title: document.title, url: location.href });
     }
     if (m.type === 'zoom-state') readerZoom.apply(m.scale, m.enabled);
     if (m.type === 'sync') {
