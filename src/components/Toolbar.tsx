@@ -19,6 +19,8 @@ import {
   Maximize,
   Minimize,
   Link2,
+  Minus,
+  Plus,
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { EraserMode, Tool } from '../types';
@@ -26,7 +28,7 @@ import { IconButton } from './IconButton';
 import { PenIcon } from './PenIcon';
 import { annotationColors as colors } from '../colors';
 import { ColorPicker } from './ColorPicker';
-import { zoomLabel, zoomPresets } from '../zoom';
+import { zoomAfterWheel, zoomLabel, zoomPresets } from '../zoom';
 const tools = [
   {
     id: 'select',
@@ -307,22 +309,36 @@ export function Toolbar(p: {
         </button>
       ) : null}
       {p.mode === 'read' ? (
-        <select
-          aria-label="阅读缩放"
-          title="按住 ⌘ 滚动鼠标滚轮缩放 · 25%–400%"
-          value={p.zoom}
-          onChange={(e) => p.onZoom(Number(e.target.value))}
-        >
-          <option value={0}>适合宽度</option>
-          {p.zoom > 0 && !zoomPresets.includes(p.zoom) ? (
-            <option value={p.zoom}>{zoomLabel(p.zoom)}</option>
-          ) : null}
-          {zoomPresets.map((v) => (
-            <option key={v} value={v}>
-              {zoomLabel(v)}
-            </option>
-          ))}
-        </select>
+        <div className="zoom-control" role="group" aria-label="缩放控制">
+          <IconButton
+            label="缩小阅读内容"
+            onClick={() => p.onZoom(zoomAfterWheel(p.zoom || 1, 60))}
+          >
+            <Minus size={15} />
+          </IconButton>
+          <select
+            aria-label="阅读缩放"
+            title="按住 ⌘ 滚动鼠标滚轮缩放；Mac 触控板可双指捏合 · 25%–400%"
+            value={p.zoom}
+            onChange={(e) => p.onZoom(Number(e.target.value))}
+          >
+            <option value={0}>适合宽度</option>
+            {p.zoom > 0 && !zoomPresets.includes(p.zoom) ? (
+              <option value={p.zoom}>{zoomLabel(p.zoom)}</option>
+            ) : null}
+            {zoomPresets.map((v) => (
+              <option key={v} value={v}>
+                {zoomLabel(v)}
+              </option>
+            ))}
+          </select>
+          <IconButton
+            label="放大阅读内容"
+            onClick={() => p.onZoom(zoomAfterWheel(p.zoom || 1, -60))}
+          >
+            <Plus size={15} />
+          </IconButton>
+        </div>
       ) : null}
       <IconButton label="查找文内文字" onClick={p.onFind} disabled={p.disabled}>
         <Search size={17} />

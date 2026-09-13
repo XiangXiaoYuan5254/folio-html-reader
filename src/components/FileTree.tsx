@@ -319,7 +319,7 @@ export function FileTree({
       </div>
       <button className="open-folder" onClick={onFolder}>
         <FolderOpen size={17} />
-        打开文件夹 <kbd>⌘ O</kbd>
+        选择项目 <kbd>⌘ O</kbd>
       </button>
       <label className="tree-search">
         <Search size={14} />

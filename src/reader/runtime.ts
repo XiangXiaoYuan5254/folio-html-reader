@@ -2,7 +2,7 @@ import type { Anchor, Annotation, EraserMode, Point, Tool } from '../types';
 import { erasePaths, inkPaths, inkPathData, inkBounds, smoothPoints } from './ink';
 import { PageNotes } from './notes';
 import { AnnotationPopup } from './annotation-popup';
-import { stickyNoteSize } from './note-size';
+import { STICKY_MIN_WIDTH, stickyNoteSize } from './note-size';
 import { penCursor } from './pen-cursor';
 import { defaultColor } from '../colors';
 import { SelectionIndicator } from './selection-indicator';
@@ -724,7 +724,7 @@ import { capturePdfRects, pdfQuoteRects, pdfPageAnchor } from './pdf-anchors';
               ...stickySize,
               width: Math.min(
                 stickySize.width,
-                Math.max(220, document.documentElement.clientWidth - 16),
+                Math.max(STICKY_MIN_WIDTH, document.documentElement.clientWidth - 16),
               ),
             };
         const position = {

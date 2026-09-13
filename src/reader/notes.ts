@@ -1,4 +1,5 @@
 import type { Annotation, Point } from '../types';
+import { STICKY_MIN_HEIGHT, STICKY_MIN_WIDTH } from './note-size';
 import {
   annotationColors,
   colorPickerStyles,
@@ -47,7 +48,7 @@ const css = `
 ${colorPickerStyles}
 :host{all:initial;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:#504a28}
 *{box-sizing:border-box} button,textarea{font:inherit} button{cursor:pointer}
-.card{position:absolute;pointer-events:auto;border:1px solid color-mix(in srgb,var(--ink) 55%,#b39c4f);border-radius:12px;overflow:hidden;background:color-mix(in srgb,var(--ink) 22%,#fffef3);box-shadow:0 8px 25px #40361520;display:flex;flex-direction:column;min-width:220px;min-height:130px}
+.card{position:absolute;pointer-events:auto;border:1px solid color-mix(in srgb,var(--ink) 55%,#b39c4f);border-radius:12px;overflow:hidden;background:color-mix(in srgb,var(--ink) 22%,#fffef3);box-shadow:0 8px 25px #40361520;display:flex;flex-direction:column;min-width:180px;min-height:100px}
 .card:focus-within{box-shadow:0 0 0 2px color-mix(in srgb,var(--ink) 42%,transparent),0 9px 28px #40361524}
 .head{display:flex;align-items:center;gap:8px;height:40px;flex-shrink:0;padding:0 9px 0 14px;background:color-mix(in srgb,var(--ink) 35%,#fffdf1);cursor:grab;user-select:none;touch-action:none}
 .head:active{cursor:grabbing}.title{font-size:14px;font-weight:550;flex:1}.head button{display:grid;place-items:center;width:25px;height:25px;border:0;background:transparent;border-radius:5px;color:#756c40;padding:4px}.head button:hover{background:#ffffff80;color:#37301c}
@@ -102,7 +103,9 @@ export class PageNotes {
     size: { width: number; height: number };
     pointer: number;
     target: HTMLElement;
+    moved: boolean;
   } | null = null;
+  private suppressPinClick = false;
 
   constructor(private callbacks: Callbacks) {
     const host = document.createElement('div');
@@ -442,7 +445,13 @@ export class PageNotes {
       else this.patch(a.id, { collapsed: true });
     };
     remove.onclick = () => this.callbacks.remove(a.id);
-    pin.onclick = () => this.open(a.id);
+    pin.onclick = () => {
+      if (this.suppressPinClick) {
+        this.suppressPinClick = false;
+        return;
+      }
+      this.open(a.id);
+    };
     input.onfocus = () => {
       this.editingGroup = `note:${a.id}:${crypto.randomUUID()}`;
       this.callbacks.select(a.id);
@@ -456,7 +465,12 @@ export class PageNotes {
       }
     };
     const start = (e: PointerEvent, mode: 'move' | 'resize') => {
-      if (e.button !== 0 || (mode === 'move' && (e.target as Element).closest('button,select')))
+      if (
+        e.button !== 0 ||
+        (mode === 'move' &&
+          (e.target as Element).closest('button,select') &&
+          !(e.currentTarget as HTMLElement).classList.contains('pin'))
+      )
         return;
       const current = this.items.get(a.id),
         origin = current && this.callbacks.position(current);
@@ -476,10 +490,12 @@ export class PageNotes {
         size,
         pointer: e.pointerId,
         target,
+        moved: false,
       };
       this.callbacks.select(a.id);
     };
     head.onpointerdown = (e) => start(e, 'move');
+    pin.onpointerdown = (e) => start(e, 'move');
     resize.onpointerdown = (e) => start(e, 'resize');
     return card;
   }
@@ -491,6 +507,7 @@ export class PageNotes {
     if (!card) return;
     const dx = e.clientX - d.start.x,
       dy = e.clientY - d.start.y;
+    if (Math.hypot(dx, dy) > 3) d.moved = true;
     if (d.mode === 'move') {
       d.next = {
         x: Math.max(
@@ -503,10 +520,10 @@ export class PageNotes {
     } else {
       d.size = {
         width: Math.max(
-          220,
+          STICKY_MIN_WIDTH,
           Math.min(600, document.documentElement.scrollWidth - d.origin.x - 8, d.width + dx),
         ),
-        height: Math.max(130, Math.min(800, d.height + dy)),
+        height: Math.max(STICKY_MIN_HEIGHT, Math.min(800, d.height + dy)),
       };
       if (this.items.get(d.id)?.type === 'text') d.size.height = 36;
       card.element.style.width = `${d.size.width}px`;
@@ -522,6 +539,7 @@ export class PageNotes {
     try {
       d.target.releasePointerCapture(d.pointer);
     } catch {}
+    if (d.target.classList.contains('pin')) this.suppressPinClick = d.moved;
     if (cancel) {
       this.sync([...this.items.values()]);
       return;

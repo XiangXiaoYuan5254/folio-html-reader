@@ -26,7 +26,15 @@ export class ReaderZoom {
   }
 
   private wheel = (e: WheelEvent) => {
-    if (!this.enabled || !e.metaKey || !Number.isFinite(e.deltaY) || !e.deltaY) return;
+    // Chromium reports macOS trackpad pinch as a wheel event with ctrlKey.
+    const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+    if (
+      !this.enabled ||
+      (!e.metaKey && !(isMac && e.ctrlKey)) ||
+      !Number.isFinite(e.deltaY) ||
+      !e.deltaY
+    )
+      return;
     e.preventDefault();
     e.stopPropagation();
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? innerHeight : 1;

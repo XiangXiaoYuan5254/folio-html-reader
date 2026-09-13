@@ -351,6 +351,19 @@ kbd {
   gap: 7px;
   color: #95a1aa;
   margin: 16px 6px 15px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  transition:
+    border-color 0.15s,
+    background-color 0.15s,
+    box-shadow 0.15s;
+}
+.tree-search:focus-within {
+  color: var(--accent);
+  background: #fff;
+  border-color: color-mix(in srgb, var(--accent) 55%, #d8e2e1);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
 }
 .tree-search input {
   border: 0;
@@ -358,6 +371,77 @@ kbd {
   width: 100%;
   font-size: 11px;
   outline: none;
+}
+.project-picker-backdrop {
+  z-index: 20;
+}
+.project-picker {
+  width: min(520px, calc(100vw - 32px));
+  max-height: min(680px, calc(100vh - 32px));
+  overflow: auto;
+  padding: 20px;
+  background: #fff;
+  border: 1px solid #dfe6e5;
+  border-radius: 12px;
+  box-shadow: 0 18px 48px #24324025;
+}
+.project-picker-hint {
+  margin: -5px 0 14px;
+  color: #77858c;
+  font-size: 12px;
+}
+.recent-projects {
+  display: grid;
+  gap: 7px;
+}
+.recent-project {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 10px 11px;
+  text-align: left;
+  color: #42545b;
+  background: #f8faf9;
+  border: 1px solid #e3eae8;
+  border-radius: 7px;
+}
+.recent-project:hover,
+.recent-project:focus-visible {
+  background: #eff7f5;
+  border-color: #9dc6bc;
+}
+.recent-project > svg {
+  flex: 0 0 auto;
+  color: #ad7e30;
+}
+.recent-project span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.recent-project strong,
+.recent-project small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recent-project strong {
+  font-size: 13px;
+}
+.recent-project small {
+  color: #8a989d;
+  font-size: 10px;
+}
+.recent-projects-empty {
+  padding: 18px 0;
+  color: #8a989d;
+  font-size: 12px;
+  text-align: center;
+}
+.project-picker-new {
+  width: 100%;
+  margin-top: 15px;
 }
 .project-label {
   display: flex;
@@ -853,6 +937,24 @@ kbd {
   padding: 4px 0;
   outline: none;
   flex-shrink: 0;
+}
+.zoom-control {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex-shrink: 0;
+  border: 1px solid #e2e6ea;
+  border-radius: 5px;
+  padding: 0 2px;
+}
+.zoom-control > .icon-button {
+  width: 24px;
+  height: 27px;
+}
+.zoom-control select {
+  max-width: 89px;
+  padding-left: 2px;
+  padding-right: 2px;
 }
 .source-hint {
   font-size: 11px;

@@ -41,6 +41,8 @@ import { IconButton } from './components/IconButton';
 import { useDocuments } from './hooks/useDocuments';
 import { useFocusMode } from './hooks/useFocusMode';
 import { ReadingStatus } from './components/ReadingStatus';
+import { ProjectPicker } from './components/ProjectPicker';
+import type { RecentProject } from './components/ProjectPicker';
 import { annotationColors, defaultColor, normalizeColor } from './colors';
 import { zoomAfterWheel } from './zoom';
 const SourceEditor = lazy(() => import('./components/SourceEditor'));
@@ -182,6 +184,7 @@ export default function App() {
   const setSelection = (selection: Anchor | null) => doc && patchReader(doc.id, { selection });
   const setRebind = (rebind: string | null) => doc && patchReader(doc.id, { rebind });
   const [dialog, setDialog] = useState<DialogOptions | null>(null);
+  const [projectPicker, setProjectPicker] = useState<RecentProject[] | null>(null);
   const [finding, setFinding] = useState(false);
   const [query, setQuery] = useState('');
   const [findMissing, setFindMissing] = useState(false);
@@ -490,30 +493,51 @@ export default function App() {
     focusedSide.current = 'left';
     setSplit({ left: doc.id, right: other?.id || null });
   }
-  function openFolder() {
+  async function loadWorkspace(w: WorkspaceInfo) {
+    sessionReady.current = false;
+    model.clear();
+    setSplit(null);
+    setReaderStates({});
+    useWorkspace(w);
+    setMode('read');
+    const paths = w.session?.paths || ([firstDocument(w.tree)].filter(Boolean) as string[]);
+    for (const p of paths) {
+      try {
+        await model.open(p);
+      } catch (e) {
+        notify((e as Error).message, true);
+      }
+    }
+    const activeDoc = model.docsRef.current.find((d) => d.path === w.session?.active);
+    if (activeDoc) model.setActive(activeDoc.id);
+    restoreSplit(w);
+    sessionReady.current = true;
+    setWorkspace(w);
+  }
+  function chooseNewProject() {
+    setProjectPicker(null);
     guardDirty(model.docs, async () => {
       await model.flush();
       const w = await invoke<WorkspaceInfo | null>('choose-folder');
-      if (!w) return;
-      sessionReady.current = false;
-      model.clear();
-      setSplit(null);
-      setReaderStates({});
-      useWorkspace(w);
-      setMode('read');
-      const paths = w.session?.paths || ([firstDocument(w.tree)].filter(Boolean) as string[]);
-      for (const p of paths) {
-        try {
-          await model.open(p);
-        } catch (e) {
-          notify((e as Error).message, true);
-        }
-      }
-      const activeDoc = model.docsRef.current.find((d) => d.path === w.session?.active);
-      if (activeDoc) model.setActive(activeDoc.id);
-      restoreSplit(w);
-      sessionReady.current = true;
-      setWorkspace(w);
+      if (w) await loadWorkspace(w);
+    });
+  }
+  function openRecentProject(root: string) {
+    setProjectPicker(null);
+    run(async () => {
+      const w = await invoke<WorkspaceInfo>('open-recent-workspace', { root });
+      await loadWorkspace(w);
+    });
+  }
+  function openFolder() {
+    if (!isDesktop) {
+      chooseNewProject();
+      return;
+    }
+    guardDirty(model.docs, async () => {
+      await model.flush();
+      const projects = await invoke<RecentProject[]>('recent-workspaces');
+      setProjectPicker(projects);
     });
   }
   function save() {
@@ -1203,10 +1227,10 @@ export default function App() {
                 <BookOpen size={38} />
               </div>
               <h1>在文字之间，留下思考。</h1>
-              <p>打开一个文件夹，开始阅读和批注 HTML、PDF。</p>
+              <p>选择一个项目，开始阅读和批注 HTML、PDF。</p>
               <button className="primary-button" onClick={openFolder}>
                 <FolderOpen size={17} />
-                打开文件夹
+                选择项目
               </button>
               <span>高亮 · 批注 · 手绘 · 笔记</span>
             </div>
@@ -1252,6 +1276,14 @@ export default function App() {
             <X size={15} />
           </IconButton>
         </div>
+      ) : null}
+      {projectPicker ? (
+        <ProjectPicker
+          projects={projectPicker}
+          onOpen={openRecentProject}
+          onNew={chooseNewProject}
+          onClose={() => setProjectPicker(null)}
+        />
       ) : null}
       {dialog ? <Dialog options={dialog} onClose={() => setDialog(null)} /> : null}
     </div>

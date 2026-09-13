@@ -77,7 +77,7 @@ class Workspace {
     });
   }
   async resolve(relative, { create = false, internal = false } = {}) {
-    if (!this.root) throw Error('请先打开文件夹');
+    if (!this.root) throw Error('请先选择项目');
     if (typeof relative !== 'string' || path.isAbsolute(relative) || relative.includes('\0'))
       throw Error('无效的文件路径');
     const full = path.resolve(this.root, relative);

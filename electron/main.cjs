@@ -45,10 +45,25 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
+async function readSettings() {
+  try {
+    const value = JSON.parse(await fs.readFile(settingsFile(), 'utf8'));
+    return value && typeof value === 'object' ? value : {};
+  } catch {
+    return {};
+  }
+}
+async function rememberWorkspace(root) {
+  const settings = await readSettings();
+  const recent = [root, ...(Array.isArray(settings.recentRoots) ? settings.recentRoots : [])]
+    .filter((value, index, values) => typeof value === 'string' && values.indexOf(value) === index)
+    .slice(0, 5);
+  await atomicWrite(settingsFile(), JSON.stringify({ ...settings, root, recentRoots: recent }));
+}
 async function openWorkspace(root) {
   const result = await workspace.open(root);
   previews.clear();
-  await atomicWrite(settingsFile(), JSON.stringify({ root }));
+  await rememberWorkspace(root);
   watcher?.close();
   try {
     watcher = require('node:fs').watch(root, { recursive: true }, (_, filename) => {
@@ -113,7 +128,7 @@ function menu() {
         label: '文件',
         submenu: [
           {
-            label: '打开文件夹…',
+            label: '选择项目…',
             accelerator: 'CmdOrCtrl+O',
             click: () => win.webContents.send('folio:event', { type: 'open-folder' }),
           },
@@ -251,6 +266,7 @@ app
       if (
         ![
           'workspace',
+          'recent-workspaces',
           'choose-folder',
           'close',
           'minimize',
@@ -264,6 +280,22 @@ app
       switch (action) {
         case 'workspace':
           return workspace.summary();
+        case 'recent-workspaces': {
+          const settings = await readSettings();
+          const roots = Array.isArray(settings.recentRoots) ? settings.recentRoots : [];
+          const projects = [];
+          for (const root of roots) {
+            if (typeof root !== 'string' || projects.some((project) => project.root === root))
+              continue;
+            try {
+              const real = await fs.realpath(root);
+              if (!(await fs.stat(real)).isDirectory()) continue;
+              projects.push({ root: real, name: path.basename(real) || real });
+            } catch {}
+            if (projects.length >= 5) break;
+          }
+          return projects;
+        }
         case 'choose-folder': {
           const r = await dialog.showOpenDialog(win, {
             properties: ['openDirectory'],
@@ -271,6 +303,9 @@ app
           });
           return r.canceled ? null : openWorkspace(r.filePaths[0]);
         }
+        case 'open-recent-workspace':
+          if (typeof payload?.root !== 'string') throw Error('无效的项目路径');
+          return openWorkspace(payload.root);
         case 'tree':
           return workspace.summary();
         case 'document':
