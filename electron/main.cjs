@@ -14,7 +14,7 @@ const path = require('node:path');
 const fs = require('node:fs/promises');
 const { pathToFileURL } = require('node:url');
 const { Workspace, atomicWrite } = require('./workspace.cjs');
-const { renderDocument, mime } = require('./render.cjs');
+const { renderDocument, markSourceOffsets, mime } = require('./render.cjs');
 const { renderPDFDocument, pdfAssetPath } = require('./pdf.cjs');
 const workspace = new Workspace();
 let win;
@@ -245,7 +245,8 @@ app
         const dir = relative.includes('/') ? relative.slice(0, relative.lastIndexOf('/') + 1) : '';
         const base = `folio://asset/${workspace.token}/${dir.split('/').map(encodeURIComponent).join('/')}`;
         const runtime = await fs.readFile(path.join(__dirname, '../dist/reader.js'), 'utf8');
-        return new Response(renderDocument(source, base, runtime), {
+        const html = url.host === 'preview' ? markSourceOffsets(source) : source;
+        return new Response(renderDocument(html, base, runtime), {
           headers: {
             'Content-Type': 'text/html; charset=utf-8',
             'Content-Security-Policy':
@@ -412,6 +413,21 @@ app
         }
       });
       win.webContents.on('will-navigate', (e) => e.preventDefault());
+      win.webContents.on('context-menu', (_, params) => {
+        const { editFlags, isEditable, selectionText } = params;
+        const items = isEditable
+          ? [
+              { role: 'cut', label: '剪切', enabled: editFlags.canCut },
+              { role: 'copy', label: '拷贝', enabled: editFlags.canCopy },
+              { role: 'paste', label: '粘贴', enabled: editFlags.canPaste },
+              { type: 'separator' },
+              { role: 'selectAll', label: '全选' },
+            ]
+          : selectionText.trim()
+            ? [{ role: 'copy', label: '拷贝' }]
+            : [];
+        if (items.length) Menu.buildFromTemplate(items).popup({ window: win });
+      });
       win.on('close', (e) => {
         if (!allowClose) {
           e.preventDefault();

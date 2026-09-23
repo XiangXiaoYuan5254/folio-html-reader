@@ -7,6 +7,7 @@ const hidden = new Set(['node_modules', 'dist', 'release', 'build', 'coverage'])
 const isHtml = (p) => /\.html?$/i.test(p);
 const isPdf = (p) => /\.pdf$/i.test(p);
 const isDocument = (p) => isHtml(p) || isPdf(p);
+const backupInterval = 10 * 60_000;
 const clone = (x) => JSON.parse(JSON.stringify(x));
 // Normalize legacy comments at the storage boundary so every UI uses the same types.
 // Reading leaves the original file intact; the next normal save persists the conversion.
@@ -140,9 +141,10 @@ class Workspace {
   }
   async saveSession({ paths, active, split }) {
     return this.serial(async () => {
+      if (Array.isArray(paths) && paths.length > 100)
+        throw Error('同时打开的文档过多，请先关闭一些标签页');
       if (
         !Array.isArray(paths) ||
-        paths.length > 100 ||
         !paths.every((p) => typeof p === 'string' && isDocument(p)) ||
         typeof active !== 'string'
       )
@@ -217,15 +219,15 @@ class Workspace {
         );
       const id = this.index.files[relative]?.id;
       if (!id) throw Error('请重新打开文档');
-      await atomicWrite(
-        path.join(
-          this.meta,
-          'backups',
-          id,
-          `${Date.now()}-${crypto.randomUUID().slice(0, 8)}.html`,
-        ),
-        current,
-      );
+      // Auto-save writes often: keep the version before editing, then at most one copy per 10 minutes.
+      const backups = path.join(this.meta, 'backups', id);
+      const names = await fs.readdir(backups).catch(() => []);
+      const latest = Math.max(0, ...names.map((name) => parseInt(name, 10) || 0));
+      if (Date.now() - latest >= backupInterval)
+        await atomicWrite(
+          path.join(backups, `${Date.now()}-${crypto.randomUUID().slice(0, 8)}.html`),
+          current,
+        );
       await atomicWrite(full, source);
       this.index.files[relative].hash = hash(source);
       await this.persistIndex();

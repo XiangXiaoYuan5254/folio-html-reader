@@ -133,8 +133,8 @@ async function replaceSource(text) {
   const editor = page.locator('.cm-content');
   await editor.click();
   await page.keyboard.press('Meta+A');
+  // Auto-save (on by default) writes the edit straight away.
   await page.keyboard.insertText(text);
-  await page.getByRole('button', { name: /^保存/ }).click();
 }
 try {
   await start();
@@ -371,11 +371,19 @@ try {
   await editor.click();
   await page.keyboard.press('Meta+End');
   await page.keyboard.insertText('\n<!-- 本地草稿 -->');
+  await waitFor(
+    async () =>
+      (await fs.readFile(path.join(samples, '阅读归档/我的批注.html'), 'utf8')).includes(
+        '本地草稿',
+      ),
+    'draft auto-saved',
+  );
   await fs.writeFile(
     path.join(samples, '阅读归档/我的批注.html'),
     modified + '\n<!-- 外部修改 -->',
   );
-  await page.getByRole('button', { name: /^保存/ }).click();
+  // The next edit tries to save and finds the file changed on disk.
+  await page.keyboard.insertText('\n<!-- 继续编辑 -->');
   await page.getByRole('alert').waitFor();
   assert.ok((await page.getByRole('alert').innerText()).includes('外部程序'));
   assert.ok((await editor.innerText()).includes('本地草稿'));

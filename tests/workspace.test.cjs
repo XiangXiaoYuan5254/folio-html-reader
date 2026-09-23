@@ -30,7 +30,7 @@ test('批注、笔记和阅读位置在重启后恢复', async (t) => {
   assert.deepEqual(again.data, data);
   assert.equal(await fs.readFile(path.join(root, '示例.html'), 'utf8'), d.source);
 });
-test('源码保存保留原始备份，并阻止覆盖外部修改', async (t) => {
+test('源码保存保留原始备份（10 分钟内不重复），并阻止覆盖外部修改', async (t) => {
   const { w, root } = await setup(t);
   const d = await w.document('示例.html');
   const result = await w.saveSource({
@@ -45,9 +45,16 @@ test('源码保存保留原始备份，并阻止覆盖外部修改', async (t) =
     await fs.readFile(path.join(root, '.html-reader', 'backups', d.id, backups[0]), 'utf8'),
     d.source,
   );
+  // Auto-save writes again within minutes without piling up backups.
+  const again = await w.saveSource({
+    path: d.path,
+    source: '<h1>再次编辑</h1>',
+    version: result.version,
+  });
+  assert.equal((await fs.readdir(path.join(root, '.html-reader', 'backups', d.id))).length, 1);
   await fs.writeFile(path.join(root, d.path), '外部修改');
   await assert.rejects(
-    w.saveSource({ path: d.path, source: '不能覆盖', version: result.version }),
+    w.saveSource({ path: d.path, source: '不能覆盖', version: again.version }),
     /外部程序/,
   );
   assert.equal(await fs.readFile(path.join(root, d.path), 'utf8'), '外部修改');
@@ -117,6 +124,12 @@ test('双栏会话在重启和目录移动后保留两篇文档，退出后清�
     split: { left: '示例.html', right: '不存在.html' },
   });
   assert.equal((await new Workspace().open(root)).session.split, undefined);
+});
+test('打开文档过多时明确提示，而不是报无效会话', async (t) => {
+  const { w } = await setup(t);
+  const paths = Array.from({ length: 101 }, (_, i) => `文档${i}.html`);
+  await assert.rejects(w.saveSession({ paths, active: paths[0] }), /打开的文档过多/);
+  await assert.rejects(w.saveSession({ paths: ['笔记.md'], active: '' }), /无效的阅读会话/);
 });
 test('阻止路径穿越、隐藏数据访问和外部符号链接', async (t) => {
   const { w, root } = await setup(t);

@@ -973,6 +973,46 @@ kbd {
 .save-button kbd {
   color: #72988f;
 }
+.autosave-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 9px;
+  border-radius: 5px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.autosave-toggle:hover {
+  background: #f1f4f6;
+}
+.autosave-toggle.active {
+  color: var(--accent);
+}
+.autosave-toggle .switch {
+  position: relative;
+  width: 24px;
+  height: 14px;
+  border-radius: 7px;
+  background: #cfd6dc;
+  transition: background 0.15s;
+}
+.autosave-toggle .switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s;
+}
+.autosave-toggle.active .switch {
+  background: var(--accent);
+}
+.autosave-toggle.active .switch::after {
+  transform: translateX(10px);
+}
 .document-workbench {
   flex: 1;
   min-height: 0;

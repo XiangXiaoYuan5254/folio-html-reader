@@ -10,6 +10,7 @@ export function DocumentTabs({
   onNew,
   split,
   onSplit,
+  autosave,
 }: {
   docs: OpenDocument[];
   active: string;
@@ -18,6 +19,8 @@ export function DocumentTabs({
   onNew: () => void;
   split: boolean;
   onSplit: () => void;
+  // Auto-saved edits are written at once, so only a failed save leaves a tab marked unsaved.
+  autosave: boolean;
 }) {
   const strip = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -47,7 +50,7 @@ export function DocumentTabs({
                 <FileCode2 size={14} />
               )}
               <span>{d.path.split('/').at(-1)}</span>
-              {d.draft !== d.source ? (
+              {d.draft !== d.source && (!autosave || d.autosavePaused) ? (
                 <span className="dirty-dot" aria-label="有未保存的修改" />
               ) : null}
             </button>

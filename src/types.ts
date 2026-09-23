@@ -69,6 +69,8 @@ export type OpenDocument = {
   preview: number;
   history: Annotation[][];
   future: Annotation[][];
+  // Set when a source save fails (e.g. the file changed on disk); cleared by a save or reload.
+  autosavePaused?: boolean;
 };
 export type OutlineItem = { id: string; text: string; level: number };
 export type FrameEvent = { type: string; [key: string]: any };

@@ -31,14 +31,14 @@ import { DocumentTabs } from './components/DocumentTabs';
 import { Toolbar } from './components/Toolbar';
 import { DocumentReader } from './components/DocumentReader';
 import { ReadingResizer } from './components/ReadingResizer';
-import { stickyNoteSize } from './reader/note-size';
+import { stickyNoteSize, textNoteWidth } from './reader/note-size';
 import type { ReaderHandle } from './components/ReaderFrame';
 import { Inspector } from './components/Inspector';
 import type { InspectorTab } from './components/Inspector';
 import { Dialog } from './components/Dialog';
 import type { DialogOptions } from './components/Dialog';
 import { IconButton } from './components/IconButton';
-import { useDocuments } from './hooks/useDocuments';
+import { restorablePaths, useDocuments } from './hooks/useDocuments';
 import { useFocusMode } from './hooks/useFocusMode';
 import { ReadingStatus } from './components/ReadingStatus';
 import { ProjectPicker } from './components/ProjectPicker';
@@ -46,6 +46,7 @@ import type { RecentProject } from './components/ProjectPicker';
 import { annotationColors, defaultColor, normalizeColor } from './colors';
 import { zoomAfterWheel } from './zoom';
 const SourceEditor = lazy(() => import('./components/SourceEditor'));
+import type { SourceEditorHandle } from './components/SourceEditor';
 const toolHints: Record<Tool, string> = {
   select: '选中文字开始批注',
   highlight: '拖选文字添加高亮 · 点击高亮添加笔记 · 悬停查看',
@@ -170,6 +171,26 @@ export default function App() {
       return stickyNoteSize(null);
     }
   });
+  // HTML source edits are written as you type unless auto-save is turned off.
+  const [autosave, setAutosave] = useState(() => {
+    try {
+      return localStorage.getItem('folio.autosave') !== 'off';
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('folio.autosave', autosave ? 'on' : 'off');
+    } catch {}
+  }, [autosave]);
+  const [textWidth, setTextWidth] = useState(() => {
+    try {
+      return textNoteWidth(JSON.parse(localStorage.getItem('folio.text-width') || 'null'));
+    } catch {
+      return textNoteWidth(null);
+    }
+  });
   const [tab, setTab] = useState<InspectorTab>('annotations');
   const [readerStates, setReaderStates] = useState<Record<string, ReaderState>>({});
   const { selected, outline, orphans, selection, rebind, progress } =
@@ -189,6 +210,13 @@ export default function App() {
   const [query, setQuery] = useState('');
   const [findMissing, setFindMissing] = useState(false);
   const readers = useRef(new Map<string, ReaderHandle>());
+  const sourceEditor = useRef<SourceEditorHandle>(null);
+  // Source mode: pointing at the preview locates the element's code.
+  const [inspecting, setInspecting] = useState(false);
+  useEffect(() => setInspecting(false), [mode, doc?.id]);
+  useEffect(() => {
+    if (!inspecting) sourceEditor.current?.clearReveal();
+  }, [inspecting]);
   const findInput = useRef<HTMLInputElement>(null);
   const initialized = useRef(false);
   const sessionReady = useRef(false);
@@ -222,6 +250,11 @@ export default function App() {
       localStorage.setItem('folio.sticky-size', JSON.stringify(stickySize));
     } catch {}
   }, [stickySize]);
+  useEffect(() => {
+    try {
+      localStorage.setItem('folio.text-width', JSON.stringify(textWidth));
+    } catch {}
+  }, [textWidth]);
   function run(action: () => Promise<unknown>) {
     void action().catch((e) => notify((e as Error).message, true));
   }
@@ -231,7 +264,9 @@ export default function App() {
     run(async () => {
       const w = await invoke<WorkspaceInfo>('workspace');
       useWorkspace(w);
-      const paths = w.session?.paths || ([firstDocument(w.tree)].filter(Boolean) as string[]);
+      const paths = w.session
+        ? restorablePaths(w.session)
+        : ([firstDocument(w.tree)].filter(Boolean) as string[]);
       for (const p of paths) {
         try {
           await model.open(p);
@@ -391,6 +426,7 @@ export default function App() {
         setReadingDrag(null);
         setReadingDropSide(null);
         setFinding(false);
+        setInspecting(false);
         sendToActive('clear-selection');
         patchReader(current.current.doc?.id || '', { selection: null, selected: null });
       }
@@ -416,16 +452,21 @@ export default function App() {
     action: () => Promise<unknown>,
     title = '放弃未保存的源码修改？',
   ) {
-    const dirty = docs.filter((d) => d.draft !== d.source);
-    if (dirty.length)
-      setDialog({
-        title,
-        message: `${dirty.map((d) => d.path.split('/').at(-1)).join('、')} 尚未保存。继续会放弃源码修改；批注和笔记已单独保存。`,
-        danger: true,
-        confirmLabel: '放弃修改并继续',
-        onConfirm: action,
-      });
-    else run(action);
+    run(async () => {
+      // With auto-save, in-flight saves finish first; only edits that could not be saved need confirming.
+      if (autosave) await model.saveAll(docs.map((d) => d.id));
+      const ids = new Set(docs.map((d) => d.id));
+      const dirty = model.docsRef.current.filter((d) => ids.has(d.id) && d.draft !== d.source);
+      if (dirty.length)
+        setDialog({
+          title,
+          message: `${dirty.map((d) => d.path.split('/').at(-1)).join('、')} ${autosave ? '未能保存' : '尚未保存'}。继续会放弃源码修改；批注和笔记已单独保存。`,
+          danger: true,
+          confirmLabel: '放弃修改并继续',
+          onConfirm: action,
+        });
+      else await action();
+    });
   }
   async function refresh() {
     setWorkspace(await invoke<WorkspaceInfo>('tree'));
@@ -450,7 +491,7 @@ export default function App() {
     model.setActive(id);
   }
   async function openDocument(path: string, side?: PaneSide) {
-    const id = await model.open(path, false);
+    const id = await model.open(path, false, split ? [split.left, split.right] : []);
     selectDocument(id, side);
   }
   function closeDocument(id: string) {
@@ -471,7 +512,7 @@ export default function App() {
   }
   async function dropIntoReading(path: string, side: PaneSide) {
     if (!doc || !readableFiles(workspace?.tree || []).includes(path)) return;
-    const id = await model.open(path, false);
+    const id = await model.open(path, false, split ? [split.left, split.right] : []);
     setMode('read');
     if (id === doc.id && !split) return;
     const existingSide = split?.left === id ? 'left' : split?.right === id ? 'right' : null;
@@ -500,7 +541,9 @@ export default function App() {
     setReaderStates({});
     useWorkspace(w);
     setMode('read');
-    const paths = w.session?.paths || ([firstDocument(w.tree)].filter(Boolean) as string[]);
+    const paths = w.session
+      ? restorablePaths(w.session)
+      : ([firstDocument(w.tree)].filter(Boolean) as string[]);
     for (const p of paths) {
       try {
         await model.open(p);
@@ -546,16 +589,29 @@ export default function App() {
   function saveDocument(id: string) {
     const doc = model.docsRef.current.find((d) => d.id === id);
     if (doc?.draft === doc?.source) {
-      notify('没有未保存的源码修改');
+      if (!autosave) notify('没有未保存的源码修改');
       return;
     }
     if (doc)
       run(async () => {
         await model.save(doc.id);
-        notify('HTML 已保存，修改前的版本已备份');
+        notify('HTML 已保存');
       });
   }
+  function toggleAutosave() {
+    const next = !autosave;
+    setAutosave(next);
+    // Turning it on saves what was edited while it was off.
+    if (next)
+      for (const d of model.docsRef.current)
+        if (d.draft !== d.source)
+          model.save(d.id).catch((e) => onError('自动保存失败：' + (e as Error).message));
+  }
   function startFind() {
+    if (mode === 'source') {
+      sourceEditor.current?.find();
+      return;
+    }
     setMode('read');
     setFinding(true);
   }
@@ -718,8 +774,11 @@ export default function App() {
         patchReader(id, { selected: e.id });
         break;
       case 'update-annotation':
-        if (e.patch?.size && doc.data.annotations.find((a) => a.id === e.id)?.type === 'sticky')
-          setStickySize(stickyNoteSize(e.patch.size));
+        if (e.patch?.size) {
+          const type = doc.data.annotations.find((a) => a.id === e.id)?.type;
+          if (type === 'sticky') setStickySize(stickyNoteSize(e.patch.size));
+          if (type === 'text') setTextWidth(textNoteWidth(e.patch.size.width));
+        }
         model.annotate(
           id,
           (all) => all.map((a) => (a.id === e.id ? { ...a, ...e.patch } : a)),
@@ -744,6 +803,7 @@ export default function App() {
         model.annotate(id, (all) => all.filter((a) => a.id !== e.id));
         break;
       case 'escape':
+        setInspecting(false);
         focus.setEnabled(false);
         window.getSelection()?.removeAllRanges();
         activateTool('select');
@@ -761,6 +821,11 @@ export default function App() {
           else startFind();
         }
         if (e.key === 'z') model.undo(id, e.shift);
+        break;
+      case 'inspect-hover':
+      case 'inspect-pick':
+        sourceEditor.current?.reveal(e.offset, e.tag, e.type === 'inspect-pick');
+        if (e.type === 'inspect-pick') setInspecting(false);
         break;
       case 'found':
         setFindMissing(!e.ok);
@@ -909,6 +974,7 @@ export default function App() {
             onNew={() => fileAction('create-file', '')}
             split={!!split}
             onSplit={toggleSplit}
+            autosave={autosave}
           />
           {focus.enabled ? (
             <>
@@ -955,6 +1021,10 @@ export default function App() {
               onRight={() => setRight((v) => !v)}
               onFind={startFind}
               onSave={save}
+              inspecting={inspecting}
+              onInspect={() => setInspecting((v) => !v)}
+              autosave={autosave}
+              onAutosave={toggleAutosave}
               onReload={() =>
                 doc && guardDirty([doc], () => model.reload(doc.id), '重新载入文件？')
               }
@@ -1012,13 +1082,23 @@ export default function App() {
                 <div className="editor-pane">
                   <div className="pane-caption">
                     <Code2 size={13} />
-                    源码{doc.draft !== doc.source ? <span>未保存</span> : <span>已保存</span>}
+                    源码
+                    <span>
+                      {autosave
+                        ? doc.autosavePaused && doc.draft !== doc.source
+                          ? '未保存 · 自动保存已暂停'
+                          : ''
+                        : doc.draft !== doc.source
+                          ? '未保存'
+                          : '已保存'}
+                    </span>
                   </div>
                   <Suspense fallback={<div className="editor-loading">正在载入编辑器…</div>}>
                     <SourceEditor
+                      ref={sourceEditor}
                       key={doc.id}
                       value={doc.draft}
-                      onChange={(draft) => model.update(doc.id, (d) => ({ ...d, draft }))}
+                      onChange={(draft) => model.edit(doc.id, draft, autosave)}
                       onSave={save}
                     />
                   </Suspense>
@@ -1105,12 +1185,17 @@ export default function App() {
                     ) : mode === 'source' ? (
                       <div className="pane-caption">
                         <BookOpen size={13} />
-                        实时预览<span>修改后自动更新</span>
+                        实时预览
+                        <span>
+                          {inspecting ? '指向元素定位源码 · 点击选中 · Esc 退出' : '修改后自动更新'}
+                        </span>
                       </div>
                     ) : null}
                     {paneDoc ? (
                       <DocumentReader
                         key={paneDoc.id}
+                        live={mode === 'source'}
+                        inspect={mode === 'source' && inspecting}
                         ref={(handle) => {
                           if (handle) readers.current.set(paneDoc.id, handle);
                           else readers.current.delete(paneDoc.id);
@@ -1125,6 +1210,7 @@ export default function App() {
                         eraserSize={eraserSize}
                         eraserMode={eraserMode}
                         stickySize={stickySize}
+                        textWidth={textWidth}
                         zoom={mode === 'source' ? 0 : paneDoc.data.zoom}
                         zoomable={mode === 'read'}
                         linkedScroll={!!readingSplit && !!readingSplit.right && linkedScroll}
@@ -1271,7 +1357,7 @@ export default function App() {
           role={notice.error ? 'alert' : 'status'}
         >
           {notice.error ? <AlertCircle size={17} /> : <Check size={17} />}
-          <span>{notice.text.replace(/^Error invoking remote method '[^']+': Error: /, '')}</span>
+          <span>{notice.text.replace(/Error invoking remote method '[^']+': Error: /, '')}</span>
           <IconButton label="关闭提示" onClick={() => setNotice(null)}>
             <X size={15} />
           </IconButton>

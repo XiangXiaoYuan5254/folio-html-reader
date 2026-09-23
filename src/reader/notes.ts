@@ -1,5 +1,5 @@
 import type { Annotation, Point } from '../types';
-import { STICKY_MIN_HEIGHT, STICKY_MIN_WIDTH } from './note-size';
+import { STICKY_MIN_HEIGHT, STICKY_MIN_WIDTH, TEXT_MIN_WIDTH } from './note-size';
 import {
   annotationColors,
   colorPickerStyles,
@@ -60,7 +60,7 @@ textarea{width:100%;flex:1;min-height:0;resize:none;border:0;outline:0;backgroun
 .resize{position:absolute;right:2px;bottom:2px;display:grid;place-items:center;width:22px;height:22px;padding:3px;border:0;background:transparent;color:#a3975c;cursor:nwse-resize;touch-action:none}
 .pin{position:absolute;pointer-events:auto;width:33px;height:33px;border:1px solid color-mix(in srgb,var(--ink) 60%,#aa984b);border-radius:8px;background:color-mix(in srgb,var(--ink) 35%,#fffce4);color:#65572d;box-shadow:0 3px 8px #40361522;display:grid;place-items:center;padding:7px}.pin:hover{filter:brightness(.97);transform:translateY(-1px)}
 [hidden]{display:none!important} button:focus-visible{outline:2px solid #287b71;outline-offset:-2px}
-.card.text-note{background:transparent;border:1px solid transparent;box-shadow:none;border-radius:3px;min-width:100px;min-height:32px;overflow:visible;display:block}
+.card.text-note{background:transparent;border:1px solid transparent;box-shadow:none;border-radius:3px;min-width:${TEXT_MIN_WIDTH}px;min-height:32px;overflow:visible;display:block}
 .text-note:focus-within,.text-note:hover{border-color:#8b9bdd;box-shadow:none}
 .text-note .head{position:absolute;bottom:100%;left:-1px;height:32px;padding:0 5px 0 9px;gap:5px;background:#fff;border:1px solid #d5dce7;border-radius:7px;box-shadow:0 3px 12px #24324715;white-space:nowrap;min-width:245px}
 .text-note .title{font-size:12px}.text-note select{font:12px system-ui;width:49px;height:24px;border:1px solid #e0e4eb;border-radius:4px;background:#fff;color:#394457}
@@ -518,17 +518,17 @@ export class PageNotes {
       };
       this.positionCard(card, d.next);
     } else {
+      const isText = this.items.get(d.id)?.type === 'text';
       d.size = {
         width: Math.max(
-          STICKY_MIN_WIDTH,
+          isText ? TEXT_MIN_WIDTH : STICKY_MIN_WIDTH,
           Math.min(600, document.documentElement.scrollWidth - d.origin.x - 8, d.width + dx),
         ),
-        height: Math.max(STICKY_MIN_HEIGHT, Math.min(800, d.height + dy)),
+        height: isText ? 36 : Math.max(STICKY_MIN_HEIGHT, Math.min(800, d.height + dy)),
       };
-      if (this.items.get(d.id)?.type === 'text') d.size.height = 36;
       card.element.style.width = `${d.size.width}px`;
       card.element.style.height = `${d.size.height}px`;
-      if (this.items.get(d.id)?.type === 'text') this.fitText(card, 36);
+      if (isText) this.fitText(card, 36);
     }
   }
 

@@ -1,15 +1,36 @@
 import { useRef, useState } from 'react';
 import { invoke } from '../api';
-import type { Annotation, DocumentData, OpenDocument } from '../types';
+import type { Annotation, DocumentData, OpenDocument, WorkspaceInfo } from '../types';
+// Opening more tabs than this closes the least recently viewed ones.
+export const maxOpenDocuments = 20;
+// Restores the saved active/split documents plus the most recently opened tabs.
+export function restorablePaths(session: NonNullable<WorkspaceInfo['session']>) {
+  const { paths, active, split } = session;
+  const keep = new Set(
+    paths.filter((p) => p === active || p === split?.left || p === split?.right),
+  );
+  for (const p of [...paths].reverse()) if (keep.size < maxOpenDocuments) keep.add(p);
+  return paths.filter((p) => keep.has(p));
+}
 export function useDocuments(onError: (s: string) => void) {
   const [docs, setDocs] = useState<OpenDocument[]>([]);
   const docsRef = useRef(docs);
-  const [active, setActive] = useState('');
+  const [active, setActiveId] = useState('');
+  // Document ids in the order they were last shown, most recent last.
+  const viewed = useRef<string[]>([]);
+  function setActive(id: string) {
+    if (id) viewed.current = [...viewed.current.filter((v) => v !== id), id];
+    setActiveId(id);
+  }
   const [saving, setSaving] = useState(0);
   const queue = useRef(Promise.resolve());
   const failed = useRef<string | null>(null);
   const annotationGroups = useRef(new Map<string, string>());
   const pendingData = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  // Source saves run one at a time so each uses the version the previous one wrote.
+  const sourceQueue = useRef(Promise.resolve());
+  // A queued save that hasn't started yet; later edits share it, since it writes the latest draft.
+  const queuedSource = useRef(new Map<string, Promise<void>>());
   function cancelPending(id: string) {
     const timer = pendingData.current.get(id);
     if (timer === undefined) return;
@@ -48,6 +69,24 @@ export function useDocuments(onError: (s: string) => void) {
       }
     });
   }
+  // Tabs with unsaved source edits, the active tab and `keep` (visible panes) stay open.
+  function evict(keep: (string | null)[]) {
+    const excess = docsRef.current.length - maxOpenDocuments;
+    if (excess <= 0) return;
+    const pinned = new Set([...keep, viewed.current.at(-1)]);
+    // Never-viewed tabs rank -1, so they go first, in tab order (sort is stable).
+    const closing = new Set(
+      docsRef.current
+        .filter((d) => !pinned.has(d.id) && d.draft === d.source)
+        .sort((a, b) => viewed.current.indexOf(a.id) - viewed.current.indexOf(b.id))
+        .slice(0, excess)
+        .map((d) => d.id),
+    );
+    for (const d of docsRef.current)
+      if (closing.has(d.id) && pendingData.current.has(d.id)) persist(d.id, d.data);
+    viewed.current = viewed.current.filter((id) => !closing.has(id));
+    commit(docsRef.current.filter((d) => !closing.has(d.id)));
+  }
   async function flush() {
     for (const id of pendingData.current.keys()) {
       const doc = docsRef.current.find((d) => d.id === id);
@@ -57,7 +96,7 @@ export function useDocuments(onError: (s: string) => void) {
     await queue.current;
     if (failed.current) throw Error(failed.current);
   }
-  async function open(path: string, activate = true) {
+  async function open(path: string, activate = true, keep: (string | null)[] = []) {
     const existing = docsRef.current.find((d) => d.path === path);
     if (existing) {
       if (activate) setActive(existing.id);
@@ -65,11 +104,13 @@ export function useDocuments(onError: (s: string) => void) {
     }
     const raw = await invoke<OpenDocument>('document', { path });
     // Another click may have completed the same read while IPC was in flight.
-    if (!docsRef.current.some((d) => d.id === raw.id))
+    if (!docsRef.current.some((d) => d.id === raw.id)) {
       commit([
         ...docsRef.current,
         { ...raw, draft: raw.source, preview: 0, history: [], future: [] },
       ]);
+      evict([raw.id, ...keep]);
+    }
     if (activate) setActive(raw.id);
     return raw.id;
   }
@@ -127,7 +168,29 @@ export function useDocuments(onError: (s: string) => void) {
     }));
     persist(id, nextData);
   }
-  async function save(id: string) {
+  // With auto-save on, every edit is written straight away, like an IDE.
+  function edit(id: string, draft: string, autosave: boolean) {
+    update(id, (d) => ({ ...d, draft }));
+    if (autosave && !docsRef.current.find((d) => d.id === id)?.autosavePaused)
+      save(id).catch((e) => onError('自动保存失败：' + (e as Error).message));
+  }
+  function save(id: string) {
+    const queued = queuedSource.current.get(id);
+    if (queued) return queued;
+    const run = sourceQueue.current.then(() => {
+      queuedSource.current.delete(id);
+      return writeSource(id);
+    });
+    queuedSource.current.set(id, run);
+    sourceQueue.current = run.catch(() => {});
+    return run;
+  }
+  // Saves pending source edits before closing; documents whose saves failed stay dirty.
+  async function saveAll(ids: string[]) {
+    const unpaused = ids.filter((id) => !docsRef.current.find((d) => d.id === id)?.autosavePaused);
+    await Promise.allSettled(unpaused.map(save));
+  }
+  async function writeSource(id: string) {
     const d = docsRef.current.find((d) => d.id === id);
     if (!d || d.source === d.draft) return;
     setSaving((n) => n + 1);
@@ -142,7 +205,11 @@ export function useDocuments(onError: (s: string) => void) {
         source: d.draft,
         version: result.version,
         preview: current.preview + 1,
+        autosavePaused: false,
       }));
+    } catch (e) {
+      update(id, (current) => ({ ...current, autosavePaused: true }));
+      throw e;
     } finally {
       setSaving((n) => n - 1);
     }
@@ -163,10 +230,12 @@ export function useDocuments(onError: (s: string) => void) {
   function close(id: string) {
     const next = docsRef.current.filter((d) => d.id !== id);
     commit(next);
+    viewed.current = viewed.current.filter((v) => v !== id);
     if (active === id) setActive(next.at(-1)?.id || '');
   }
   function clear() {
     commit([]);
+    viewed.current = [];
     setActive('');
   }
   function move(from: string, to: string) {
@@ -189,7 +258,9 @@ export function useDocuments(onError: (s: string) => void) {
     data,
     annotate,
     undo,
+    edit,
     save,
+    saveAll,
     reload,
     close,
     clear,

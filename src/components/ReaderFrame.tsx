@@ -20,6 +20,9 @@ export type ReaderProps = {
   eraserSize: number;
   eraserMode: EraserMode;
   stickySize: NoteSize;
+  textWidth: number;
+  // Source mode: pick an element in the page to locate its code.
+  inspect?: boolean;
   zoom: number;
   zoomable?: boolean;
   linkedScroll?: boolean;
@@ -96,6 +99,8 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
           eraserSize: live.current.eraserSize,
           eraserMode: live.current.eraserMode,
           stickySize: live.current.stickySize,
+          textWidth: live.current.textWidth,
+          inspect: !!live.current.inspect,
         });
         send('restore', { scroll: live.current.scroll });
         send('scroll-link-state', { enabled: !!live.current.linkedScroll });
@@ -133,6 +138,8 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
         eraserSize: p.eraserSize,
         eraserMode: p.eraserMode,
         stickySize: p.stickySize,
+        textWidth: p.textWidth,
+        inspect: !!p.inspect,
       });
   }, [
     ready,
@@ -144,6 +151,8 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
     p.eraserSize,
     p.eraserMode,
     p.stickySize,
+    p.textWidth,
+    p.inspect,
   ]);
   // Give the HTML the whole reading viewport, including its own margins.
   // Percentage zoom behaves like a browser: the page reflows at the new scale.

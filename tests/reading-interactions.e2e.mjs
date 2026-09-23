@@ -333,17 +333,14 @@ try {
   await page.getByRole('button', { name: '阅读', exact: true }).click();
   await activeTool('选择文字');
   await ready();
+  // Closing right after typing saves the edit instead of asking to discard it.
   await page.getByLabel('关闭右栏文档', { exact: true }).click();
-  await page.getByRole('dialog').waitFor();
-  await page.getByRole('dialog').locator('.secondary-button').click();
-  assert.equal(await page.locator('.document-frame').count(), 2);
-  assert.equal(await fs.readFile(path.join(workspace, 'A.html'), 'utf8'), sources.get('A.html'));
-  await page.getByLabel('关闭右栏文档', { exact: true }).click();
-  await page.getByRole('button', { name: '放弃修改并继续', exact: true }).click();
   await wait(
     async () => (await page.locator('.document-frame').count()) === 1,
-    'close with unsaved guard',
+    'close after auto-save',
   );
+  assert.equal(await page.getByRole('dialog').count(), 0);
+  assert.ok((await fs.readFile(path.join(workspace, 'A.html'), 'utf8')).includes('尚未保存的源码'));
   assert.deepEqual((await data('A.html')).annotations, before);
   // Existing tree-to-folder drag continues to move files, not open split readers.
   const src = page.locator('.tree-row[data-file-path="B.html"]');
@@ -359,7 +356,7 @@ try {
   );
   assert.deepEqual(errors, []);
   console.log(
-    'PASS: independent scroll and restart, source/input keyboard behavior, unsaved close guard, existing tree move, no page errors',
+    'PASS: independent scroll and restart, source/input keyboard behavior, auto-save before close, existing tree move, no page errors',
   );
 } catch (e) {
   await page?.screenshot({ path: path.join(evidence, 'failure.png') }).catch(() => {});

@@ -6,7 +6,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { Workspace } = require('./electron/workspace.cjs');
-const { renderDocument, mime } = require('./electron/render.cjs');
+const { renderDocument, markSourceOffsets, mime } = require('./electron/render.cjs');
 const { renderPDFDocument, pdfAssetPath } = require('./electron/pdf.cjs');
 async function buildPDF(minify = false) {
   await bundle({
@@ -140,7 +140,7 @@ export default defineConfig({
             if (mode === '__preview') {
               const p = previews.get(relative);
               if (!p) throw Error('预览过期');
-              source = p.source;
+              source = markSourceOffsets(p.source);
               docPath = p.path;
             } else {
               docPath = relative;

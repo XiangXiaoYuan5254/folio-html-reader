@@ -2,7 +2,7 @@ import type { Anchor, Annotation, EraserMode, Point, Tool } from '../types';
 import { erasePaths, inkPaths, inkPathData, inkBounds, smoothPoints } from './ink';
 import { PageNotes } from './notes';
 import { AnnotationPopup } from './annotation-popup';
-import { STICKY_MIN_WIDTH, stickyNoteSize } from './note-size';
+import { STICKY_MIN_WIDTH, stickyNoteSize, textNoteWidth } from './note-size';
 import { penCursor } from './pen-cursor';
 import { defaultColor } from '../colors';
 import { SelectionIndicator } from './selection-indicator';
@@ -10,10 +10,12 @@ import type { SelectionRect } from './selection-indicator';
 import { ReaderZoom } from './zoom';
 import { LinkedScroll } from './linked-scroll';
 import { capturePdfRects, pdfQuoteRects, pdfPageAnchor } from './pdf-anchors';
+import { ElementInspector } from './inspector';
 (() => {
   const channel = 'folio-reader-v1';
   const send = (type: string, payload: Record<string, unknown> = {}) =>
     parent.postMessage({ channel, type, ...payload }, '*');
+  const inspector = new ElementInspector(send);
   let annotations: Annotation[] = [];
   let tool: Tool = 'select';
   let color = defaultColor;
@@ -22,6 +24,7 @@ import { capturePdfRects, pdfQuoteRects, pdfPageAnchor } from './pdf-anchors';
   let eraserMode: EraserMode = 'partial';
   let gestureEraserMode: EraserMode = 'partial';
   let stickySize = stickyNoteSize(null);
+  let textWidth = textNoteWidth(null);
   let selection: Anchor | null = null;
   let selectionClick = false;
   let points: Point[] = [];
@@ -632,8 +635,9 @@ import { capturePdfRects, pdfQuoteRects, pdfPageAnchor } from './pdf-anchors';
         schedule();
       },
       update: (id, patch, group) => {
-        if (patch.size && annotations.find((a) => a.id === id)?.type === 'sticky')
-          stickySize = stickyNoteSize(patch.size);
+        const type = annotations.find((a) => a.id === id)?.type;
+        if (patch.size && type === 'sticky') stickySize = stickyNoteSize(patch.size);
+        if (patch.size && type === 'text') textWidth = textNoteWidth(patch.size.width);
         const next = {
           ...patch,
           ...(patch.points?.[0] ? { anchor: anchorAt(patch.points[0]) } : {}),
@@ -719,7 +723,7 @@ import { capturePdfRects, pdfQuoteRects, pdfPageAnchor } from './pdf-anchors';
       if (tool === 'sticky' || tool === 'text') {
         const isText = tool === 'text';
         const size = isText
-          ? { width: 300, height: 36 }
+          ? { width: textWidth, height: 36 }
           : {
               ...stickySize,
               width: Math.min(
@@ -996,7 +1000,9 @@ import { capturePdfRects, pdfQuoteRects, pdfPageAnchor } from './pdf-anchors';
       eraserSize = Math.max(8, Math.min(64, Number(m.eraserSize) || 24));
       eraserMode = m.eraserMode === 'stroke' ? 'stroke' : 'partial';
       stickySize = stickyNoteSize(m.stickySize);
+      textWidth = textNoteWidth(m.textWidth);
       if (!temporaryEraser) setTool(m.tool || 'select');
+      inspector.setEnabled(!!m.inspect);
       schedule();
     }
     if (m.type === 'restore') {

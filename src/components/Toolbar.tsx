@@ -21,6 +21,7 @@ import {
   Link2,
   Minus,
   Plus,
+  SquareMousePointer,
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { EraserMode, Tool } from '../types';
@@ -86,6 +87,10 @@ export function Toolbar(p: {
   onFind: () => void;
   onSave: () => void;
   onReload: () => void;
+  inspecting: boolean;
+  autosave: boolean;
+  onAutosave: () => void;
+  onInspect: () => void;
   dirty: boolean;
   onUndo: () => void;
   onRedo: () => void;
@@ -286,10 +291,30 @@ export function Toolbar(p: {
       ) : (
         <>
           <span className="source-hint">HTML 源码</span>
-          <button className="save-button" disabled={!p.dirty} onClick={p.onSave}>
-            <Save size={15} />
-            保存 <kbd>⌘ S</kbd>
+          <button
+            className={`autosave-toggle ${p.autosave ? 'active' : ''}`}
+            aria-pressed={p.autosave}
+            title={p.autosave ? '修改会立即写入文件，点击关闭' : '点击开启：修改立即写入文件'}
+            onClick={p.onAutosave}
+          >
+            <span className="switch" aria-hidden="true" />
+            自动保存
           </button>
+          {p.autosave ? null : (
+            <button className="save-button" disabled={!p.dirty} onClick={p.onSave}>
+              <Save size={15} />
+              保存 <kbd>⌘ S</kbd>
+            </button>
+          )}
+          <IconButton
+            label="定位元素"
+            help="在右侧预览中指向元素，源码自动跳到对应位置；点击选中，Esc 退出"
+            active={p.inspecting}
+            aria-pressed={p.inspecting}
+            onClick={p.onInspect}
+          >
+            <SquareMousePointer size={16} />
+          </IconButton>
           <IconButton label="重新载入文件" onClick={p.onReload}>
             <RefreshCw size={16} />
           </IconButton>
