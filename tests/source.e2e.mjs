@@ -24,6 +24,7 @@ await fs.writeFile(
     '</html>',
   ].join('\n'),
 );
+const originalSource = await fs.readFile(path.join(project, '源码.html'), 'utf8');
 let app, page;
 const consoleErrors = [];
 async function waitFor(fn, label, ms = 10000) {
@@ -240,6 +241,54 @@ try {
   );
   assert.equal(await page.getByRole('button', { name: /^保存/ }).count(), 0);
   console.log('PASS: auto-save toggle');
+
+  // History: the first save kept the original file; restoring it backs up what it replaces.
+  const openHistory = async () => {
+    await page.getByRole('button', { name: '历史版本', exact: true }).click();
+    await page.getByRole('dialog', { name: '历史版本' }).waitFor();
+    await page.locator('.history-list [role=group]').first().waitFor();
+    return page.getByRole('option');
+  };
+  const options = await openHistory();
+  assert.equal(await options.count(), 2, 'current file plus one backup');
+  assert.equal(await options.first().getAttribute('aria-selected'), 'true');
+  const restoreButton = page.getByRole('button', { name: '恢复此版本' });
+  assert.ok(await restoreButton.isDisabled(), 'the current file cannot be restored');
+  await page.keyboard.press('ArrowDown');
+  assert.equal(await options.nth(1).getAttribute('aria-selected'), 'true');
+  const historyFrame = page.frameLocator('.history-frame');
+  await waitFor(
+    async () =>
+      (await historyFrame
+        .locator('#title')
+        .innerText()
+        .catch(() => '')) === '源码定位',
+    'backup preview',
+  );
+  await page.getByRole('radio', { name: '源码' }).click();
+  assert.equal(await page.locator('.history-source').innerText(), originalSource);
+  await restoreButton.click();
+  await page.getByRole('dialog', { name: '历史版本' }).waitFor({ state: 'detached' });
+  await page.getByRole('status').filter({ hasText: '已恢复到' }).waitFor();
+  assert.equal(await fs.readFile(file, 'utf8'), originalSource);
+  await waitFor(
+    async () => !(await page.locator('.cm-content').innerText()).includes('开启时补存'),
+    'editor shows the restored text',
+  );
+  const edited = await fs.readFile(file, 'utf8');
+  await openHistory();
+  assert.equal(await options.count(), 3);
+  assert.equal(await options.nth(1).locator('em').innerText(), '恢复前');
+  await options.nth(1).click();
+  await page.getByRole('radio', { name: '源码' }).click();
+  await waitFor(
+    async () => (await page.locator('.history-source').innerText()).includes('开启时补存'),
+    'pre-restore backup holds the replaced text',
+  );
+  await page.keyboard.press('Escape');
+  await page.getByRole('dialog', { name: '历史版本' }).waitFor({ state: 'detached' });
+  assert.equal(await fs.readFile(file, 'utf8'), edited);
+  console.log('PASS: history lists, previews and restores backups');
   assert.deepEqual(consoleErrors, []);
   console.log('SOURCE E2E PASS');
 } catch (error) {

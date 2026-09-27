@@ -96,7 +96,8 @@ async function locate(workspace, full, version, atomicWrite) {
   const sources = [];
   for (let ancestor = dir; ; ancestor = path.dirname(ancestor)) {
     const index = ancestor === dir ? local : await readIndex(ancestor, workspace);
-    const candidate = index.files[path.relative(ancestor, full)];
+    // Index keys always use "/" separators, also on Windows.
+    const candidate = index.files[path.relative(ancestor, full).split(path.sep).join('/')];
     if (candidate && candidate.storage !== 'adjacent' && !(ancestor === dir && candidate === entry))
       sources.push({ dir: ancestor, entry: candidate });
     if (path.dirname(ancestor) === ancestor) break;

@@ -97,6 +97,15 @@ export default defineConfig({
                 case 'save-source':
                   data = await w.saveSource(p);
                   break;
+                case 'backups':
+                  data = await w.backups(p);
+                  break;
+                case 'backup':
+                  data = await w.backup(p);
+                  break;
+                case 'restore-backup':
+                  data = await w.restoreBackup(p);
+                  break;
                 case 'create':
                   data = await w.create(p);
                   break;

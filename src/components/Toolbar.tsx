@@ -22,6 +22,7 @@ import {
   Minus,
   Plus,
   SquareMousePointer,
+  History,
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { EraserMode, Tool } from '../types';
@@ -30,6 +31,7 @@ import { PenIcon } from './PenIcon';
 import { annotationColors as colors } from '../colors';
 import { ColorPicker } from './ColorPicker';
 import { zoomAfterWheel, zoomLabel, zoomPresets } from '../zoom';
+import { isMac, shortcut } from '../platform';
 const tools = [
   {
     id: 'select',
@@ -87,6 +89,7 @@ export function Toolbar(p: {
   onFind: () => void;
   onSave: () => void;
   onReload: () => void;
+  onHistory: () => void;
   inspecting: boolean;
   autosave: boolean;
   onAutosave: () => void;
@@ -303,7 +306,7 @@ export function Toolbar(p: {
           {p.autosave ? null : (
             <button className="save-button" disabled={!p.dirty} onClick={p.onSave}>
               <Save size={15} />
-              保存 <kbd>⌘ S</kbd>
+              保存 <kbd>{shortcut('mod', 'S')}</kbd>
             </button>
           )}
           <IconButton
@@ -315,6 +318,14 @@ export function Toolbar(p: {
           >
             <SquareMousePointer size={16} />
           </IconButton>
+          <button
+            className="history-button"
+            title="查看源码修改前自动备份的版本，预览后一键恢复"
+            onClick={p.onHistory}
+          >
+            <History size={15} />
+            历史版本
+          </button>
           <IconButton label="重新载入文件" onClick={p.onReload}>
             <RefreshCw size={16} />
           </IconButton>
@@ -343,7 +354,7 @@ export function Toolbar(p: {
           </IconButton>
           <select
             aria-label="阅读缩放"
-            title="按住 ⌘ 滚动鼠标滚轮缩放；Mac 触控板可双指捏合 · 25%–400%"
+            title={`按住 ${shortcut('mod')} 滚动鼠标滚轮缩放；${isMac ? 'Mac ' : ''}触控板可双指捏合 · 25%–400%`}
             value={p.zoom}
             onChange={(e) => p.onZoom(Number(e.target.value))}
           >
@@ -373,7 +384,7 @@ export function Toolbar(p: {
       </IconButton>
       <IconButton
         label={p.focusMode ? '退出专注阅读' : '专注阅读'}
-        help="全屏沉浸阅读 · ⌘ ⇧ F 切换 · Esc 退出"
+        help={`全屏沉浸阅读 · ${shortcut('mod', 'shift', 'F')} 切换 · Esc 退出`}
         active={p.focusMode}
         disabled={p.disabled}
         onClick={p.onFocusMode}

@@ -17,7 +17,7 @@ type Callbacks = {
 };
 const css = `
 ${colorPickerStyles}
-:host{all:initial;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:#334155}
+:host{all:initial;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:#334155}
 *{box-sizing:border-box}[hidden]{display:none!important}button,textarea{font:inherit}
 .popup{position:absolute;pointer-events:auto;width:304px;background:#fff;border:1px solid #dce3e8;border-radius:12px;box-shadow:0 8px 28px #26374c26;overflow:hidden;font-size:14px}
 .head{display:flex;align-items:center;justify-content:space-between;padding:10px 13px;border-bottom:1px solid #edf0f3;font-weight:600}.head button{font-size:20px;width:24px;height:24px}

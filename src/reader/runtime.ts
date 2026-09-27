@@ -950,9 +950,11 @@ import { ElementInspector } from './inspector';
         send('escape');
         window.getSelection()?.removeAllRanges();
       }
+      // Windows also redoes with Ctrl+Y.
+      const redo = e.ctrlKey && e.key.toLowerCase() === 'y' && !/Mac/.test(navigator.platform);
       if (
         (e.metaKey || e.ctrlKey) &&
-        ['s', 'f', 'z'].includes(e.key.toLowerCase()) &&
+        (['s', 'f', 'z'].includes(e.key.toLowerCase()) || redo) &&
         !(input && e.key.toLowerCase() !== 's')
       ) {
         e.preventDefault();

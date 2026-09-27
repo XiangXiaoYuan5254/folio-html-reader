@@ -14,3 +14,6 @@ docs/concept.png
 *.dmg
 *.zip
 *.blockmap
+
+# Third-party paper used only to render website screenshots
+scripts/website-shots/fixtures/**/*.pdf

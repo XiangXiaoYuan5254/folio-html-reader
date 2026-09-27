@@ -35,18 +35,26 @@ const noteFonts = [
   {
     value: 'system',
     label: '系统默认',
-    css: '-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif',
+    css: '-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif',
   },
-  { value: 'songti', label: '宋体', css: '"Songti SC","STSong",serif' },
-  { value: 'kaiti', label: '楷体', css: '"Kaiti SC","STKaiti",serif' },
-  { value: 'heiti', label: '黑体', css: '"Heiti SC","PingFang SC",sans-serif' },
-  { value: 'serif', label: 'Times New Roman', css: '"Times New Roman","Songti SC",serif' },
-  { value: 'mono', label: '等宽字体', css: 'Menlo,"PingFang SC",monospace' },
+  { value: 'songti', label: '宋体', css: '"Songti SC","STSong","SimSun",serif' },
+  { value: 'kaiti', label: '楷体', css: '"Kaiti SC","STKaiti","KaiTi",serif' },
+  {
+    value: 'heiti',
+    label: '黑体',
+    css: '"Heiti SC","PingFang SC","Microsoft YaHei","SimHei",sans-serif',
+  },
+  { value: 'serif', label: 'Times New Roman', css: '"Times New Roman","Songti SC","SimSun",serif' },
+  {
+    value: 'mono',
+    label: '等宽字体',
+    css: 'Menlo,Consolas,"PingFang SC","Microsoft YaHei",monospace',
+  },
 ];
 
 const css = `
 ${colorPickerStyles}
-:host{all:initial;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:#504a28}
+:host{all:initial;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:#504a28}
 *{box-sizing:border-box} button,textarea{font:inherit} button{cursor:pointer}
 .card{position:absolute;pointer-events:auto;border:1px solid color-mix(in srgb,var(--ink) 55%,#b39c4f);border-radius:12px;overflow:hidden;background:color-mix(in srgb,var(--ink) 22%,#fffef3);box-shadow:0 8px 25px #40361520;display:flex;flex-direction:column;min-width:180px;min-height:100px}
 .card:focus-within{box-shadow:0 0 0 2px color-mix(in srgb,var(--ink) 42%,transparent),0 9px 28px #40361524}

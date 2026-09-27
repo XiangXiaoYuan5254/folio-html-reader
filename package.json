@@ -13,17 +13,21 @@
     "build": "tsc -b && vite build",
     "start": "electron .",
     "test": "node --test tests/*.test.cjs",
-    "test:e2e": "npm run build && node tests/e2e.mjs && node tests/annotations.e2e.mjs && node tests/reading-interactions.e2e.mjs && node tests/zoom.e2e.mjs && node tests/pdf.e2e.mjs && node tests/tabs.e2e.mjs && node tests/text-width.e2e.mjs && node tests/source.e2e.mjs",
+    "test:e2e": "npm run build && node tests/e2e.mjs && node tests/annotations.e2e.mjs && node tests/reading-interactions.e2e.mjs && node tests/zoom.e2e.mjs && node tests/pdf.e2e.mjs && node tests/tabs.e2e.mjs && node tests/text-width.e2e.mjs && node tests/source.e2e.mjs && node tests/open-file.e2e.mjs",
     "test:annotations": "npm run build && node tests/annotations.e2e.mjs",
     "pack": "npm run build && electron-builder --mac dir",
     "format": "prettier --write src electron scripts tests vite.config.ts",
-    "dist:mac": "npm run build && electron-builder --mac dmg zip --arm64 --publish never && node scripts/checksums.mjs",
+    "dist:mac": "npm run build && electron-builder --mac dmg zip --arm64 --publish never && node scripts/checksums.mjs mac",
+    "dist:win": "npm run build && electron-builder --win nsis zip --x64 --publish never && node scripts/checksums.mjs win",
     "test:reading": "npm run build && node tests/reading-interactions.e2e.mjs",
     "test:zoom": "npm run build && node tests/zoom.e2e.mjs",
     "test:pdf": "npm run build && node tests/pdf.e2e.mjs",
     "test:tabs": "npm run build && node tests/tabs.e2e.mjs",
     "test:text-width": "npm run build && node tests/text-width.e2e.mjs",
-    "test:source": "npm run build && node tests/source.e2e.mjs"
+    "test:source": "npm run build && node tests/source.e2e.mjs && node tests/open-file.e2e.mjs",
+    "test:open-file": "npm run build && node tests/open-file.e2e.mjs",
+    "test:windows": "node tests/windows.e2e.mjs",
+    "website:shots": "npm run build && node scripts/website-shots/shoot.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.8.1",
@@ -78,11 +82,40 @@
       "identity": "-",
       "icon": "assets/icon.icns",
       "notarize": false,
-      "minimumSystemVersion": "12.0"
+      "minimumSystemVersion": "12.0",
+      "artifactName": "Folio-${version}-mac-${arch}.${ext}",
+      "fileAssociations": [
+        {
+          "ext": [
+            "html",
+            "htm"
+          ],
+          "name": "HTML 文档",
+          "role": "Editor",
+          "rank": "Alternate"
+        }
+      ]
+    },
+    "win": {
+      "icon": "assets/icon.png",
+      "executableName": "Folio",
+      "artifactName": "Folio-${version}-win-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerLanguages": [
+        "zh_CN"
+      ],
+      "language": "2052",
+      "shortcutName": "页间",
+      "uninstallDisplayName": "页间 Folio",
+      "include": "build/installer.nsh",
+      "artifactName": "Folio-${version}-win-${arch}-setup.${ext}"
     },
     "asar": true,
     "npmRebuild": false,
-    "artifactName": "Folio-${version}-mac-${arch}.${ext}",
     "dmg": {
       "title": "页间 Folio ${version}",
       "window": {

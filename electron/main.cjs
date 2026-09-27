@@ -16,6 +16,8 @@ const { pathToFileURL } = require('node:url');
 const { Workspace, atomicWrite } = require('./workspace.cjs');
 const { renderDocument, markSourceOffsets, mime } = require('./render.cjs');
 const { renderPDFDocument, pdfAssetPath } = require('./pdf.cjs');
+const { projectFor, filesFromArgv } = require('./open-file.cjs');
+const isMac = process.platform === 'darwin';
 const workspace = new Workspace();
 let win;
 let allowClose = false;
@@ -26,17 +28,45 @@ let focusWindowState = null;
 const previews = new Map();
 if (process.env.FOLIO_USER_DATA) app.setPath('userData', process.env.FOLIO_USER_DATA);
 app.setName('页间');
+// Matches the Start menu shortcut the Windows installer creates, for taskbar grouping.
+if (process.platform === 'win32') app.setAppUserModelId('com.folio.htmlreader');
 if (!app.requestSingleInstanceLock()) {
   app.quit();
   process.exit(0);
 }
-app.on('second-instance', () => {
-  if (win) {
+// Files opened from Finder or Explorer ("Open With", double-click, Dock drop). They can
+// arrive before the app is ready, so they queue until the renderer asks for them.
+const pendingFiles = isMac ? [] : filesFromArgv(process.argv, process.cwd());
+let createMainWindow = null;
+function openFiles(files) {
+  pendingFiles.push(...files);
+  if (!app.isReady()) return;
+  if (!win || win.isDestroyed()) createMainWindow?.();
+  else {
+    win.webContents.send('folio:event', { type: 'open-file' });
+    if (win.isMinimized()) win.restore();
+    win.focus();
+  }
+}
+app.on('open-file', (event, file) => {
+  event.preventDefault();
+  openFiles([file]);
+});
+// On Windows, opening a file while the app runs starts a second instance with the file
+// in its arguments; it quits at once and the file is handed over here.
+app.on('second-instance', (_, argv, workingDirectory) => {
+  const files = isMac ? [] : filesFromArgv(argv, workingDirectory);
+  if (files.length) openFiles(files);
+  else if (win && !win.isDestroyed()) {
     if (win.isMinimized()) win.restore();
     win.show();
     win.focus();
   }
 });
+async function knownRoots() {
+  const settings = await readSettings();
+  return [settings.root, ...(Array.isArray(settings.recentRoots) ? settings.recentRoots : [])];
+}
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
   {
@@ -84,6 +114,11 @@ async function openWorkspace(root) {
 }
 async function initialWorkspace() {
   if (process.env.FOLIO_WORKSPACE) return openWorkspace(process.env.FOLIO_WORKSPACE);
+  // Launched by opening a file: start in that file's project.
+  if (pendingFiles.length) {
+    const target = await projectFor(pendingFiles[0], null, await knownRoots()).catch(() => null);
+    if (target) return openWorkspace(target.root);
+  }
   try {
     const s = JSON.parse(await fs.readFile(settingsFile(), 'utf8'));
     return await openWorkspace(s.root);
@@ -112,18 +147,22 @@ function uiSender(event) {
 function menu() {
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
-      {
-        label: '页间',
-        submenu: [
-          { role: 'about' },
-          { type: 'separator' },
-          { role: 'hide' },
-          { role: 'hideOthers' },
-          { role: 'unhide' },
-          { type: 'separator' },
-          { role: 'quit' },
-        ],
-      },
+      ...(isMac
+        ? [
+            {
+              label: '页间',
+              submenu: [
+                { role: 'about' },
+                { type: 'separator' },
+                { role: 'hide' },
+                { role: 'hideOthers' },
+                { role: 'unhide' },
+                { type: 'separator' },
+                { role: 'quit' },
+              ],
+            },
+          ]
+        : []),
       {
         label: '文件',
         submenu: [
@@ -138,7 +177,8 @@ function menu() {
             click: () => win.webContents.send('folio:event', { type: 'save' }),
           },
           { type: 'separator' },
-          { role: 'close' },
+          // The window menu bar is hidden on Windows; these entries keep the shortcuts working.
+          isMac ? { role: 'close' } : { role: 'quit', label: '退出' },
         ],
       },
       {
@@ -174,7 +214,9 @@ function menu() {
           ...(!app.isPackaged ? [{ role: 'toggleDevTools' }] : []),
         ],
       },
-      { label: '窗口', submenu: [{ role: 'minimize' }, { role: 'zoom' }, { role: 'front' }] },
+      ...(isMac
+        ? [{ label: '窗口', submenu: [{ role: 'minimize' }, { role: 'zoom' }, { role: 'front' }] }]
+        : []),
     ]),
   );
 }
@@ -281,6 +323,16 @@ app
       switch (action) {
         case 'workspace':
           return workspace.summary();
+        case 'pending-open': {
+          const roots = await knownRoots();
+          return Promise.all(
+            pendingFiles
+              .splice(0)
+              .map((file) =>
+                projectFor(file, workspace.root, roots).catch((e) => ({ error: e.message })),
+              ),
+          );
+        }
         case 'recent-workspaces': {
           const settings = await readSettings();
           const roots = Array.isArray(settings.recentRoots) ? settings.recentRoots : [];
@@ -317,6 +369,12 @@ app
           return workspace.saveSession(payload);
         case 'save-source':
           return workspace.saveSource(payload);
+        case 'backups':
+          return workspace.backups(payload);
+        case 'backup':
+          return workspace.backup(payload);
+        case 'restore-backup':
+          return workspace.restoreBackup(payload);
         case 'create':
           return workspace.create(payload);
         case 'move':
@@ -393,7 +451,10 @@ app
         title: '页间 · Folio',
         backgroundColor: '#f7f8fa',
         titleBarStyle: 'hidden',
-        trafficLightPosition: { x: 18, y: 17 },
+        // The title bar is drawn by the page; Windows keeps its own caption buttons on top of it.
+        ...(isMac
+          ? { trafficLightPosition: { x: 18, y: 17 } }
+          : { titleBarOverlay: { color: '#ffffff', symbolColor: '#5f6b77', height: 47 } }),
         webPreferences: {
           preload: path.join(__dirname, 'preload.cjs'),
           contextIsolation: true,
@@ -438,6 +499,7 @@ app
       else win.loadURL('app://ui/index.html');
       menu();
     }
+    createMainWindow = createWindow;
     createWindow();
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();

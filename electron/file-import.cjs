@@ -3,25 +3,65 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { fileURLToPath } = require('node:url');
 const { spawn } = require('node:child_process');
+function run(command, args, input) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { windowsHide: true });
+    const out = [];
+    child.stdout.on('data', (data) => out.push(data));
+    child.stderr.resume();
+    child.on('error', reject);
+    child.on('close', (code) =>
+      code === 0 ? resolve(Buffer.concat(out)) : reject(Error(`${command} exited with ${code}`)),
+    );
+    child.stdin.on('error', () => {});
+    child.stdin.end(input);
+  });
+}
+// Explorer puts copied files on the clipboard as CF_HDROP, which Electron cannot read.
+// PowerShell lists the whole selection; without it, FileNameW still holds the first file.
+async function windowsClipboardPaths(clipboard) {
+  const script =
+    '[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-Clipboard -Format FileDropList | ForEach-Object { $_.FullName }';
+  const powershell = path.join(
+    process.env.SystemRoot || 'C:\\Windows',
+    'System32',
+    'WindowsPowerShell',
+    'v1.0',
+    'powershell.exe',
+  );
+  try {
+    const out = await run(powershell, [
+      '-NoProfile',
+      '-NonInteractive',
+      '-STA',
+      '-EncodedCommand',
+      Buffer.from(script, 'utf16le').toString('base64'),
+    ]);
+    const files = out
+      .toString('utf8')
+      .split(/\r?\n/)
+      .map((p) => p.trim())
+      .filter(Boolean);
+    if (files.length && files.every((p) => path.isAbsolute(p))) return files;
+  } catch {}
+  const file = clipboard
+    .readBuffer('FileNameW')
+    .toString('utf16le')
+    .replace(/\0[\s\S]*$/, '');
+  if (file && path.isAbsolute(file)) return [file];
+  throw Error('剪贴板里没有文件，请先在资源管理器中复制文件或文件夹');
+}
 async function clipboardPaths(clipboard) {
+  if (process.platform === 'win32') return windowsClipboardPaths(clipboard);
   // Finder supplies its entire selection as a plist, including multiple files.
   const plist = clipboard.readBuffer('NSFilenamesPboardType');
   if (plist.length) {
-    const json = await new Promise((resolve, reject) => {
-      const child = spawn('/usr/bin/plutil', ['-convert', 'json', '-o', '-', '-']);
-      const out = [];
-      child.stdout.on('data', (data) => out.push(data));
-      child.stderr.resume();
-      child.on('error', reject);
-      child.on('close', (code) =>
-        code === 0
-          ? resolve(Buffer.concat(out).toString())
-          : reject(Error('无法读取访达复制的文件，请重新复制')),
-      );
-      child.stdin.on('error', () => {});
-      child.stdin.end(plist);
-    });
-    const files = JSON.parse(json);
+    const json = await run('/usr/bin/plutil', ['-convert', 'json', '-o', '-', '-'], plist).catch(
+      () => {
+        throw Error('无法读取访达复制的文件，请重新复制');
+      },
+    );
+    const files = JSON.parse(json.toString());
     if (Array.isArray(files) && files.every((p) => typeof p === 'string' && path.isAbsolute(p)))
       return files;
   }
@@ -117,7 +157,7 @@ async function copyInto(workspace, { paths, destination = '' }) {
   }
   return {
     workspace: await workspace.summary(),
-    imported: copied.map((p) => path.relative(workspace.root, p)),
+    imported: copied.map((p) => path.relative(workspace.root, p).split(path.sep).join('/')),
   };
 }
 module.exports = { clipboardPaths, copyInto };

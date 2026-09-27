@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { CircleHelp, X } from 'lucide-react';
 import { IconButton } from './IconButton';
+import { shortcut } from '../platform';
 
 export function ReadingStatus(p: {
   format: string;
@@ -61,11 +62,11 @@ export function ReadingStatus(p: {
             </div>
             <div>
               <dt>自由缩放</dt>
-              <dd>⌘ + 滚轮</dd>
+              <dd>{shortcut('mod')} + 滚轮</dd>
             </div>
             <div>
               <dt>进入 / 退出专注</dt>
-              <dd>⌘ ⇧ F</dd>
+              <dd>{shortcut('mod', 'shift', 'F')}</dd>
             </div>
             <div>
               <dt>退出专注 / 返回选择</dt>

@@ -72,6 +72,8 @@ export type OpenDocument = {
   // Set when a source save fails (e.g. the file changed on disk); cleared by a save or reload.
   autosavePaused?: boolean;
 };
+// An automatic copy of an HTML file, taken before a source save or restore replaced it.
+export type BackupEntry = { name: string; time: number; size: number; restore: boolean };
 export type OutlineItem = { id: string; text: string; level: number };
 export type FrameEvent = { type: string; [key: string]: any };
 export interface FolioBridge {

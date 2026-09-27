@@ -5,7 +5,7 @@ type Send = (type: string, payload?: Record<string, unknown>) => void;
 
 const css = `
 .box{position:fixed;display:none;pointer-events:none;background:rgba(47,139,126,.14);outline:1.5px solid #2f8b7e;outline-offset:-1px}
-.label{position:fixed;display:none;pointer-events:none;max-width:min(420px,calc(100vw - 16px));padding:3px 7px;border-radius:4px;background:#243240;color:#fff;font:11px/1.5 Menlo,"PingFang SC",monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 2px 8px #0003}
+.label{position:fixed;display:none;pointer-events:none;max-width:min(420px,calc(100vw - 16px));padding:3px 7px;border-radius:4px;background:#243240;color:#fff;font:11px/1.5 Menlo,Consolas,"PingFang SC","Microsoft YaHei",monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 2px 8px #0003}
 .label b{color:#8fd9c9;font-weight:600}.label span{color:#b8c2cc;margin-left:6px}
 `;
 

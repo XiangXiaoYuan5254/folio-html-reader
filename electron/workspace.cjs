@@ -2,12 +2,12 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const documentStore = require('./document-store.cjs');
+const backups = require('./backups.cjs');
 const hash = (text) => crypto.createHash('sha256').update(text).digest('hex');
 const hidden = new Set(['node_modules', 'dist', 'release', 'build', 'coverage']);
 const isHtml = (p) => /\.html?$/i.test(p);
 const isPdf = (p) => /\.pdf$/i.test(p);
 const isDocument = (p) => isHtml(p) || isPdf(p);
-const backupInterval = 10 * 60_000;
 const clone = (x) => JSON.parse(JSON.stringify(x));
 // Normalize legacy comments at the storage boundary so every UI uses the same types.
 // Reading leaves the original file intact; the next normal save persists the conversion.
@@ -24,12 +24,29 @@ function mergeLegacyComments(data) {
     ),
   };
 }
+// On Windows, replacing a file fails while another program (antivirus, the search
+// indexer, a sync client) briefly holds it open, so the rename is retried for a moment.
+async function replaceFile(tmp, file) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fs.rename(tmp, file);
+    } catch (e) {
+      if (
+        process.platform !== 'win32' ||
+        attempt >= 8 ||
+        !['EPERM', 'EACCES', 'EBUSY'].includes(e.code)
+      )
+        throw e;
+      await new Promise((resolve) => setTimeout(resolve, attempt * 40));
+    }
+  }
+}
 async function atomicWrite(file, data) {
   await fs.mkdir(path.dirname(file), { recursive: true });
   const tmp = `${file}.${crypto.randomUUID()}.tmp`;
   try {
     await fs.writeFile(tmp, data);
-    await fs.rename(tmp, file);
+    await replaceFile(tmp, file);
   } finally {
     await fs.rm(tmp, { force: true }).catch(() => {});
   }
@@ -74,6 +91,8 @@ class Workspace {
       this.meta = meta;
       this.token = crypto.randomUUID();
       this.index = index;
+      // Old backups are cleaned in the background, so opening a project is not delayed.
+      backups.pruneAll(path.join(meta, 'backups')).catch(() => {});
       return this.summary();
     });
   }
@@ -217,21 +236,57 @@ class Workspace {
         throw Error(
           '文件已被外部程序修改。你的编辑仍保留在源码区，请复制保留后重新载入文件，再合并修改。',
         );
-      const id = this.index.files[relative]?.id;
-      if (!id) throw Error('请重新打开文档');
-      // Auto-save writes often: keep the version before editing, then at most one copy per 10 minutes.
-      const backups = path.join(this.meta, 'backups', id);
-      const names = await fs.readdir(backups).catch(() => []);
-      const latest = Math.max(0, ...names.map((name) => parseInt(name, 10) || 0));
-      if (Date.now() - latest >= backupInterval)
-        await atomicWrite(
-          path.join(backups, `${Date.now()}-${crypto.randomUUID().slice(0, 8)}.html`),
-          current,
-        );
+      // Keep the version before editing, then at most one copy per 10 minutes.
+      await backups.snapshot(this.backupDir(relative), current, atomicWrite);
       await atomicWrite(full, source);
       this.index.files[relative].hash = hash(source);
       await this.persistIndex();
       return { version: hash(source) };
+    });
+  }
+  backupDir(relative) {
+    const id = this.index.files[relative]?.id;
+    if (!id) throw Error('请重新打开文档');
+    return path.join(this.meta, 'backups', id);
+  }
+  async backups({ path: relative }) {
+    return this.serial(async () => {
+      if (!isHtml(relative)) throw Error('无效的 HTML 文档');
+      await this.resolve(relative);
+      const dir = this.backupDir(relative);
+      await backups.prune(dir);
+      return (await backups.list(dir)).map(({ name, time, size, restore }) => ({
+        name,
+        time,
+        size,
+        restore,
+      }));
+    });
+  }
+  async backup({ path: relative, name }) {
+    return this.serial(async () => {
+      if (!isHtml(relative)) throw Error('无效的 HTML 文档');
+      await this.resolve(relative);
+      return backups.read(this.backupDir(relative), name);
+    });
+  }
+  async restoreBackup({ path: relative, name, version }) {
+    return this.serial(async () => {
+      if (!isHtml(relative)) throw Error('无效的 HTML 文档');
+      const full = await this.resolve(relative);
+      const dir = this.backupDir(relative);
+      const source = await backups.read(dir, name);
+      const current = await fs.readFile(full, 'utf8');
+      if (hash(current) !== version)
+        throw Error('文件已被外部程序修改，请先重新载入文件，再恢复历史版本。');
+      if (source !== current) {
+        // Back up what is being replaced, so a restore can itself be undone.
+        await backups.snapshot(dir, current, atomicWrite, { force: true, restore: true });
+        await atomicWrite(full, source);
+        this.index.files[relative].hash = hash(source);
+        await this.persistIndex();
+      }
+      return { source, version: hash(source) };
     });
   }
   async create({ path: relative, kind }) {

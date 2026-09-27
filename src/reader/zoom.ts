@@ -26,11 +26,12 @@ export class ReaderZoom {
   }
 
   private wheel = (e: WheelEvent) => {
-    // Chromium reports macOS trackpad pinch as a wheel event with ctrlKey.
+    // ⌘ + wheel on macOS, Ctrl + wheel on Windows. Chromium also reports trackpad
+    // pinch as a wheel event with ctrlKey on both.
     const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
     if (
       !this.enabled ||
-      (!e.metaKey && !(isMac && e.ctrlKey)) ||
+      (isMac ? !e.metaKey && !e.ctrlKey : !e.ctrlKey) ||
       !Number.isFinite(e.deltaY) ||
       !e.deltaY
     )

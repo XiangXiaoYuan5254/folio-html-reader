@@ -1,0 +1,99 @@
+name: Windows
+
+# Builds the Windows installer on a Windows machine, installs it, and tests the installed app.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'electron/**'
+      - 'src/**'
+      - 'build/**'
+      - 'tests/**'
+      - 'samples/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.ts'
+      - '.github/workflows/windows.yml'
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      EVIDENCE: ${{ github.workspace }}\evidence
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build installer
+        run: |
+          npm run build
+          npx electron-builder --win nsis zip --x64 --publish never
+
+      - name: Install silently and check Explorer integration
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem release -Filter 'Folio-*-win-x64-setup.exe' | Select-Object -First 1
+          Start-Process -Wait -FilePath $setup.FullName -ArgumentList '/S'
+          $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter Folio.exe | Select-Object -First 1
+          if (-not $exe) { throw 'Folio.exe was not installed' }
+          "FOLIO_EXE=$($exe.FullName)" >> $env:GITHUB_ENV
+          Write-Host "Installed to $($exe.FullName)"
+
+          $progids = Get-ItemProperty 'HKCU:\Software\Classes\.html\OpenWithProgids'
+          if ($progids.PSObject.Properties.Name -notcontains 'Folio.HTML') { throw '.html is not in Open with' }
+          $htm = Get-ItemProperty 'HKCU:\Software\Classes\.htm\OpenWithProgids'
+          if ($htm.PSObject.Properties.Name -notcontains 'Folio.HTML') { throw '.htm is not in Open with' }
+          $default = (Get-ItemProperty 'HKCU:\Software\Classes\.html' -ErrorAction SilentlyContinue).'(default)'
+          if ($default -eq 'Folio.HTML') { throw 'the installer took over the default program for .html' }
+          $command = (Get-ItemProperty 'HKCU:\Software\Classes\Folio.HTML\shell\open\command').'(default)'
+          if ($command -ne "`"$($exe.FullName)`" `"%1`"") { throw "unexpected open command: $command" }
+
+          $shell = New-Object -ComObject WScript.Shell
+          $links = Get-ChildItem "$env:APPDATA\Microsoft\Windows\Start Menu\Programs" -Filter *.lnk -Recurse |
+            Where-Object { $shell.CreateShortcut($_.FullName).TargetPath -eq $exe.FullName }
+          if (-not $links) { throw 'no Start menu shortcut' }
+          Write-Host "Start menu shortcut: $($links[0].Name)"
+
+      - name: Test the installed app
+        run: node tests/windows.e2e.mjs
+        env:
+          FOLIO_EVIDENCE: ${{ env.EVIDENCE }}
+
+      - name: Platform-neutral end-to-end tests (development build)
+        run: |
+          node tests/open-file.e2e.mjs
+          node tests/tabs.e2e.mjs
+          node tests/source.e2e.mjs
+
+      - name: Uninstall and check cleanup
+        shell: pwsh
+        run: |
+          $dir = Split-Path $env:FOLIO_EXE
+          $uninstaller = Get-ChildItem $dir -Filter 'Uninstall*.exe' | Select-Object -First 1
+          Start-Process -Wait -FilePath $uninstaller.FullName -ArgumentList '/S'
+          for ($i = 0; $i -lt 60 -and (Test-Path $env:FOLIO_EXE); $i++) { Start-Sleep 1 }
+          if (Test-Path $env:FOLIO_EXE) { throw 'Folio.exe is still installed' }
+          if (Test-Path 'HKCU:\Software\Classes\Folio.HTML') { throw 'Folio.HTML was not removed' }
+          $progids = Get-ItemProperty 'HKCU:\Software\Classes\.html\OpenWithProgids' -ErrorAction SilentlyContinue
+          if ($progids -and $progids.PSObject.Properties.Name -contains 'Folio.HTML') { throw 'Open with entry was not removed' }
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-screenshots
+          path: evidence
+          if-no-files-found: ignore
+          retention-days: 14

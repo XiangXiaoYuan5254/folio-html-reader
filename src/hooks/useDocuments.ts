@@ -214,6 +214,28 @@ export function useDocuments(onError: (s: string) => void) {
       setSaving((n) => n - 1);
     }
   }
+  // Writes a backup back to the file. It queues behind pending saves so it checks the latest version.
+  function restore(id: string, name: string) {
+    const run = sourceQueue.current.then(async () => {
+      const d = docsRef.current.find((d) => d.id === id);
+      if (!d) return;
+      const result = await invoke<{ source: string; version: string }>('restore-backup', {
+        path: d.path,
+        name,
+        version: d.version,
+      });
+      update(id, (current) => ({
+        ...current,
+        source: result.source,
+        draft: result.source,
+        version: result.version,
+        preview: current.preview + 1,
+        autosavePaused: false,
+      }));
+    });
+    sourceQueue.current = run.catch(() => {});
+    return run;
+  }
   async function reload(id: string) {
     const d = docsRef.current.find((d) => d.id === id);
     if (!d) return;
@@ -261,6 +283,7 @@ export function useDocuments(onError: (s: string) => void) {
     edit,
     save,
     saveAll,
+    restore,
     reload,
     close,
     clear,

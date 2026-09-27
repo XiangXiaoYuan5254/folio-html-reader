@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import type { FileNode, WorkspaceInfo } from '../types';
 import { IconButton } from './IconButton';
+import { fileManager, isMac, shortcut, trashName } from '../platform';
 import { SidebarResizer } from './SidebarResizer';
 import { importFiles, invoke } from '../api';
 export type FileAction = 'create-file' | 'create-folder' | 'rename' | 'move' | 'trash' | 'reveal';
@@ -269,7 +270,7 @@ export function FileTree({
               disabled={copying}
               onClick={() => void copyFiles(n.kind === 'folder' ? n.path : parentOf(n.path))}
             >
-              粘贴文件 <kbd>⌘ V</kbd>
+              粘贴文件 <kbd>{shortcut('mod', 'V')}</kbd>
             </button>
             {(n.kind === 'folder'
               ? [
@@ -281,8 +282,8 @@ export function FileTree({
               .concat([
                 ['rename', '重命名'],
                 ['move', '移动到…'],
-                ['reveal', '在 Finder 中显示'],
-                ['trash', '移到废纸篓'],
+                ['reveal', isMac ? '在 Finder 中显示' : '在资源管理器中显示'],
+                ['trash', `移到${trashName}`],
               ])
               .map(([action, label]) => (
                 <button
@@ -319,7 +320,7 @@ export function FileTree({
       </div>
       <button className="open-folder" onClick={onFolder}>
         <FolderOpen size={17} />
-        选择项目 <kbd>⌘ O</kbd>
+        选择项目 <kbd>{shortcut('mod', 'O')}</kbd>
       </button>
       <label className="tree-search">
         <Search size={14} />
@@ -367,7 +368,7 @@ export function FileTree({
       {menu === '' && workspace ? (
         <div className="tree-menu">
           <button disabled={copying} onClick={() => void copyFiles('')}>
-            粘贴到工作空间 <kbd>⌘ V</kbd>
+            粘贴到工作空间 <kbd>{shortcut('mod', 'V')}</kbd>
           </button>
         </div>
       ) : null}
@@ -391,7 +392,7 @@ export function FileTree({
         }}
         role="navigation"
         aria-label="项目文件"
-        aria-description="从访达拖入文件，或选择文件夹后按 Command V 粘贴；项目名称和空白处代表根目录"
+        aria-description={`从${fileManager}拖入文件，或选择文件夹后按 ${isMac ? 'Command' : 'Ctrl'} V 粘贴；项目名称和空白处代表根目录`}
         aria-busy={moving || copying}
         {...dropHandlers('')}
       >

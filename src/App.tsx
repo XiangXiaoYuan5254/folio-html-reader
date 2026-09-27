@@ -16,8 +16,10 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import { invoke, subscribe, useWorkspace, isDesktop } from './api';
+import { isMac, shortcut, trashName } from './platform';
 import type {
   Anchor,
+  BackupEntry,
   EraserMode,
   FrameEvent,
   OpenDocument,
@@ -42,6 +44,7 @@ import { restorablePaths, useDocuments } from './hooks/useDocuments';
 import { useFocusMode } from './hooks/useFocusMode';
 import { ReadingStatus } from './components/ReadingStatus';
 import { ProjectPicker } from './components/ProjectPicker';
+import { HistoryPanel, backupLabel } from './components/HistoryPanel';
 import type { RecentProject } from './components/ProjectPicker';
 import { annotationColors, defaultColor, normalizeColor } from './colors';
 import { zoomAfterWheel } from './zoom';
@@ -214,6 +217,8 @@ export default function App() {
   // Source mode: pointing at the preview locates the element's code.
   const [inspecting, setInspecting] = useState(false);
   useEffect(() => setInspecting(false), [mode, doc?.id]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  useEffect(() => setHistoryOpen(false), [mode, doc?.id]);
   useEffect(() => {
     if (!inspecting) sourceEditor.current?.clearReveal();
   }, [inspecting]);
@@ -279,6 +284,7 @@ export default function App() {
       restoreSplit(w);
       sessionReady.current = true;
       setWorkspace(w);
+      await openRequestedFiles(w.root);
     });
   }, []);
   const sessionSignature = model.docs.map((d) => d.path).join('\0');
@@ -328,6 +334,7 @@ export default function App() {
     refresh: () => {},
     focus: () => {},
     exitFocus: () => {},
+    openFiles: () => {},
   });
   liveActions.current.focus = () => {
     if (!doc) return;
@@ -353,6 +360,7 @@ export default function App() {
         if (e.type === 'find') liveActions.current.find();
         if (e.type === 'close-request') liveActions.current.close();
         if (e.type === 'files-changed') liveActions.current.refresh();
+        if (e.type === 'open-file' && sessionReady.current) liveActions.current.openFiles();
         if (e.type === 'toggle-focus') liveActions.current.focus();
       }),
     [],
@@ -409,14 +417,22 @@ export default function App() {
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f' && !input) {
         e.preventDefault();
+        // On macOS the menu shortcut toggles focus mode. On Windows the menu only sees
+        // keys the page leaves unhandled, and this one is handled here.
         if (e.shiftKey) {
-          if (!isDesktop) liveActions.current.focus();
+          if (!isDesktop || !isMac) liveActions.current.focus();
         } else liveActions.current.find();
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !input) {
         e.preventDefault();
         const { model, doc } = current.current;
         if (doc) model.undo(doc.id, e.shiftKey);
+      }
+      // Windows also redoes with Ctrl+Y.
+      if (!isMac && e.ctrlKey && e.key.toLowerCase() === 'y' && !input) {
+        e.preventDefault();
+        const { model, doc } = current.current;
+        if (doc) model.undo(doc.id, true);
       }
       if (e.key === 'Escape') {
         if (e.defaultPrevented || document.querySelector('[role="dialog"]')) return;
@@ -565,6 +581,27 @@ export default function App() {
       if (w) await loadWorkspace(w);
     });
   }
+  // Files opened from Finder or Explorer. They open as the focused single document; files in
+  // another project switch to that project first.
+  async function openRequestedFiles(currentRoot: string | undefined) {
+    const targets =
+      await invoke<{ root?: string; relative?: string; error?: string }[]>('pending-open');
+    for (const t of targets) if (t.error) notify(t.error, true);
+    const root = targets.filter((t) => t.root).at(-1)?.root;
+    if (!root) return;
+    const paths = targets.flatMap((t) => (t.root === root && t.relative ? [t.relative] : []));
+    const openAll = async () => {
+      setSplit(null);
+      setMode('read');
+      for (const p of paths) await model.open(p).catch((e) => notify(e.message, true));
+    };
+    if (root === currentRoot) return openAll();
+    guardDirty(model.docs, async () => {
+      await model.flush();
+      await loadWorkspace(await invoke<WorkspaceInfo>('open-recent-workspace', { root }));
+      await openAll();
+    });
+  }
   function openRecentProject(root: string) {
     setProjectPicker(null);
     run(async () => {
@@ -598,6 +635,12 @@ export default function App() {
         notify('HTML 已保存');
       });
   }
+  async function restoreBackup(entry: BackupEntry) {
+    if (!doc) return;
+    await model.restore(doc.id, entry.name);
+    setHistoryOpen(false);
+    notify(`已恢复到 ${backupLabel(entry.time)} 的版本，恢复前的内容也已备份`);
+  }
   function toggleAutosave() {
     const next = !autosave;
     setAutosave(next);
@@ -626,6 +669,7 @@ export default function App() {
         await invoke('close');
       }),
     refresh: () => run(refresh),
+    openFiles: () => run(() => openRequestedFiles(workspace?.root)),
   };
   function fileAction(action: FileAction, path: string) {
     if (action === 'reveal') {
@@ -635,10 +679,10 @@ export default function App() {
     if (action === 'trash') {
       const affected = model.docs.filter((d) => d.path === path || d.path.startsWith(path + '/'));
       setDialog({
-        title: '移到废纸篓？',
-        message: `${path} 将移到系统废纸篓。${affected.some((d) => d.draft !== d.source) ? '未保存的源码修改会被放弃。' : ''}批注数据仍保留，恢复文件后可以继续阅读。`,
+        title: `移到${trashName}？`,
+        message: `${path} 将移到系统${trashName}。${affected.some((d) => d.draft !== d.source) ? '未保存的源码修改会被放弃。' : ''}批注数据仍保留，恢复文件后可以继续阅读。`,
         danger: true,
-        confirmLabel: '移到废纸篓',
+        confirmLabel: `移到${trashName}`,
         onConfirm: async () => {
           await model.flush();
           setWorkspace(await invoke('trash', { path }));
@@ -821,6 +865,7 @@ export default function App() {
           else startFind();
         }
         if (e.key === 'z') model.undo(id, e.shift);
+        if (e.key === 'y') model.undo(id, true);
         break;
       case 'inspect-hover':
       case 'inspect-pick':
@@ -957,7 +1002,7 @@ export default function App() {
                 mode === 'source'
                   ? doc?.draft !== doc?.source
                     ? '源码有未保存的修改'
-                    : '源码修改会自动保留历史备份'
+                    : '源码修改前的版本会自动备份，可在“历史版本”中恢复'
                   : tool === 'eraser'
                     ? `${eraserMode === 'stroke' ? '笔画擦除 · 碰到即擦除整笔' : '局部擦除 · 只擦掉经过的部分'} · 一次拖动可一次撤销`
                     : toolHints[tool]
@@ -991,7 +1036,7 @@ export default function App() {
                   </button>
                   <button
                     aria-label="退出专注阅读"
-                    title="Esc / ⌘ ⇧ F 退出"
+                    title={`Esc / ${shortcut('mod', 'shift', 'F')} 退出`}
                     onClick={() => focus.setEnabled(false)}
                   >
                     <Minimize size={15} />
@@ -1028,6 +1073,7 @@ export default function App() {
               onReload={() =>
                 doc && guardDirty([doc], () => model.reload(doc.id), '重新载入文件？')
               }
+              onHistory={() => setHistoryOpen(true)}
               dirty={!!doc && doc.draft !== doc.source}
               onUndo={() => doc && model.undo(doc.id)}
               onRedo={() => doc && model.undo(doc.id, true)}
@@ -1369,6 +1415,14 @@ export default function App() {
           onOpen={openRecentProject}
           onNew={chooseNewProject}
           onClose={() => setProjectPicker(null)}
+        />
+      ) : null}
+      {historyOpen && doc?.kind === 'html' ? (
+        <HistoryPanel
+          doc={doc}
+          unsaved={doc.draft !== doc.source && (!autosave || !!doc.autosavePaused)}
+          onRestore={restoreBackup}
+          onClose={() => setHistoryOpen(false)}
         />
       ) : null}
       {dialog ? <Dialog options={dialog} onClose={() => setDialog(null)} /> : null}

@@ -1,4 +1,5 @@
 import type { WorkspaceInfo } from './types';
+import { fileManager } from './platform';
 let token = '';
 export const isDesktop = !!window.folio;
 export async function invoke<T = any>(action: string, payload: unknown = {}): Promise<T> {
@@ -25,6 +26,6 @@ export function subscribe(cb: (e: { type: string }) => void) {
 }
 
 export async function importFiles(files: File[], destination: string) {
-  if (!window.folio) throw Error('请在桌面版中从访达拖入文件');
+  if (!window.folio) throw Error(`请在桌面版中从${fileManager}拖入文件`);
   return window.folio.importFiles(files, destination, token);
 }
