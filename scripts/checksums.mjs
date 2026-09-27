@@ -4,10 +4,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 // Covers every installer of this version in release/, so building macOS and Windows one
-// after the other yields a single SHA256SUMS.txt. The argument names the platform just built.
+// after the other yields a single SHA256SUMS.txt for the release. The argument names the
+// platform just built.
 const expected = {
-  mac: [/^Folio-.+-mac-arm64\.dmg$/, /^Folio-.+-mac-arm64\.zip$/],
-  win: [/^Folio-.+-win-x64-setup\.exe$/, /^Folio-.+-win-x64\.zip$/],
+  mac: [/^Folio-.+-mac-arm64\.dmg$/],
+  win: [/^Folio-.+-win-x64-setup\.exe$/],
 };
 const platform = process.argv[2] || 'mac';
 if (!expected[platform]) throw Error(`Unknown platform ${platform}; use mac or win.`);

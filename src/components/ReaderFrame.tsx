@@ -222,7 +222,8 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
         <iframe
           ref={frame}
           className="document-frame"
-          title={p.kind === 'pdf' ? 'PDF 阅读区' : 'HTML 阅读区'}
+          // A label rather than a title: an iframe's title shows as a tooltip over the whole page.
+          aria-label={p.kind === 'pdf' ? 'PDF 阅读区' : 'HTML 阅读区'}
           // Only our fixed PDF viewer gets an origin for its decoding worker.
           // It remains cross-origin from app://ui and has no filesystem bridge.
           // Arbitrary HTML keeps its opaque-origin script sandbox.

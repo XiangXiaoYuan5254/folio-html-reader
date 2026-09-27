@@ -39,7 +39,7 @@ jobs:
       - name: Build installer
         run: |
           npm run build
-          npx electron-builder --win nsis zip --x64 --publish never
+          npx electron-builder --win nsis --x64 --publish never
 
       - name: Install silently
         shell: pwsh

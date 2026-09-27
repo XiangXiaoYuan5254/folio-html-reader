@@ -17,3 +17,6 @@ docs/concept.png
 
 # Third-party paper used only to render website screenshots
 scripts/website-shots/fixtures/**/*.pdf
+
+# Private launch and hosting notes
+docs/上线与商业化.md

@@ -9,7 +9,7 @@ npm run test:e2e
 npm run dist:mac
 ```
 
-`release/` 会包含arm64 的 DMG / ZIP，以及 `SHA256SUMS.txt`。DMG 中包含页间、Applications 文件夹快捷方式和中文安装说明。安装包只包含 `samples/` 中的原创演示资料。
+`release/` 会包含 arm64 的 DMG 和 `SHA256SUMS.txt`。DMG 中包含页间、Applications 文件夹快捷方式和中文安装说明。安装包只包含 `samples/` 中的原创演示资料。
 
 发布前检查：
 
@@ -31,7 +31,6 @@ npm run dist:win
 `release/` 会生成：
 
 - `Folio-版本号-win-x64-setup.exe`：中文安装向导，默认只为当前用户安装（无需管理员权限），可改安装位置，创建开始菜单和桌面快捷方式“页间”。
-- `Folio-版本号-win-x64.zip`：免安装版，解压后运行 `Folio.exe`。
 - `SHA256SUMS.txt`：包含 `release/` 中同版本 Mac 与 Windows 的全部安装包。先后运行 `dist:mac` 和 `dist:win`，得到一份合并的校验文件。
 
 支持 Windows 10 / 11 x64，Windows on ARM 可以通过系统自带的 x64 转译运行。
@@ -57,7 +56,7 @@ GitHub Actions 的 `Windows` 工作流（`.github/workflows/windows.yml`）在 W
 
 ## GitHub Release
 
-更新 `package.json` 与锁文件的版本，提交后创建同版本标签。通过 GitHub CLI 创建草稿 Release，上传arm64 的 DMG / ZIP、Windows 的安装程序 / ZIP、中文安装说明和校验文件；检查附件后再发布。发布说明应注明最低系统版本、Apple 芯片要求、签名状态及本次变更。
+更新 `package.json` 与锁文件的版本，提交后创建同版本标签。通过 GitHub CLI 创建草稿 Release，上传 arm64 的 DMG、Windows 的安装程序和校验文件；检查附件后再发布。发布说明应注明最低系统版本、Apple 芯片要求、两个平台的签名状态及本次变更。
 
 源码仓库忽略本地阅读材料、`.html-reader`、构建目录和个人环境配置。请勿把整份个人工作空间作为附件上传。
 

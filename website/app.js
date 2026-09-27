@@ -3,23 +3,15 @@
 // ============================================================
 
 const RELEASE = {
-  version: '0.6.6',
-  date: '2026.09.23',
+  version: '0.7.0',
+  date: '2026.09.27',
 };
 
-// 各平台安装包：公开下载地址（例如 Cloudflare R2 的地址）、大小和 SHA-256（取自 release/SHA256SUMS.txt）。
-// url 留空时，对应的下载按钮显示为“即将开放下载”且不可点击，不会给访客死链；sha256 留空时不显示校验值。
+// 各平台安装包的公开下载地址（例如 Cloudflare R2 的地址）和大小。
+// url 留空时，对应的下载按钮显示为“即将开放下载”且不可点击，不会给访客死链。
 const DOWNLOADS = {
-  mac: {
-    url: '',
-    size: '125 MB',
-    sha256: '9c33e6b170c0b4168863caab1b3233089a3108da22d01fe5a39a79dfe8eb2146',
-  },
-  win: {
-    url: '',
-    size: '107 MB',
-    sha256: '',
-  },
+  mac: { url: '', size: '125 MB' },
+  win: { url: '', size: '107 MB' },
 };
 
 // 页脚的“意见反馈”邮箱。留空则不显示。
@@ -68,11 +60,9 @@ if (visitor) {
   $(`[data-platform="${other}"] .btn`, options).classList.replace('btn-light', 'btn-dim');
 }
 
-// 版本大小与校验值
+// 安装包大小
 for (const [platform, info] of Object.entries(DOWNLOADS)) {
   for (const el of $$(`[data-size="${platform}"]`)) el.textContent = info.size;
-  $(`[data-sha="${platform}"]`).textContent = info.sha256;
-  $(`[data-sha-row="${platform}"]`).hidden = !info.sha256;
 }
 
 // 下载按钮
@@ -138,25 +128,6 @@ if (POLICE_NUMBER) {
   const a = $('[data-police]');
   a.textContent = POLICE_NUMBER;
   a.hidden = false;
-}
-
-// 复制校验值
-for (const copyBtn of $$('[data-copy-sha]')) {
-  const platform = copyBtn.dataset.copySha;
-  copyBtn.addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(DOWNLOADS[platform].sha256);
-      toast(`${platformName[platform]} 版的 SHA-256 已复制`);
-      const use = $('use', copyBtn);
-      use.setAttribute('href', '#i-check');
-      setTimeout(() => use.setAttribute('href', '#i-copy'), 1600);
-    } catch {
-      const range = document.createRange();
-      range.selectNodeContents($(`[data-sha="${platform}"]`));
-      getSelection().removeAllRanges();
-      getSelection().addRange(range);
-    }
-  });
 }
 
 // 跳到安装说明时切到对应系统并展开它

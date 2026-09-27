@@ -21,7 +21,7 @@
 
 当前版本采用本地签名，**尚未取得 Apple Developer ID 签名和 Apple 公证**。如果 macOS 提示无法验证开发者，请先尝试打开一次，再到 **系统设置 → 隐私与安全性 → 仍要打开**。只对已确认来自本仓库发布页的应用执行此操作。[Apple 官方说明](https://support.apple.com/zh-cn/102445)
 
-也提供 ZIP 压缩包：解压后将 `页间.app` 拖入“应用程序”。Mac 的芯片型号可在苹果菜单的“关于本机”中查看。Intel 芯片的 Mac 暂不支持。
+Mac 的芯片型号可在苹果菜单的“关于本机”中查看。Intel 芯片的 Mac 暂不支持。
 
 ### Windows
 
@@ -32,8 +32,6 @@
 安装后，在资源管理器中右键 HTML 文件，选择 **打开方式 → 页间** 即可直接阅读；安装程序不会更改你的默认浏览器。
 
 安装程序**尚未进行代码签名**。运行时如果 Windows SmartScreen 提示“Windows 已保护你的电脑”，点击 **更多信息 → 仍要运行**。只对已确认来自本仓库发布页的安装包执行此操作。
-
-也提供免安装的 ZIP 压缩包：解压到任意文件夹后运行 `Folio.exe`。
 
 ### 校验与安全
 
@@ -136,8 +134,8 @@ npm run test:zoom # 单独验证 Command + 滚轮缩放、阅读位置与保存
 npm run test:reading # 单独验证拖拽双栏、分栏关闭、Tab 和全选退出
 npm run test:annotations # 单独验证便签、局部擦除、中文提示和侧栏状态
 npm run pack       # 构建当前架构的 .app
-npm run dist:mac   # 构建 Apple 芯片 arm64 的 DMG、ZIP 和校验文件
-npm run dist:win   # 在 Mac 上交叉构建 Windows x64 安装程序、ZIP 和校验文件
+npm run dist:mac   # 构建 Apple 芯片 arm64 的 DMG 和校验文件
+npm run dist:win   # 在 Mac 上交叉构建 Windows x64 安装程序和校验文件
 ```
 
 `npm run dev:web` 提供只用于开发检查的网页入口。系统文件夹选择、访达 / 资源管理器、废纸篓 / 回收站等功能需要桌面版本。不要同时用多个开发实例编辑同一个工作空间。
