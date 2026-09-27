@@ -65,13 +65,14 @@ jobs:
           $command = (Get-ItemProperty 'HKCU:\Software\Classes\Folio.HTML\shell\open\command').'(default)'
           if ($command -ne "`"$env:FOLIO_EXE`" `"%1`"") { throw "unexpected open command: $command" }
 
-          $shell = New-Object -ComObject WScript.Shell
-          $menu = Join-Path ([Environment]::GetFolderPath('Programs')) '*.lnk'
-          $links = Get-ChildItem $menu | ForEach-Object {
-            [pscustomobject]@{ Name = $_.Name; Target = $shell.CreateShortcut($_.FullName).TargetPath }
+          # WScript.Shell cannot read these shortcuts' targets; look for the exe name in the file.
+          $links = Get-ChildItem ([Environment]::GetFolderPath('Programs')) -Filter *.lnk | Where-Object {
+            $bytes = [IO.File]::ReadAllBytes($_.FullName)
+            [Text.Encoding]::Unicode.GetString($bytes).Contains('Folio.exe') -or
+              [Text.Encoding]::ASCII.GetString($bytes).Contains('Folio.exe')
           }
-          $links | Format-Table -AutoSize | Out-String -Width 200 | Write-Host
-          if (-not ($links | Where-Object { $_.Target -like '*\Folio.exe' })) { throw 'no Start menu shortcut' }
+          if (-not $links) { throw 'no Start menu shortcut' }
+          Write-Host "Start menu shortcut: $($links[0].Name)"
 
       - name: Test the installed app
         if: ${{ !cancelled() && env.FOLIO_EXE }}

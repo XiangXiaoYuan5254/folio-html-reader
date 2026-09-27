@@ -13,7 +13,7 @@ const server = await createServer({ server: { host: '127.0.0.1', port: 5173, str
 await server.listen();
 const child = spawn(electron, ['.'], {
   stdio: 'inherit',
-  env: { ...process.env, FOLIO_DEV_URL: 'http://127.0.0.1:5173', ELECTRON_RUN_AS_NODE: '' },
+  env: { ...process.env, FOLIO_DEV_URL: 'http://127.0.0.1:5173', ELECTRON_RUN_AS_NODE: undefined },
 });
 child.on('exit', async (code) => {
   await server.close();

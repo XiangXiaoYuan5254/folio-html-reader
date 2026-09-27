@@ -62,7 +62,7 @@ async function waitFor(fn, label, ms = 15000) {
 
 let app, win;
 const errors = [];
-const env = { ...process.env, ELECTRON_RUN_AS_NODE: '', FOLIO_USER_DATA: userData };
+const env = { ...process.env, ELECTRON_RUN_AS_NODE: undefined, FOLIO_USER_DATA: userData };
 async function launch(args = []) {
   app = await electron.launch({ executablePath: exe, args, env });
   win = await app.firstWindow();

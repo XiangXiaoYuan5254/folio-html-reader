@@ -35,7 +35,7 @@ const app = await electron.launch({
   cwd: root,
   env: {
     ...process.env,
-    ELECTRON_RUN_AS_NODE: '',
+    ELECTRON_RUN_AS_NODE: undefined,
     FOLIO_USER_DATA: path.join(tmp, 'user-data'),
     FOLIO_WORKSPACE: ws,
   },
@@ -248,7 +248,8 @@ async function textNote(doc, x, y, text, colorName) {
 }
 async function pdfPage(doc, n) {
   return doc.f.evaluate(
-    (n) => document.querySelector(`.pdf-page[data-pdf-page="${n}"]`).getBoundingClientRect().toJSON(),
+    (n) =>
+      document.querySelector(`.pdf-page[data-pdf-page="${n}"]`).getBoundingClientRect().toJSON(),
     n,
   );
 }
@@ -285,7 +286,10 @@ async function shot(name, escape = true) {
 }
 
 // ---------- scenes ----------
-await page.getByLabel(/^关闭 /).first().click(); // 首次启动自动打开的第一篇
+await page
+  .getByLabel(/^关闭 /)
+  .first()
+  .click(); // 首次启动自动打开的第一篇
 await sleep(500);
 let pdf = await openFile(PDF);
 let note = await openFile(NOTE);
@@ -342,7 +346,13 @@ await scrollPdf(pdf, 1, 150);
   await star(pdf, title[0].left - 34, title[0].top + title[0].height / 2, 14);
   const pg = await pdfPage(pdf, 1);
   const head = await phrase(pdf, '.pdf-page[data-pdf-page="1"]', 'Abstract');
-  const c = await sticky(pdf, pg.left + pg.width * 0.775, head[0].top - 10, '先读 3.2 节和图 2', [176, 116]);
+  const c = await sticky(
+    pdf,
+    pg.left + pg.width * 0.775,
+    head[0].top - 10,
+    '先读 3.2 节和图 2',
+    [176, 116],
+  );
   await tool('箭头');
   await color('珊瑚色');
   const a1 = await toScreen(pdf, c.left + 26, c.bottom + 6);
@@ -352,14 +362,21 @@ await scrollPdf(pdf, 1, 150);
 
 await scrollPdf(pdf, 4, 380);
 {
-  await pdfHighlight(pdf, 4, 'We call our particular attention "Scaled Dot-Product Attention"', '黄色');
+  await pdfHighlight(
+    pdf,
+    4,
+    'We call our particular attention "Scaled Dot-Product Attention"',
+    '黄色',
+  );
   const pg = await pdfPage(pdf, 4);
   const eq = await phrase(pdf, '.pdf-page[data-pdf-page="4"]', 'Attention(');
   await tool('画笔');
   await color('珊瑚色');
-  await ellipse(pdf, { left: eq[0].left - 4, top: eq[0].top - 14, width: pg.width * 0.3, height: 44 }, [
-    14, 8,
-  ]);
+  await ellipse(
+    pdf,
+    { left: eq[0].left - 4, top: eq[0].top - 14, width: pg.width * 0.3, height: 44 },
+    [14, 8],
+  );
   await textNote(pdf, pg.left + pg.width * 0.17, eq[0].top - 4, '核心公式', '珊瑚色');
 }
 await scrollPdf(pdf, 1, 150);
@@ -413,7 +430,13 @@ await scrollHtml(note, 'main', 0);
   await ellipse(note, (await phrase(note, 'main', '28.4 BLEU'))[0], [9, 6]);
   const end = path.at(-1);
   const y = end.top + end.height / 2;
-  const c = await sticky(note, main.right + 16, y - 80, '对照原文表 1：循环网络的最长路径是 O(n)。', [250, 140]);
+  const c = await sticky(
+    note,
+    main.right + 16,
+    y - 80,
+    '对照原文表 1：循环网络的最长路径是 O(n)。',
+    [250, 140],
+  );
   // 水平箭头：第二行高亮之后是空白，不会压到正文
   await tool('箭头');
   await color('珊瑚色');
@@ -435,7 +458,7 @@ const jobs = [
 ];
 const encoder = await electron.launch({
   args: [path.join(here, 'encode.cjs')],
-  env: { ...process.env, ELECTRON_RUN_AS_NODE: '' },
+  env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined },
 });
 const win = await encoder.firstWindow();
 for (const j of jobs) {
@@ -463,12 +486,17 @@ for (const j of jobs) {
     },
     { b64, crop: j.crop, width: j.width },
   );
-  await fs.writeFile(path.join(assets, j.name + '.webp'), Buffer.from(out.data.split(',')[1], 'base64'));
+  await fs.writeFile(
+    path.join(assets, j.name + '.webp'),
+    Buffer.from(out.data.split(',')[1], 'base64'),
+  );
   console.log(`${j.name}.webp ${out.w}×${out.h}`);
 }
 // 分享图：渲染 og.html（引用刚生成的 hero.webp），缩到 1200×630
 await win.goto('file://' + path.join(here, 'og.html'));
-await encoder.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1200, 630));
+await encoder.evaluate(({ BrowserWindow }) =>
+  BrowserWindow.getAllWindows()[0].setContentSize(1200, 630),
+);
 await sleep(800);
 await win.screenshot({ path: path.join(raw, 'og@2x.png') });
 {

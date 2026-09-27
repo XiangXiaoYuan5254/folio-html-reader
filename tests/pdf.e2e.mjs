@@ -65,7 +65,7 @@ async function start() {
       : { args: [root] }),
     env: {
       ...process.env,
-      ELECTRON_RUN_AS_NODE: '',
+      ELECTRON_RUN_AS_NODE: undefined,
       FOLIO_USER_DATA: path.join(temp, 'user'),
       FOLIO_WORKSPACE: workspace,
     },
