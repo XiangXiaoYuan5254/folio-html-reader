@@ -23,9 +23,9 @@ jobs:
     env:
       EVIDENCE: ${{ github.workspace }}\evidence
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -41,7 +41,7 @@ jobs:
           npm run build
           npx electron-builder --win nsis zip --x64 --publish never
 
-      - name: Install silently and check Explorer integration
+      - name: Install silently
         shell: pwsh
         run: |
           $setup = Get-ChildItem release -Filter 'Folio-*-win-x64-setup.exe' | Select-Object -First 1
@@ -51,6 +51,11 @@ jobs:
           "FOLIO_EXE=$($exe.FullName)" >> $env:GITHUB_ENV
           Write-Host "Installed to $($exe.FullName)"
 
+      # The steps below run whenever the app got installed, so one run reports every failure.
+      - name: Check Explorer integration
+        if: ${{ !cancelled() && env.FOLIO_EXE }}
+        shell: pwsh
+        run: |
           $progids = Get-ItemProperty 'HKCU:\Software\Classes\.html\OpenWithProgids'
           if ($progids.PSObject.Properties.Name -notcontains 'Folio.HTML') { throw '.html is not in Open with' }
           $htm = Get-ItemProperty 'HKCU:\Software\Classes\.htm\OpenWithProgids'
@@ -58,26 +63,31 @@ jobs:
           $default = (Get-ItemProperty 'HKCU:\Software\Classes\.html' -ErrorAction SilentlyContinue).'(default)'
           if ($default -eq 'Folio.HTML') { throw 'the installer took over the default program for .html' }
           $command = (Get-ItemProperty 'HKCU:\Software\Classes\Folio.HTML\shell\open\command').'(default)'
-          if ($command -ne "`"$($exe.FullName)`" `"%1`"") { throw "unexpected open command: $command" }
+          if ($command -ne "`"$env:FOLIO_EXE`" `"%1`"") { throw "unexpected open command: $command" }
 
           $shell = New-Object -ComObject WScript.Shell
-          $links = Get-ChildItem "$env:APPDATA\Microsoft\Windows\Start Menu\Programs" -Filter *.lnk -Recurse |
-            Where-Object { $shell.CreateShortcut($_.FullName).TargetPath -eq $exe.FullName }
-          if (-not $links) { throw 'no Start menu shortcut' }
-          Write-Host "Start menu shortcut: $($links[0].Name)"
+          $menu = Join-Path ([Environment]::GetFolderPath('Programs')) '*.lnk'
+          $links = Get-ChildItem $menu | ForEach-Object {
+            [pscustomobject]@{ Name = $_.Name; Target = $shell.CreateShortcut($_.FullName).TargetPath }
+          }
+          $links | Format-Table -AutoSize | Out-String -Width 200 | Write-Host
+          if (-not ($links | Where-Object { $_.Target -like '*\Folio.exe' })) { throw 'no Start menu shortcut' }
 
       - name: Test the installed app
+        if: ${{ !cancelled() && env.FOLIO_EXE }}
         run: node tests/windows.e2e.mjs
         env:
           FOLIO_EVIDENCE: ${{ env.EVIDENCE }}
 
       - name: Platform-neutral end-to-end tests (development build)
+        if: ${{ !cancelled() && env.FOLIO_EXE }}
         run: |
           node tests/open-file.e2e.mjs
           node tests/tabs.e2e.mjs
           node tests/source.e2e.mjs
 
       - name: Uninstall and check cleanup
+        if: ${{ !cancelled() && env.FOLIO_EXE }}
         shell: pwsh
         run: |
           $dir = Split-Path $env:FOLIO_EXE
@@ -91,7 +101,7 @@ jobs:
 
       - name: Upload screenshots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-screenshots
           path: evidence
