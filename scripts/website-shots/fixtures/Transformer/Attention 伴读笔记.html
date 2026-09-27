@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Attention Is All You Need · 伴读笔记</title>
+<style>
+:root{--ink:#1f2430;--ink2:#4b5263;--ink3:#8a90a0;--line:#e4e6ec;--bg:#fbfbf9;--card:#fff;--accent:#34508f;--accent-soft:#eef2fa;--warm:#b8742e;--warm-soft:#fbf3e6}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.9 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB",sans-serif}
+main{max-width:700px;margin:auto;padding:56px 44px 120px}
+.kicker{display:flex;gap:10px;align-items:center;font-size:13px;font-weight:600;letter-spacing:.14em;color:var(--accent)}
+.kicker i{width:6px;height:6px;border-radius:50%;background:var(--warm)}
+h1{margin:16px 0 10px;font:700 40px/1.2 "Iowan Old Style",Palatino,Georgia,serif;letter-spacing:-.01em}
+.sub{margin:0;font-size:19px;line-height:1.75;color:var(--ink2)}
+.meta{display:flex;flex-wrap:wrap;gap:8px;margin:22px 0 34px;padding:0;list-style:none}
+.meta li{font-size:13px;color:var(--ink2);background:#f0f1f4;border-radius:6px;padding:3px 10px;line-height:1.7}
+.tldr{position:relative;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px 26px 20px;box-shadow:0 1px 2px rgba(20,30,60,.04)}
+.tldr b{display:block;font-size:13px;letter-spacing:.14em;color:var(--warm);margin-bottom:6px}
+.tldr p{margin:0}
+h2{display:flex;align-items:baseline;gap:12px;margin:52px 0 14px;font-size:24px;line-height:1.4}
+h2 small{font:600 14px/1 "Iowan Old Style",Palatino,Georgia,serif;color:var(--accent);background:var(--accent-soft);border-radius:6px;padding:5px 8px}
+p{margin:0 0 16px}
+.formula{margin:24px 0;padding:22px 16px;background:var(--card);border:1px solid var(--line);border-radius:14px;text-align:center;overflow-x:auto}
+.formula .cap{display:block;margin-top:10px;font-size:13px;color:var(--ink3)}
+math{font-family:"STIX Two Math","Latin Modern Math",math;font-size:1.3em}
+math[display=block]{margin:0}
+.qkv{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:20px 0 22px}
+.qkv div{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;font-size:14.5px;line-height:1.7;color:var(--ink2)}
+.qkv b{display:block;font:700 22px/1.2 "Iowan Old Style",Palatino,serif;color:var(--accent);margin-bottom:4px}
+.why{background:var(--warm-soft);border-left:3px solid var(--warm);border-radius:0 12px 12px 0;padding:14px 20px;margin:20px 0;font-size:16px;color:#5b4a36}
+figure{margin:26px 0}
+figure svg{display:block;width:100%;height:auto;background:var(--card);border:1px solid var(--line);border-radius:14px}
+figcaption{margin-top:10px;font-size:13px;color:var(--ink3);text-align:center}
+table{width:100%;border-collapse:collapse;margin:20px 0;font-size:15px;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--line)}
+th{font-size:13px;font-weight:600;color:var(--ink3);background:#f6f7f9}
+tr:last-child td{border-bottom:0}
+td:first-child{font-weight:600}
+.hl-row td{background:var(--accent-soft)}
+.q{list-style:none;margin:16px 0 0;padding:0;display:grid;gap:12px}
+.q li{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 18px 14px 44px;position:relative;font-size:16px;line-height:1.8}
+.q li::before{content:"?";position:absolute;left:14px;top:14px;width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;font:700 13px/20px sans-serif;text-align:center}
+.q b{display:block}
+footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-size:13px;color:var(--ink3)}
+@media(max-width:620px){main{padding:36px 22px}.qkv{grid-template-columns:1fr}h1{font-size:32px}}
+</style>
+</head>
+<body><main>
+
+<div class="kicker"><i></i>论文伴读 · NLP 经典</div>
+<h1>Attention Is All You Need</h1>
+<p class="sub">一篇把循环和卷积都扔掉的论文，怎样成了今天大模型的地基。</p>
+<ul class="meta"><li>Vaswani 等</li><li>NeurIPS 2017</li><li>arXiv:1706.03762</li><li>精读约 25 分钟</li></ul>
+
+<div class="tldr"><b>一句话总结</b><p>Transformer 完全基于注意力机制，<span id="tldr-key">去掉了 RNN 的循环结构，让序列建模可以高度并行</span>。在 WMT 2014 英德翻译上拿到 28.4 BLEU，训练只用了 8 张 GPU、3.5 天。</p></div>
+
+<h2><small>01</small>为什么要抛弃 RNN？</h2>
+<p>RNN 必须按时间步依次计算，第 t 步要等第 t−1 步算完，<span id="rnn-seq">序列内部没法并行</span>。句子一长，显存又限制了批大小，训练自然慢。</p>
+<p>更麻烦的是远距离依赖：句首的信息要一步步传到句尾，路径长度随序列增长。<span id="path">自注意力让任意两个位置直接相连，最长路径只有 O(1)。</span></p>
+
+<h2 id="sec-formula"><small>02</small>核心公式：缩放点积注意力</h2>
+<p>每个词先被投影成三个向量，分别扮演不同角色：</p>
+<div class="qkv">
+<div><b>Q</b>查询：我在找什么</div>
+<div><b>K</b>键：我能被什么找到</div>
+<div><b>V</b>值：被找到后交出的内容</div>
+</div>
+<div class="formula" id="formula">
+<math display="block"><mrow>
+<mi>Attention</mi><mo>(</mo><mi>Q</mi><mo>,</mo><mi>K</mi><mo>,</mo><mi>V</mi><mo>)</mo><mo>=</mo>
+<mi>softmax</mi><mrow><mo>(</mo><mfrac><mrow><mi>Q</mi><msup><mi>K</mi><mo>⊤</mo></msup></mrow><msqrt id="sqrt-dk"><msub><mi>d</mi><mi>k</mi></msub></msqrt></mfrac><mo>)</mo></mrow><mi>V</mi>
+</mrow></math>
+<span class="cap">原文公式 (1)，第 4 页</span>
+</div>
+<div class="why" id="why"><span id="why-text">为什么要除以 √d<sub>k</sub>？</span>当 d<sub>k</sub> 较大时，点积的方差随之变大，softmax 会被推到梯度极小的区域。除以 √d<sub>k</sub> 把方差拉回 1 附近，训练才稳定。</div>
+
+<h2><small>03</small>多头注意力</h2>
+<p>只算一次注意力，所有关系会被平均到一起。论文把 Q、K、V 各投影 8 次，<span id="heads">每个头在 64 维的子空间里单独计算</span>，最后拼接起来：</p>
+<div class="formula">
+<math display="block"><mrow>
+<mi>MultiHead</mi><mo>(</mo><mi>Q</mi><mo>,</mo><mi>K</mi><mo>,</mo><mi>V</mi><mo>)</mo><mo>=</mo><mi>Concat</mi><mo>(</mo><msub><mi>head</mi><mn>1</mn></msub><mo>,</mo><mo>…</mo><mo>,</mo><msub><mi>head</mi><mi>h</mi></msub><mo>)</mo><msup><mi>W</mi><mi>O</mi></msup>
+</mrow></math>
+<span class="cap">h = 8，d<sub>k</sub> = d<sub>v</sub> = d<sub>model</sub> / h = 64</span>
+</div>
+<figure>
+<svg viewBox="0 0 620 200" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,PingFang SC,sans-serif">
+<g font-size="15" text-anchor="middle" fill="#1f2430">
+<text x="52" y="160">小猫</text><text x="132" y="160">没有</text><text x="212" y="160">跳上</text><text x="292" y="160">桌子</text><text x="372" y="160">因为</text><text x="452" y="160" font-weight="700" fill="#34508f">它</text><text x="532" y="160">太累了</text>
+</g>
+<g fill="none" stroke-linecap="round">
+<path d="M452 136 C 420 40, 90 40, 58 136" stroke="#34508f" stroke-width="7" opacity=".85"/>
+<path d="M452 136 C 430 70, 314 70, 296 136" stroke="#34508f" stroke-width="2.5" opacity=".45"/>
+<path d="M452 136 C 470 90, 518 90, 530 136" stroke="#b8742e" stroke-width="4" opacity=".7"/>
+<path d="M452 136 C 440 100, 390 100, 376 136" stroke="#34508f" stroke-width="1.5" opacity=".3"/>
+</g>
+<g font-size="12" fill="#8a90a0" text-anchor="middle"><text x="250" y="30">一个头学到“它”指代“小猫”</text><text x="560" y="96">另一个头关注“太累了”</text></g>
+</svg>
+<figcaption>示意：不同的头关注不同的关系，线越粗权重越大</figcaption>
+</figure>
+
+<h2><small>04</small>位置编码</h2>
+<p>注意力本身不关心顺序，所以要把位置信息加到输入上。论文用不同频率的正弦和余弦：</p>
+<div class="formula">
+<math display="block"><mrow>
+<msub><mi>PE</mi><mrow><mo>(</mo><mi>pos</mi><mo>,</mo><mn>2</mn><mi>i</mi><mo>)</mo></mrow></msub><mo>=</mo><mi>sin</mi><mo>(</mo><mi>pos</mi><mo>/</mo><msup><mn>10000</mn><mrow><mn>2</mn><mi>i</mi><mo>/</mo><msub><mi>d</mi><mi>model</mi></msub></mrow></msup><mo>)</mo>
+</mrow></math>
+</div>
+<p>学习式位置向量的效果几乎一样（原文表 3 第 E 行），作者选正弦版本，是希望模型能外推到比训练时更长的序列。</p>
+
+<h2><small>05</small>复杂度对比</h2>
+<table>
+<thead><tr><th>层类型</th><th>每层复杂度</th><th>顺序操作</th><th>最长路径</th></tr></thead>
+<tbody>
+<tr class="hl-row"><td>自注意力</td><td>O(n²·d)</td><td>O(1)</td><td>O(1)</td></tr>
+<tr><td>循环网络</td><td>O(n·d²)</td><td>O(n)</td><td>O(n)</td></tr>
+<tr><td>卷积网络</td><td>O(k·n·d²)</td><td>O(1)</td><td>O(log<sub>k</sub> n)</td></tr>
+</tbody>
+</table>
+<p>句子长度 n 小于表示维度 d 时（机器翻译里通常如此），<span id="complexity">自注意力反而比循环网络更省</span>。</p>
+
+<h2><small>06</small>我的疑问</h2>
+<ul class="q">
+<li><b>O(n²) 在长文档上怎么办？</b>序列一长，注意力矩阵的显存开销增长很快。后来的稀疏注意力、FlashAttention 都在解决这个问题。</li>
+<li><b>解码器为什么要掩码？</b>训练时整句一起输入，要挡住未来的位置，保证第 i 个词只能看到它之前的词。</li>
+</ul>
+
+<footer>整理于 2026 年 9 月 · 对照原文第 2–7 页</footer>
+</main></body>
+</html>
