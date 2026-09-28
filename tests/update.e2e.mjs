@@ -91,8 +91,9 @@ async function installedVersion() {
       const { stdout } = await run('plutil', ['-convert', 'json', '-o', '-', plist]);
       return JSON.parse(stdout).CFBundleShortVersionString;
     }
+    // Windows file versions have four parts: 0.0.1 is 0.0.1.0.
     const script = `(Get-Item -LiteralPath ${quote(executable)}).VersionInfo.ProductVersion`;
-    return (await powershell(script)).stdout.trim();
+    return (await powershell(script)).stdout.trim().replace(/^(\d+\.\d+\.\d+)\.0$/, '$1');
   } catch {
     return '';
   }
