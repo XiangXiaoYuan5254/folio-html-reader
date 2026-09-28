@@ -1,4 +1,4 @@
-import type { WorkspaceInfo } from './types';
+import type { FrameEvent, WorkspaceInfo } from './types';
 import { fileManager } from './platform';
 let token = '';
 export const isDesktop = !!window.folio;
@@ -21,7 +21,7 @@ export function documentUrl(path: string, version: number) {
     ? `folio://document/${token}/${path.split('/').map(encodeURIComponent).join('/')}?v=${version}`
     : `/__document/${token}/${path.split('/').map(encodeURIComponent).join('/')}?v=${version}`;
 }
-export function subscribe(cb: (e: { type: string }) => void) {
+export function subscribe(cb: (e: FrameEvent) => void) {
   return window.folio?.subscribe(cb) || (() => {});
 }
 

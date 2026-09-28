@@ -75,6 +75,13 @@ export type OpenDocument = {
 // An automatic copy of an HTML file, taken before a source save or restore replaced it.
 export type BackupEntry = { name: string; time: number; size: number; restore: boolean };
 export type OutlineItem = { id: string; text: string; level: number };
+// A newer version of 页间, as electron/updater.cjs reports it. `manual` is a version this copy
+// cannot install by itself, so it links to the website instead.
+export type UpdateState =
+  | { status: 'idle' }
+  | { status: 'downloading'; version: string }
+  | { status: 'ready'; version: string; notes: string }
+  | { status: 'manual'; version: string; notes: string; url: string };
 export type FrameEvent = { type: string; [key: string]: any };
 export interface FolioBridge {
   platform: string;
@@ -84,7 +91,7 @@ export interface FolioBridge {
     token: string,
   ) => Promise<{ workspace: WorkspaceInfo; imported: string[] }>;
   invoke: (action: string, payload?: unknown, token?: string) => Promise<any>;
-  subscribe: (cb: (e: { type: string }) => void) => () => void;
+  subscribe: (cb: (e: FrameEvent) => void) => () => void;
 }
 declare global {
   interface Window {

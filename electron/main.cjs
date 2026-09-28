@@ -17,6 +17,7 @@ const { Workspace, atomicWrite } = require('./workspace.cjs');
 const { renderDocument, markSourceOffsets, mime } = require('./render.cjs');
 const { renderPDFDocument, pdfAssetPath } = require('./pdf.cjs');
 const { projectFor, filesFromArgv } = require('./open-file.cjs');
+const { createUpdates } = require('./updater.cjs');
 const isMac = process.platform === 'darwin';
 const workspace = new Workspace();
 let win;
@@ -34,6 +35,9 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
   process.exit(0);
 }
+const updates = createUpdates((update) => {
+  if (win && !win.isDestroyed()) win.webContents.send('folio:event', { type: 'update', update });
+});
 // Files opened from Finder or Explorer ("Open With", double-click, Dock drop). They can
 // arrive before the app is ready, so they queue until the renderer asks for them.
 const pendingFiles = isMac ? [] : filesFromArgv(process.argv, process.cwd());
@@ -153,6 +157,10 @@ function menu() {
               label: '页间',
               submenu: [
                 { role: 'about' },
+                {
+                  label: '检查更新…',
+                  click: () => win?.webContents.send('folio:event', { type: 'check-updates' }),
+                },
                 { type: 'separator' },
                 { role: 'hide' },
                 { role: 'hideOthers' },
@@ -316,6 +324,10 @@ app
           'maximize',
           'focus-mode',
           'paste-text',
+          'update-state',
+          'check-updates',
+          'update-restart',
+          'update-page',
         ].includes(action) &&
         token !== workspace.token
       )
@@ -436,6 +448,18 @@ app
           allowClose = true;
           quitting ? app.quit() : win.close();
           return true;
+        case 'update-state':
+          return { version: app.getVersion(), update: updates.state() };
+        case 'check-updates':
+          return updates.check();
+        // The window has already saved everything, as it does before closing.
+        case 'update-restart':
+          allowClose = true;
+          updates.restartToUpdate();
+          return true;
+        case 'update-page':
+          await shell.openExternal(updates.downloadPage);
+          return true;
         default:
           throw Error('未知操作');
       }
@@ -501,6 +525,7 @@ app
     }
     createMainWindow = createWindow;
     createWindow();
+    updates.start();
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });

@@ -25,6 +25,7 @@ import type {
   OpenDocument,
   OutlineItem,
   Tool,
+  UpdateState,
   WorkspaceInfo,
 } from './types';
 import { FileTree } from './components/FileTree';
@@ -44,6 +45,7 @@ import { restorablePaths, useDocuments } from './hooks/useDocuments';
 import { useFocusMode } from './hooks/useFocusMode';
 import { ReadingStatus } from './components/ReadingStatus';
 import { ProjectPicker } from './components/ProjectPicker';
+import { UpdateCard } from './components/UpdateCard';
 import { HistoryPanel, backupLabel } from './components/HistoryPanel';
 import type { RecentProject } from './components/ProjectPicker';
 import { annotationColors, defaultColor, normalizeColor } from './colors';
@@ -208,6 +210,21 @@ export default function App() {
   const setSelection = (selection: Anchor | null) => doc && patchReader(doc.id, { selection });
   const setRebind = (rebind: string | null) => doc && patchReader(doc.id, { rebind });
   const [dialog, setDialog] = useState<DialogOptions | null>(null);
+  const [appVersion, setAppVersion] = useState('');
+  const [update, setUpdate] = useState<UpdateState>({ status: 'idle' });
+  // “稍后” hides the card; the title bar keeps a button to bring it back.
+  const [updateHidden, setUpdateHidden] = useState(false);
+  const updateVersion = update.status === 'idle' ? '' : update.version;
+  useEffect(() => setUpdateHidden(false), [update.status, updateVersion]);
+  useEffect(() => {
+    if (isDesktop)
+      invoke<{ version: string; update: UpdateState }>('update-state')
+        .then((r) => {
+          setAppVersion(r.version);
+          setUpdate(r.update);
+        })
+        .catch(() => {});
+  }, []);
   const [projectPicker, setProjectPicker] = useState<RecentProject[] | null>(null);
   const [finding, setFinding] = useState(false);
   const [query, setQuery] = useState('');
@@ -335,6 +352,7 @@ export default function App() {
     focus: () => {},
     exitFocus: () => {},
     openFiles: () => {},
+    checkUpdates: () => {},
   });
   liveActions.current.focus = () => {
     if (!doc) return;
@@ -362,6 +380,8 @@ export default function App() {
         if (e.type === 'files-changed') liveActions.current.refresh();
         if (e.type === 'open-file' && sessionReady.current) liveActions.current.openFiles();
         if (e.type === 'toggle-focus') liveActions.current.focus();
+        if (e.type === 'update') setUpdate(e.update);
+        if (e.type === 'check-updates') liveActions.current.checkUpdates();
       }),
     [],
   );
@@ -670,7 +690,32 @@ export default function App() {
       }),
     refresh: () => run(refresh),
     openFiles: () => run(() => openRequestedFiles(workspace?.root)),
+    checkUpdates,
   };
+  async function checkUpdates() {
+    if (!isDesktop) return;
+    notify('正在检查更新…');
+    try {
+      const result = await invoke<UpdateState | { status: 'latest'; version: string }>(
+        'check-updates',
+      );
+      if (result.status === 'latest') notify(`页间 ${result.version} 已是最新版本`);
+      else if (result.status === 'downloading')
+        notify(`发现新版本 ${result.version}，正在后台下载，下载好后会提醒你`);
+      else if (result.status !== 'idle') {
+        setNotice(null);
+        setUpdateHidden(false);
+      }
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  }
+  // Saves like closing the window does, then quits; the new version opens by itself.
+  const restartToUpdate = () =>
+    guardDirty(model.docs, async () => {
+      await model.flush();
+      await invoke('update-restart');
+    });
   function fileAction(action: FileAction, path: string) {
     if (action === 'reveal') {
       run(() => invoke('reveal', { path }));
@@ -953,12 +998,33 @@ export default function App() {
             <i />
           </div>
         ) : null}
-        <div className="brand">
-          <BookOpen size={18} />
-          <strong>页间</strong>
-          <span>Folio</span>
+        {isDesktop ? (
+          // Also the way to check for updates on Windows, where the menu bar is hidden.
+          <button
+            type="button"
+            className="brand"
+            title={`页间 ${appVersion} · 点击检查更新`}
+            onClick={checkUpdates}
+          >
+            <BookOpen size={18} />
+            <strong>页间</strong>
+            <span>Folio</span>
+          </button>
+        ) : (
+          <div className="brand">
+            <BookOpen size={18} />
+            <strong>页间</strong>
+            <span>Folio</span>
+          </div>
+        )}
+        <div className="titlebar-end">
+          {updateHidden && (update.status === 'ready' || update.status === 'manual') ? (
+            <button type="button" className="update-chip" onClick={() => setUpdateHidden(false)}>
+              {update.status === 'ready' ? '重启以更新' : '有新版本'} {update.version}
+            </button>
+          ) : null}
+          <span className="titlebar-document">{workspace?.name}</span>
         </div>
-        <span className="titlebar-document">{workspace?.name}</span>
       </header>
       <div className="workspace-layout">
         <FileTree
@@ -1408,6 +1474,16 @@ export default function App() {
             <X size={15} />
           </IconButton>
         </div>
+      ) : null}
+      {(update.status === 'ready' || update.status === 'manual') &&
+      !updateHidden &&
+      !focus.enabled ? (
+        <UpdateCard
+          update={update}
+          onRestart={restartToUpdate}
+          onDownload={() => run(() => invoke('update-page'))}
+          onLater={() => setUpdateHidden(true)}
+        />
       ) : null}
       {projectPicker ? (
         <ProjectPicker

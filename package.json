@@ -1,7 +1,7 @@
 {
   "name": "folio-html-reader",
   "productName": "页间",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "本地 HTML / PDF 阅读、批注与项目管理",
   "type": "module",
   "main": "electron/main.cjs",
@@ -17,7 +17,7 @@
     "test:annotations": "npm run build && node tests/annotations.e2e.mjs",
     "pack": "npm run build && electron-builder --mac dir",
     "format": "prettier --write src electron scripts tests vite.config.ts",
-    "dist:mac": "npm run build && electron-builder --mac dmg --arm64 --publish never && node scripts/checksums.mjs mac",
+    "dist:mac": "npm run build && electron-builder --mac dmg zip --arm64 --publish never && node scripts/checksums.mjs mac",
     "dist:win": "npm run build && electron-builder --win nsis --x64 --publish never && node scripts/checksums.mjs win",
     "test:reading": "npm run build && node tests/reading-interactions.e2e.mjs",
     "test:zoom": "npm run build && node tests/zoom.e2e.mjs",
@@ -27,7 +27,9 @@
     "test:source": "npm run build && node tests/source.e2e.mjs && node tests/open-file.e2e.mjs",
     "test:open-file": "npm run build && node tests/open-file.e2e.mjs",
     "test:windows": "node tests/windows.e2e.mjs",
-    "website:shots": "npm run build && node scripts/website-shots/shoot.mjs"
+    "test:update": "npm run build && node tests/update.e2e.mjs",
+    "website:shots": "npm run build && node scripts/website-shots/shoot.mjs",
+    "website:downloads": "node scripts/website-downloads.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.8.1",
@@ -37,6 +39,7 @@
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.38.0",
     "codemirror": "^6.0.2",
+    "electron-updater": "6.8.9",
     "lucide-react": "^0.468.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
@@ -57,6 +60,12 @@
   "build": {
     "appId": "com.folio.htmlreader",
     "productName": "页间",
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://helloxxy.com/works/folio/downloads/"
+      }
+    ],
     "directories": {
       "output": "release"
     },

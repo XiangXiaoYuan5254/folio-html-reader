@@ -9,7 +9,7 @@ npm run test:e2e
 npm run dist:mac
 ```
 
-`release/` 会包含 arm64 的 DMG 和 `SHA256SUMS.txt`。DMG 中包含页间、Applications 文件夹快捷方式和中文安装说明。安装包只包含 `samples/` 中的原创演示资料。
+`release/` 会包含 arm64 的 DMG、`SHA256SUMS.txt`，以及自动更新用的 zip、`.zip.blockmap` 和 `latest-mac.yml`（见下文「自动更新」）。DMG 中包含页间、Applications 文件夹快捷方式和中文安装说明。安装包只包含 `samples/` 中的原创演示资料。
 
 发布前检查：
 
@@ -32,6 +32,7 @@ npm run dist:win
 
 - `Folio-版本号-win-x64-setup.exe`：中文安装向导，默认只为当前用户安装（无需管理员权限），可改安装位置，创建开始菜单和桌面快捷方式“页间”。
 - `SHA256SUMS.txt`：包含 `release/` 中同版本 Mac 与 Windows 的全部安装包。先后运行 `dist:mac` 和 `dist:win`，得到一份合并的校验文件。
+- `.exe.blockmap` 和 `latest.yml`：自动更新用。
 
 支持 Windows 10 / 11 x64，Windows on ARM 可以通过系统自带的 x64 转译运行。
 
@@ -53,6 +54,45 @@ GitHub Actions 的 `Windows` 工作流（`.github/workflows/windows.yml`）在 W
 当前未做代码签名。首次运行时 Windows SmartScreen 会提示“Windows 已保护你的电脑”，需点击 **更多信息 → 仍要运行**。发布说明中应写明这一点，并提示用户核对 `SHA256SUMS.txt`。
 
 如需消除提示，需要购买代码签名证书（OV / EV，或使用 Azure Trusted Signing），通过 `CSC_LINK`、`CSC_KEY_PASSWORD` 环境变量或 `win.azureSignOptions` 配置。凭据同样不得写入源码或 Release 附件。
+
+## 自动更新
+
+页间启动 5 秒后、之后每 4 小时，读取官网下载目录（`package.json` 中 `build.publish` 的地址，`https://helloxxy.com/works/folio/downloads/`）里的 `latest-mac.yml` 或 `latest.yml`。有新版本就在后台下载，下载好后右下角提示“页间 x.y.z 已准备好”：
+
+- **立即重启**：先像关窗口一样保存，再退出、安装、重新打开。
+- **稍后**：标题栏右侧留一个“重启以更新”，下次退出页间时静默安装，不重新打开。
+
+点标题栏中间的“页间”可以手动检查更新（Windows 没有菜单栏，只能从这里检查），macOS 的“页间”菜单里也有“检查更新…”。实现在 `electron/updater.cjs`。
+
+**两个平台的做法不同**
+
+- Windows 用 electron-updater 的标准流程：下载新的安装程序，退出时以 `--updated /S` 静默运行。有上一版的 `.exe.blockmap` 时只下载变化的部分。
+- macOS 的系统更新机制只安装 Developer ID 签名的应用，页间是 ad-hoc 签名，所以另写了一套：下载 zip，解压后核对应用 ID、版本号和签名完整性（`codesign --verify`），页间退出后用新的 `页间.app` 替换旧的。之后的更新会用缓存的上一个 zip 只下载变化的部分。
+- macOS 上只有页间所在的文件夹可写时才能替换，一般就是“应用程序”文件夹。直接从 DMG 或“下载”文件夹里运行时做不到，这时提示卡片改为“去官网下载”。
+- 如果以后做了 Developer ID 签名与公证，这套做法照样可用。
+
+`MacBundleUpdater` 用到了 electron-updater 的内部方法，所以 `package.json` 里把 electron-updater 锁在确切版本。升级它之后要重新运行下面的测试。
+
+**0.7.0 及更早的版本没有自动更新。** 这些用户要手动更新一次，之后就会自动更新。可以在发布说明、官网等渠道提醒他们。
+
+### 每次发版
+
+1. 改 `package.json` 的版本号，必须比线上版本大。
+2. 在 `build/release-notes.md` 写这次更新了什么，每行一条，会显示在提示卡片里。它会写进更新清单，所以要在打包前改好。
+3. `npm run dist:mac` 和 `npm run dist:win`。
+4. `npm run website:downloads`：核对 `release/` 里的更新清单与版本号一致，再把两个安装包、mac zip、两个 `.blockmap` 和两个 `.yml` 复制到 `website/downloads/`。
+5. 上传到服务器：**先传安装包，最后传两个 `.yml`**。`.yml` 一上线，用户的页间就会开始下载它列出的文件。
+6. 旧版本的 `.blockmap` 留在服务器上，更新时靠它只下载变化的部分；旧版本的安装包和 zip 可以删。
+
+### 测试
+
+```sh
+npm run test:update
+```
+
+在 Mac 上打包 0.0.1 和 0.0.2 两个版本，用本地服务器提供 0.0.2 的更新文件，依次检查：页间所在文件夹不可写时只提示去官网；选“稍后”后退出时静默安装且不重新打开；“立即重启”安装后重新打开；装好的 0.0.2 手动检查时提示已是最新版本。约 3 分钟。`FOLIO_UPDATE_URL` 环境变量可以把更新地址换成测试服务器。
+
+Windows 的同一测试在 GitHub Actions 的 `Windows` 工作流里运行（「Test automatic update」一步）。
 
 ## GitHub Release
 

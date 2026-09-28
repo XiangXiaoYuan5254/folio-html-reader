@@ -123,14 +123,23 @@ kbd {
   color: #78828e;
   margin-left: 2px;
 }
-.titlebar-document {
+button.brand {
+  padding: 4px 9px;
+  border-radius: 6px;
+}
+.titlebar-end {
   position: absolute;
   right: 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.titlebar-document {
   font-size: 11px;
   color: #9ba3ac;
 }
 /* Windows draws its minimize / maximize / close buttons over the right end of the title bar. */
-:root[data-platform='win32'] .titlebar-document {
+:root[data-platform='win32'] .titlebar-end {
   right: calc(
     100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px)) + 16px
   );
@@ -1702,6 +1711,64 @@ kbd {
 .toast.error {
   border-color: #edc8be;
   color: #aa6554;
+}
+.update-chip {
+  font-size: 11px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+.update-chip:hover:not(:disabled) {
+  background-color: #dcece7;
+}
+.update-card {
+  position: fixed;
+  right: 16px;
+  bottom: 43px;
+  z-index: 40;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  background: #fff;
+  border: 1px solid #cbded5;
+  border-radius: 10px;
+  box-shadow: 0 8px 32px #283f482e;
+  padding: 12px 12px 14px 16px;
+  font-size: 12px;
+  color: #4d5b68;
+}
+.update-card-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent);
+}
+.update-card-heading h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #253342;
+}
+.update-card ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  line-height: 1.7;
+}
+.update-card p {
+  margin: 8px 0 0;
+  color: #7c8792;
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+.update-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+.update-card-actions button {
+  padding: 7px 14px;
 }
 .toast > span {
   white-space: pre-wrap;

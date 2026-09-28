@@ -100,6 +100,13 @@ jobs:
           $progids = Get-ItemProperty 'HKCU:\Software\Classes\.html\OpenWithProgids' -ErrorAction SilentlyContinue
           if ($progids -and $progids.PSObject.Properties.Name -contains 'Folio.HTML') { throw 'Open with entry was not removed' }
 
+      # Installs its own 0.0.1 and lets it update itself to 0.0.2, so it runs after the uninstall.
+      - name: Test automatic update
+        if: ${{ !cancelled() }}
+        run: node tests/update.e2e.mjs
+        env:
+          FOLIO_EVIDENCE: ${{ env.EVIDENCE }}
+
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v7
