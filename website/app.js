@@ -18,7 +18,7 @@ const DOWNLOADS = {
 const FEEDBACK_EMAIL = '';
 
 // 备案通过后填写，例如 '沪ICP备2026000000号-1'、'沪公网安备31000000000000号'。留空则不显示。
-const ICP_NUMBER = '蜀ICP备2026057621号-1';
+const ICP_NUMBER = '';
 const POLICE_NUMBER = '';
 
 // ============================================================
