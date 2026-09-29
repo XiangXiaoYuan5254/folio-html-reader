@@ -8,7 +8,18 @@ import {
 } from 'react';
 import type { Annotation, EraserMode, FrameEvent, Tool } from '../types';
 import type { NoteSize } from '../reader/note-size';
-export type ReaderHandle = { send: (type: string, payload?: Record<string, unknown>) => void };
+export type ReaderHandle = {
+  send: (type: string, payload?: Record<string, unknown>) => void;
+  // Asks the document for something (AI text, anchors) and waits for its reply.
+  request: <T = unknown>(
+    type: string,
+    payload?: Record<string, unknown>,
+    ms?: number,
+  ) => Promise<T>;
+  // Resolves once the document has loaded and listens for messages.
+  whenReady: () => Promise<void>;
+};
+type Pending = { resolve: (value: any) => void; reject: (e: Error) => void };
 export type ReaderProps = {
   url: string;
   kind?: 'html' | 'pdf';
@@ -21,6 +32,7 @@ export type ReaderProps = {
   eraserMode: EraserMode;
   stickySize: NoteSize;
   textWidth: number;
+  noteFontSize: number;
   // Source mode: pick an element in the page to locate its code.
   inspect?: boolean;
   zoom: number;
@@ -40,6 +52,37 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
   const [error, setError] = useState(false);
   const live = useRef(p);
   live.current = p;
+  const pending = useRef(new Map<string, Pending>());
+  const readyWaiters = useRef<(() => void)[]>([]);
+  const isReady = useRef(false);
+  async function request<T>(type: string, payload: Record<string, unknown> = {}, ms = 60000) {
+    if (!isReady.current)
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(Error('文档尚未加载完成')), ms);
+        readyWaiters.current.push(() => {
+          clearTimeout(timer);
+          resolve();
+        });
+      });
+    const replyTo = crypto.randomUUID();
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pending.current.delete(replyTo);
+        reject(Error('文档没有响应，请稍后再试'));
+      }, ms);
+      pending.current.set(replyTo, {
+        resolve: (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        reject: (e) => {
+          clearTimeout(timer);
+          reject(e);
+        },
+      });
+      send(type, { ...payload, replyTo });
+    });
+  }
   function send(type: string, payload: Record<string, unknown> = {}) {
     frame.current?.contentWindow?.postMessage(
       {
@@ -51,7 +94,23 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
       '*',
     );
   }
-  useImperativeHandle(ref, () => ({ send }), []);
+  // A box in the document's own viewport, in window coordinates; the frame is scaled for zoom.
+  function onScreen(r?: { left: number; top: number; right: number; bottom: number } | null) {
+    const f = frame.current?.getBoundingClientRect();
+    if (!r || !f || ![r.left, r.top, r.right, r.bottom].every(Number.isFinite)) return null;
+    const s = actualScale.current;
+    return {
+      left: f.left + r.left * s,
+      top: f.top + r.top * s,
+      right: f.left + r.right * s,
+      bottom: f.top + r.bottom * s,
+    };
+  }
+  const whenReady = () =>
+    isReady.current
+      ? Promise.resolve()
+      : new Promise<void>((resolve) => readyWaiters.current.push(resolve));
+  useImperativeHandle(ref, () => ({ send, request, whenReady }), []);
   useLayoutEffect(() => {
     const observer = new ResizeObserver(() => setWidth(paper.current?.clientWidth || 800));
     if (paper.current) {
@@ -63,6 +122,7 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
   useEffect(() => setPageInput(String(pdf.page)), [pdf.page]);
   useLayoutEffect(() => {
     setReady(false);
+    isReady.current = false;
     setError(false);
     setPdf({ page: 1, total: 0, width: 0, hasText: null });
     let initialized = false;
@@ -70,6 +130,13 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
     function message(e: MessageEvent) {
       if (e.source !== frame.current?.contentWindow || e.data?.channel !== 'folio-reader-v1')
         return;
+      if (e.data.type === 'reply') {
+        const waiting = pending.current.get(e.data.replyTo);
+        pending.current.delete(e.data.replyTo);
+        if (e.data.error) waiting?.reject(Error(e.data.error));
+        else waiting?.resolve(e.data.result);
+        return;
+      }
       if (e.data.type === 'pdf-state') {
         if (e.data.url !== new URL(live.current.url, window.location.href).href) return;
         if (Number.isFinite(e.data.width) && Number.isFinite(e.data.total))
@@ -89,6 +156,8 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
         initialized = true;
         clearTimeout(timeout);
         setReady(true);
+        isReady.current = true;
+        for (const waiter of readyWaiters.current.splice(0)) waiter();
         setError(false);
         send('sync', {
           annotations: live.current.annotations,
@@ -100,13 +169,18 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
           eraserMode: live.current.eraserMode,
           stickySize: live.current.stickySize,
           textWidth: live.current.textWidth,
+          noteFontSize: live.current.noteFontSize,
           inspect: !!live.current.inspect,
         });
         send('restore', { scroll: live.current.scroll });
         send('scroll-link-state', { enabled: !!live.current.linkedScroll });
       }
       live.current.onEvent(
-        e.data.type === 'zoom-wheel' ? { ...e.data, scale: actualScale.current } : e.data,
+        e.data.type === 'zoom-wheel'
+          ? { ...e.data, scale: actualScale.current }
+          : e.data.type === 'selection' || e.data.type === 'selection-box'
+            ? { ...e.data, rect: onScreen(e.data.rect) }
+            : e.data,
       );
     }
     window.addEventListener('message', message);
@@ -139,6 +213,7 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
         eraserMode: p.eraserMode,
         stickySize: p.stickySize,
         textWidth: p.textWidth,
+        noteFontSize: p.noteFontSize,
         inspect: !!p.inspect,
       });
   }, [
@@ -152,6 +227,7 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
     p.eraserMode,
     p.stickySize,
     p.textWidth,
+    p.noteFontSize,
     p.inspect,
   ]);
   // Give the HTML the whole reading viewport, including its own margins.

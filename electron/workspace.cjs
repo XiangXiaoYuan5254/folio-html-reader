@@ -227,6 +227,34 @@ class Workspace {
       return true;
     });
   }
+  // Assistant conversations sit beside the document's annotations; project-wide ones at the root.
+  async aiHistoryPath(key) {
+    if (key === 'project') return path.join(this.meta, 'ai', 'project.json');
+    const relative = Object.keys(this.index.files).find((p) => this.index.files[p].id === key);
+    if (!relative) throw Error('文档不属于当前项目');
+    const full = await this.resolve(relative);
+    return path.join(path.dirname(full), '.html-reader', 'ai', `${key}.json`);
+  }
+  async aiHistory({ key }) {
+    return this.serial(async () => {
+      try {
+        const value = JSON.parse(await fs.readFile(await this.aiHistoryPath(key), 'utf8'));
+        return value?.version === 1 && Array.isArray(value.threads) ? value : null;
+      } catch (e) {
+        if (e.code === 'ENOENT' || e instanceof SyntaxError) return null;
+        throw e;
+      }
+    });
+  }
+  async saveAiHistory({ key, data }) {
+    return this.serial(async () => {
+      if (data?.version !== 1 || !Array.isArray(data.threads)) throw Error('无效的对话记录');
+      const json = JSON.stringify(data);
+      if (json.length > 20_000_000) throw Error('对话记录过大，请删除一些旧对话');
+      await atomicWrite(await this.aiHistoryPath(key), json);
+      return true;
+    });
+  }
   async saveSource({ path: relative, source, version }) {
     return this.serial(async () => {
       if (!isHtml(relative) || typeof source !== 'string') throw Error('无效的 HTML 文档');
@@ -289,15 +317,18 @@ class Workspace {
       return { source, version: hash(source) };
     });
   }
-  async create({ path: relative, kind }) {
+  async create({ path: relative, kind, content }) {
     return this.serial(async () => {
       const full = await this.resolve(relative, { create: true });
       if (kind === 'folder') await fs.mkdir(full);
       else {
         if (!isHtml(relative)) throw Error('文件名须以 .html 或 .htm 结尾');
+        if (typeof content === 'string' && content.length > 20_000_000) throw Error('文件过大');
         await fs.writeFile(
           full,
-          '<!doctype html>\n<html lang="zh-CN">\n<head><meta charset="UTF-8"><title>新文档</title><style>body{max-width:800px;margin:64px auto;padding:0 32px;font:18px/1.8 system-ui;color:#243240}h1{font-size:36px}</style></head>\n<body><h1>新文档</h1><p>从这里开始记录你的想法。</p></body>\n</html>\n',
+          typeof content === 'string'
+            ? content
+            : '<!doctype html>\n<html lang="zh-CN">\n<head><meta charset="UTF-8"><title>新文档</title><style>body{max-width:800px;margin:64px auto;padding:0 32px;font:18px/1.8 system-ui;color:#243240}h1{font-size:36px}</style></head>\n<body><h1>新文档</h1><p>从这里开始记录你的想法。</p></body>\n</html>\n',
           { flag: 'wx' },
         );
       }

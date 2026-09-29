@@ -27,6 +27,10 @@ let currentPage = 1;
 let maxWidth = 0;
 let initialized = false;
 let textReady: Promise<void> = Promise.resolve();
+// Settles once every page's text layer is in place (or opening failed), for AI requests
+// that can arrive before loadText starts.
+let textDone!: () => void;
+const allText = new Promise<void>((resolve) => (textDone = resolve));
 let outline: { id: string; text: string; level: number }[] = [];
 const destinations = new Map<string, unknown>();
 const visible = new Set<Page>();
@@ -210,7 +214,30 @@ async function loadText() {
     );
     state();
   }
+  textDone();
 }
+function pageText(page: Page) {
+  let text = '';
+  const walk = (node: Node) => {
+    if (node.nodeType === Node.TEXT_NODE) text += (node as Text).data;
+    else if ((node as Element).tagName === 'BR') text += '\n';
+    else node.childNodes.forEach(walk);
+  };
+  walk(page.text);
+  return text.replace(/[ \t]+\n/g, '\n').trim();
+}
+type Resolver = { resolve: (value?: unknown) => void };
+document.addEventListener('folio:pdf-when-text', (event) => {
+  void allText.then(() => (event as CustomEvent<Resolver>).detail.resolve());
+});
+document.addEventListener('folio:pdf-text', (event) => {
+  void allText.then(() =>
+    (event as CustomEvent<Resolver>).detail.resolve({
+      title: document.title,
+      pages: pages.map(pageText),
+    }),
+  );
+});
 async function loadOutline() {
   const bookmarks = await pdf.getOutline();
   if (!bookmarks?.length) return;
@@ -376,6 +403,7 @@ async function start() {
   void loadOutline().catch(() => {});
 }
 void start().catch((error) => {
+  textDone();
   message.className = 'pdf-error';
   message.textContent =
     error?.name === 'PasswordException'

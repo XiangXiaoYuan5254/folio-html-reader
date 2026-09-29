@@ -37,6 +37,8 @@ export type Annotation = {
   note: string;
   anchor?: { selector: string; top: number; left: number };
   orphan?: boolean;
+  // Added by the AI assistant rather than by hand.
+  by?: 'ai';
 };
 export type DocumentData = {
   version: 1;

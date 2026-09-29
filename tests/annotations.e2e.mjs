@@ -314,11 +314,12 @@ try {
   const indicator = f.getByLabel('查看批注笔记', { exact: true });
   await indicator.waitFor();
   await page.mouse.move(target.x + 40, target.y + target.height / 2);
-  const preview = f.getByRole('tooltip', { name: '批注笔记预览', exact: true });
+  const preview = f.getByRole('button', { name: '批注笔记预览，点击编辑', exact: true });
   await preview.waitFor();
-  assert.equal(await preview.innerText(), '这条笔记属于高亮的原文。');
+  assert.equal(await preview.locator('.preview-text').innerText(), '这条笔记属于高亮的原文。');
   assert.equal(await indicator.getAttribute('data-previewing'), 'true');
-  await page.mouse.move(target.x + 40, target.y + target.height + 40);
+  // The preview sits below the text and stays while the pointer is on it; moving away hides it.
+  await page.mouse.move(target.x + 40, target.y - 80);
   await preview.waitFor({ state: 'hidden' });
   assert.equal(await indicator.getAttribute('data-previewing'), 'false');
   await page.getByLabel('选择文字', { exact: true }).click();

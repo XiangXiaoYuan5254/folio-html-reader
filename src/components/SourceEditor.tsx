@@ -14,6 +14,8 @@ export type SourceEditorHandle = {
   // Shows the element whose start tag begins near `offset`; `select` also selects that tag.
   reveal: (offset: number, tag: string, select: boolean) => void;
   clearReveal: () => void;
+  // The selected code, for AI edits that should focus on it.
+  selection: () => string;
 };
 
 const phrases = EditorState.phrases.of({
@@ -97,6 +99,12 @@ export default forwardRef<
   const callbacks = useRef({ onChange, onSave });
   callbacks.current = { onChange, onSave };
   useImperativeHandle(ref, () => ({
+    selection() {
+      const view = editor.current;
+      if (!view) return '';
+      const { from, to } = view.state.selection.main;
+      return view.state.sliceDoc(from, to);
+    },
     find() {
       const view = editor.current;
       if (view) openSearchPanel(view);

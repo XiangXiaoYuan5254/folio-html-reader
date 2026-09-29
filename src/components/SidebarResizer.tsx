@@ -1,19 +1,55 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 
-const storageKey = 'folio.sidebar-width';
-const minWidth = 180;
-const maxWidth = 560;
-const clamp = (width: number, max: number) => Math.max(minWidth, Math.min(max, width));
+// The file tree on the left and the annotation/assistant panel on the right both have a
+// drag handle on their inner edge. Each remembers its width; double-click resets it.
+const sides = {
+  left: {
+    storageKey: 'folio.sidebar-width',
+    min: 180,
+    max: 560,
+    widthVar: '--sidebar-user-width',
+    defaultVar: '--sidebar',
+    fallback: 236,
+    compact: 950,
+    label: '调整文件树宽度',
+    title: '左右拖动调整目录宽度；双击恢复默认',
+    controls: 'project-file-sidebar',
+  },
+  right: {
+    storageKey: 'folio.inspector-width',
+    min: 260,
+    max: 760,
+    widthVar: '--inspector-user-width',
+    defaultVar: '--inspector',
+    fallback: 292,
+    compact: 700,
+    label: '调整右侧栏宽度',
+    title: '左右拖动调整右侧栏宽度；双击恢复默认',
+    controls: 'inspector-panel',
+  },
+};
+function stored(key: string, min: number, max: number) {
+  try {
+    const value = Number(localStorage.getItem(key));
+    return Number.isFinite(value) && value >= min ? Math.min(max, value) : null;
+  } catch {
+    return null;
+  }
+}
 
-export function SidebarResizer() {
-  const [initialWidth] = useState(() => {
-    try {
-      const value = Number(localStorage.getItem(storageKey));
-      return Number.isFinite(value) && value >= minWidth ? clamp(value, maxWidth) : null;
-    } catch {
-      return null;
-    }
-  });
+export function SidebarResizer({
+  side = 'left',
+  storageKey: key,
+}: {
+  side?: 'left' | 'right';
+  // Where the width is remembered, when one panel keeps several (e.g. per tab).
+  storageKey?: string;
+}) {
+  const config = sides[side];
+  const storageKey = key || config.storageKey;
+  const { min: minWidth, max: maxWidth } = config;
+  const clamp = (width: number, max: number) => Math.max(minWidth, Math.min(max, width));
+  const [initialWidth] = useState(() => stored(storageKey, minWidth, maxWidth));
   const preferred = useRef(initialWidth);
   const handle = useRef<HTMLDivElement>(null);
   const frame = useRef(0);
@@ -32,18 +68,21 @@ export function SidebarResizer() {
     const sidebar = handle.current?.parentElement;
     const workspace = sidebar?.parentElement;
     if (!sidebar || !workspace) return;
-    const inspector = workspace.querySelector<HTMLElement>('.inspector');
-    const inspectorWidth = inspector?.getBoundingClientRect().width || 0;
-    // On compact windows the file tree is a drawer, so it doesn't share the row.
+    const other = workspace.querySelector<HTMLElement>(
+      side === 'left' ? '.inspector' : '.file-sidebar',
+    );
+    const otherWidth = other?.getBoundingClientRect().width || 0;
+    // On compact windows the panel is a drawer, so it doesn't share the row.
     const available =
-      innerWidth <= 950 ? innerWidth - 48 : workspace.clientWidth - inspectorWidth - 520;
+      innerWidth <= config.compact ? innerWidth - 48 : workspace.clientWidth - otherWidth - 520;
     const max = Math.max(minWidth, Math.min(maxWidth, available));
-    const fallback = parseFloat(getComputedStyle(sidebar).getPropertyValue('--sidebar')) || 236;
+    const fallback =
+      parseFloat(getComputedStyle(sidebar).getPropertyValue(config.defaultVar)) || config.fallback;
     const width = Math.round(clamp(preferred.current ?? fallback, max));
-    sidebar.style.setProperty('--sidebar-user-width', `${width}px`);
+    sidebar.style.setProperty(config.widthVar, `${width}px`);
     latest.current = { width, max };
     setMetrics((old) => (old.width === width && old.max === max ? old : { width, max }));
-  }, []);
+  }, [side, storageKey]);
 
   const schedule = useCallback(() => {
     if (frame.current) return;
@@ -58,7 +97,15 @@ export function SidebarResizer() {
       if (preferred.current === null) localStorage.removeItem(storageKey);
       else localStorage.setItem(storageKey, String(preferred.current));
     } catch {}
-  }, []);
+  }, [storageKey]);
+  // Switching to a panel that keeps its own width (another tab) loads that width.
+  const loadedKey = useRef(storageKey);
+  useLayoutEffect(() => {
+    if (loadedKey.current === storageKey) return;
+    loadedKey.current = storageKey;
+    preferred.current = stored(storageKey, minWidth, maxWidth);
+    layout();
+  }, [storageKey, layout]);
 
   const finish = useCallback(
     (cancel = false) => {
@@ -82,8 +129,8 @@ export function SidebarResizer() {
     const observer = new ResizeObserver(schedule);
     observer.observe(workspace);
     observer.observe(sidebar);
-    const inspector = workspace.querySelector('.inspector');
-    if (inspector) observer.observe(inspector);
+    const other = workspace.querySelector(side === 'left' ? '.inspector' : '.file-sidebar');
+    if (other) observer.observe(other);
     const blur = () => finish();
     window.addEventListener('resize', schedule);
     window.addEventListener('blur', blur);
@@ -105,16 +152,16 @@ export function SidebarResizer() {
     <>
       <div
         ref={handle}
-        className={`sidebar-resizer${dragging ? ' dragging' : ''}`}
+        className={`sidebar-resizer ${side}${dragging ? ' dragging' : ''}`}
         role="separator"
-        aria-label="调整文件树宽度"
+        aria-label={config.label}
         aria-orientation="vertical"
-        aria-controls="project-file-sidebar"
+        aria-controls={config.controls}
         aria-valuemin={minWidth}
         aria-valuemax={metrics.max}
         aria-valuenow={metrics.width}
         aria-valuetext={`${metrics.width} 像素`}
-        title="左右拖动调整目录宽度；双击恢复默认"
+        title={config.title}
         tabIndex={0}
         onPointerDown={(e) => {
           if (e.button !== 0 || drag.current) return;
@@ -133,7 +180,8 @@ export function SidebarResizer() {
         onPointerMove={(e) => {
           const gesture = drag.current;
           if (!gesture || gesture.pointer !== e.pointerId) return;
-          const delta = e.clientX - gesture.x;
+          // The right panel grows as its left edge moves left.
+          const delta = (e.clientX - gesture.x) * (side === 'left' ? 1 : -1);
           if (!gesture.moved && Math.abs(delta) < 1) return;
           gesture.moved = true;
           preferred.current = Math.round(clamp(gesture.width + delta, latest.current.max));
@@ -151,7 +199,7 @@ export function SidebarResizer() {
             return;
           }
           if (drag.current) return;
-          const step = e.shiftKey ? 40 : 10;
+          const step = (e.shiftKey ? 40 : 10) * (side === 'left' ? 1 : -1);
           const next =
             e.key === 'ArrowLeft'
               ? latest.current.width - step

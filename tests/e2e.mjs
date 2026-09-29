@@ -200,6 +200,7 @@ try {
   const actualSelection = await f.evaluate(() => window.actualSelection);
   assert.ok(actualSelection.includes(quote));
   assert.equal(await page.locator('.annotation-quote').innerText(), actualSelection);
+  await page.locator('.annotation-card').getByRole('button', { name: '写想法' }).click();
   await page.getByLabel('批注内容', { exact: true }).fill('测试：高亮应跟随原文，关闭后仍能恢复。');
   await waitFor(
     async () => (await safeData('00_批注测试.html'))?.data.annotations[0]?.note.includes('恢复'),
@@ -218,7 +219,11 @@ try {
       async () => (await safeData('00_批注测试.html'))?.data.annotations.at(-1)?.type === type,
       'typed annotation',
     );
-    await page.locator('.annotation-card').last().getByLabel('删除批注', { exact: true }).click();
+    // The list is in reading order, so the heading's underline comes first.
+    await page
+      .locator('.annotation-card', { hasText: label })
+      .getByLabel('删除批注', { exact: true })
+      .click();
     await waitFor(
       async () => (await page.locator('.annotation-card').count()) === 1,
       'delete annotation',
@@ -347,6 +352,18 @@ try {
   await page.getByRole('dialog').getByRole('textbox').fill('阅读归档');
   await page.getByRole('button', { name: '创建', exact: true }).click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  // The file menu closes on a click anywhere else, including inside the reader, or Escape.
+  const treeMenu = page.locator('.tree-menu');
+  const treeRow = page.locator('.tree-row[data-file-path="00_批注测试.html"]');
+  await treeRow.click({ button: 'right' });
+  await treeMenu.waitFor();
+  await (await frame()).locator('h1').click();
+  await treeMenu.waitFor({ state: 'detached' });
+  await treeRow.click({ button: 'right' });
+  await treeMenu.waitFor();
+  await page.keyboard.press('Escape');
+  await treeMenu.waitFor({ state: 'detached' });
+  console.log('PASS: file menu closes on an outside click or Escape');
   await page.getByLabel('00_批注测试.html 的操作', { exact: true }).click();
   await page.getByRole('button', { name: '重命名', exact: true }).click();
   await page.getByRole('dialog').getByRole('textbox').fill('我的批注.html');
@@ -409,7 +426,11 @@ try {
     .click();
   await rendered();
   await page.getByRole('button', { name: '笔记', exact: true }).click();
-  assert.ok((await page.getByLabel('文档笔记', { exact: true }).inputValue()).includes('核心想法'));
+  // A saved note opens rendered: "# 核心想法" shows as a heading.
+  assert.equal(
+    await page.getByLabel('文档笔记预览', { exact: true }).locator('h3').innerText(),
+    '核心想法',
+  );
   console.log('PASS: app restart restores saved notes in moved file');
 
   await page.getByLabel('新建 HTML', { exact: true }).click();

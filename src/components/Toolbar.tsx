@@ -23,6 +23,8 @@ import {
   Plus,
   SquareMousePointer,
   History,
+  Sparkle,
+  WandSparkles,
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { EraserMode, Tool } from '../types';
@@ -90,6 +92,10 @@ export function Toolbar(p: {
   onSave: () => void;
   onReload: () => void;
   onHistory: () => void;
+  aiEditing?: boolean;
+  onAiEdit?: () => void;
+  assistantOpen?: boolean;
+  onAssistant?: () => void;
   inspecting: boolean;
   autosave: boolean;
   onAutosave: () => void;
@@ -326,6 +332,18 @@ export function Toolbar(p: {
             <History size={15} />
             历史版本
           </button>
+          {p.onAiEdit ? (
+            <button
+              className={`ai-edit-button ${p.aiEditing ? 'active' : ''}`}
+              aria-pressed={!!p.aiEditing}
+              title="描述想怎么改，AI 生成修改，确认后写入源码"
+              disabled={p.disabled}
+              onClick={p.onAiEdit}
+            >
+              <WandSparkles size={15} />
+              AI 修改
+            </button>
+          ) : null}
           <IconButton label="重新载入文件" onClick={p.onReload}>
             <RefreshCw size={16} />
           </IconButton>
@@ -379,6 +397,19 @@ export function Toolbar(p: {
       <IconButton label="查找文内文字" onClick={p.onFind} disabled={p.disabled}>
         <Search size={17} />
       </IconButton>
+      {p.onAssistant ? (
+        <button
+          type="button"
+          className={`ai-toolbar-button focus-hide ${p.assistantOpen ? 'active' : ''}`}
+          aria-label="AI 助手"
+          aria-pressed={!!p.assistantOpen}
+          title="AI 助手：就当前文档提问、总结、划重点，或让 AI 在整个项目里整理"
+          onClick={p.onAssistant}
+        >
+          <Sparkle size={14} />
+          AI<span className="ai-toolbar-extra"> 助手</span>
+        </button>
+      ) : null}
       <IconButton className="focus-hide" label="显示或隐藏批注栏" onClick={p.onRight}>
         <PanelRight size={17} />
       </IconButton>

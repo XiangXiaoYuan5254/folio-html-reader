@@ -207,6 +207,10 @@ button.brand {
 .sidebar-resizer:focus-visible {
   outline: none;
 }
+.sidebar-resizer.right {
+  right: auto;
+  left: -4px;
+}
 .sidebar-resize-shield {
   position: fixed;
   inset: 0;
@@ -1174,6 +1178,22 @@ button.brand {
   z-index: 5;
   white-space: nowrap;
 }
+.selection-toolbar.beside-selection {
+  top: 0;
+  left: 0;
+  bottom: auto;
+  animation: selection-toolbar-in 0.12s ease-out;
+}
+@keyframes selection-toolbar-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .selection-toolbar.beside-selection {
+    animation: none;
+  }
+}
 .selection-toolbar > span {
   font-size: 10px;
   color: #8b979e;
@@ -1191,7 +1211,8 @@ button.brand {
   border-radius: 4px;
 }
 .inspector {
-  width: var(--inspector);
+  position: relative;
+  width: var(--inspector-user-width, var(--inspector));
   flex-shrink: 0;
   border-left: 1px solid var(--line);
   background: #fff;
@@ -1384,6 +1405,20 @@ button.brand {
 .annotation-card textarea:placeholder-shown {
   background: transparent;
 }
+.annotation-add-note {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 6px 0 0 -4px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #98a3ad;
+}
+.annotation-add-note:hover:not(:disabled) {
+  color: var(--accent);
+  background-color: var(--accent-soft);
+}
 .drawing-link {
   display: flex;
   align-items: center;
@@ -1467,10 +1502,28 @@ button.brand {
 .note-caption {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 10px;
   color: #8d9aa5;
   font-size: 10px;
   margin-bottom: 16px;
+}
+.note-view {
+  display: flex;
+  margin-left: auto;
+  padding: 2px;
+  border-radius: 6px;
+  background: #eef2f4;
+}
+.note-view button {
+  padding: 2px 9px;
+  border-radius: 4px;
+  font-size: 10px;
+  color: #7c8a95;
+}
+.note-view button[aria-pressed='true'] {
+  background: #fff;
+  color: #1f2e39;
+  box-shadow: 0 1px 2px #172a3c14;
 }
 .note-caption > span:last-child {
   font-size: 9px;
@@ -1494,6 +1547,44 @@ button.brand {
   font-size: 11px;
   line-height: 2;
   color: #a2adb5;
+}
+.note-preview {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+  font-size: 12.5px;
+  line-height: 1.85;
+  color: #3f505c;
+  user-select: text;
+}
+/* The shared Markdown styles are sized for chat; a note needs clearer headings. */
+.note-preview .ai-markdown h3 {
+  font-size: 16px;
+  margin: 20px 0 8px;
+}
+.note-preview .ai-markdown h4 {
+  font-size: 14.5px;
+  margin: 22px 0 8px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--line);
+}
+.note-preview .ai-markdown h5 {
+  font-size: 13px;
+  margin: 16px 0 6px;
+}
+.note-preview .ai-markdown h6 {
+  font-size: 12.5px;
+  margin: 14px 0 4px;
+  color: #596a76;
+}
+.note-preview .ai-markdown > :first-child {
+  margin-top: 0;
+}
+.note-preview-empty {
+  margin: 0;
+  color: #a2adb5;
+  font-size: 11px;
 }
 .note-count {
   color: #a8b1b8;
@@ -1775,6 +1866,16 @@ button.brand {
 }
 .toast > .icon-button {
   margin-left: 8px;
+}
+.toast-action {
+  margin-left: 4px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  color: var(--accent);
+  font-weight: 600;
+}
+.toast-action:hover:not(:disabled) {
+  background-color: var(--accent-soft);
 }
 .modal-backdrop {
   position: fixed;
@@ -2163,7 +2264,7 @@ button.brand {
     box-shadow: 5px 0 25px #263d491a;
   }
   .inspector {
-    width: 245px;
+    --inspector: 245px;
   }
   .history-tools {
     display: flex;

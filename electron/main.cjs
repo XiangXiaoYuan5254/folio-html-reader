@@ -9,6 +9,7 @@ const {
   Menu,
   shell,
   clipboard,
+  safeStorage,
 } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
@@ -18,6 +19,7 @@ const { renderDocument, markSourceOffsets, mime } = require('./render.cjs');
 const { renderPDFDocument, pdfAssetPath } = require('./pdf.cjs');
 const { projectFor, filesFromArgv } = require('./open-file.cjs');
 const { createUpdates } = require('./updater.cjs');
+const { createAi } = require('./ai.cjs');
 const isMac = process.platform === 'darwin';
 const workspace = new Workspace();
 let win;
@@ -27,6 +29,7 @@ let watcher;
 let refreshTimer;
 let focusWindowState = null;
 const previews = new Map();
+let ai;
 if (process.env.FOLIO_USER_DATA) app.setPath('userData', process.env.FOLIO_USER_DATA);
 app.setName('页间');
 // Matches the Start menu shortcut the Windows installer creates, for taskbar grouping.
@@ -161,6 +164,11 @@ function menu() {
                   label: '检查更新…',
                   click: () => win?.webContents.send('folio:event', { type: 'check-updates' }),
                 },
+                {
+                  label: 'AI 设置…',
+                  accelerator: 'Cmd+,',
+                  click: () => win?.webContents.send('folio:event', { type: 'ai-settings' }),
+                },
                 { type: 'separator' },
                 { role: 'hide' },
                 { role: 'hideOthers' },
@@ -184,6 +192,15 @@ function menu() {
             accelerator: 'CmdOrCtrl+S',
             click: () => win.webContents.send('folio:event', { type: 'save' }),
           },
+          ...(isMac
+            ? []
+            : [
+                {
+                  label: 'AI 设置…',
+                  accelerator: 'Ctrl+,',
+                  click: () => win.webContents.send('folio:event', { type: 'ai-settings' }),
+                },
+              ]),
           { type: 'separator' },
           // The window menu bar is hidden on Windows; these entries keep the shortcuts working.
           isMac ? { role: 'close' } : { role: 'quit', label: '退出' },
@@ -230,11 +247,38 @@ function menu() {
 }
 app.on('before-quit', () => {
   quitting = true;
+  ai?.shutdown();
 });
+// On Windows keys are encrypted with the user's login (DPAPI). macOS keeps them in the app's
+// data folder, readable only by this user: with an ad-hoc signed app the Keychain would ask
+// for the login password again after every update.
+function keyProtection() {
+  const encrypted = !isMac && safeStorage.isEncryptionAvailable();
+  return {
+    protect: (key) =>
+      encrypted
+        ? 'enc:' + safeStorage.encryptString(key).toString('base64')
+        : 'txt:' + Buffer.from(key, 'utf8').toString('base64'),
+    unprotect: (value) => {
+      if (value.startsWith('enc:'))
+        return safeStorage.decryptString(Buffer.from(value.slice(4), 'base64'));
+      if (value.startsWith('txt:')) return Buffer.from(value.slice(4), 'base64').toString('utf8');
+      return '';
+    },
+  };
+}
 app
   .whenReady()
   .then(async () => {
     await initialWorkspace();
+    ai = createAi({
+      file: path.join(app.getPath('userData'), 'ai.json'),
+      fetch: (url, init) => net.fetch(url, init),
+      atomicWrite,
+      version: app.getVersion(),
+      openUrl: (url) => shell.openExternal(url),
+      ...keyProtection(),
+    });
     protocol.handle('app', async (request) => {
       const url = new URL(request.url);
       if (url.host !== 'ui') return new Response('', { status: 404 });
@@ -328,6 +372,17 @@ app
           'check-updates',
           'update-restart',
           'update-page',
+          'ai-config',
+          'ai-save-provider',
+          'ai-remove-provider',
+          'ai-set-active',
+          'ai-prefs',
+          'ai-models',
+          'ai-test',
+          'ai-chat',
+          'ai-cancel',
+          'ai-codex-status',
+          'ai-codex-login',
         ].includes(action) &&
         token !== workspace.token
       )
@@ -400,6 +455,22 @@ app
         case 'paste-text':
           win.webContents.paste();
           return true;
+        // A rectangle of the window as the reader sees it (web pages, PDF pages, drawings),
+        // for asking the AI about a figure. Coordinates are CSS pixels of the app page.
+        case 'capture-region': {
+          const [x, y, width, height] = ['x', 'y', 'width', 'height'].map((k) =>
+            Math.round(Number(payload?.[k]) || 0),
+          );
+          if (width < 4 || height < 4) throw Error('框选的区域太小');
+          const image = await win.webContents.capturePage({
+            x: Math.max(0, x),
+            y: Math.max(0, y),
+            width,
+            height,
+          });
+          if (image.isEmpty()) throw Error('没有截到画面，请再试一次');
+          return 'data:image/png;base64,' + image.toPNG().toString('base64');
+        }
         case 'trash':
           return workspace.trash(payload, (file) => shell.trashItem(file));
         case 'preview': {
@@ -460,6 +531,36 @@ app
         case 'update-page':
           await shell.openExternal(updates.downloadPage);
           return true;
+        case 'ai-config':
+          return ai.config();
+        case 'ai-save-provider':
+          return ai.saveProvider(payload);
+        case 'ai-remove-provider':
+          return ai.removeProvider(payload);
+        case 'ai-set-active':
+          return ai.setActive(payload);
+        case 'ai-prefs':
+          return ai.setPrefs(payload);
+        case 'ai-models':
+          return ai.models(payload);
+        case 'ai-test':
+          return ai.test(payload);
+        case 'ai-chat': {
+          const sender = event.sender;
+          return ai.chat(payload, (delta) => {
+            if (!sender.isDestroyed()) sender.send('folio:event', delta);
+          });
+        }
+        case 'ai-cancel':
+          return ai.cancel(payload);
+        case 'ai-codex-status':
+          return ai.codexStatus();
+        case 'ai-codex-login':
+          return ai.codexLogin();
+        case 'ai-history':
+          return workspace.aiHistory(payload);
+        case 'ai-save-history':
+          return workspace.saveAiHistory(payload);
         default:
           throw Error('未知操作');
       }

@@ -14,7 +14,11 @@ type Callbacks = {
   update: (id: string, patch: Partial<Annotation>, group?: string) => void;
   remove: (id: string) => void;
   select: (id: string) => void;
+  // One text size for every highlight note, chosen in the note editor.
+  fontSize: (size: number) => void;
 };
+export const NOTE_FONT_MIN = 12;
+export const NOTE_FONT_MAX = 26;
 const css = `
 ${colorPickerStyles}
 :host{all:initial;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:#334155}
@@ -24,8 +28,9 @@ ${colorPickerStyles}
 button{border:0;background:transparent;color:inherit;cursor:pointer;border-radius:5px}button:hover{background:#edf4f2}button:focus-visible{outline:2px solid #287b71}
 .actions{display:flex;align-items:center;gap:6px;padding:10px}.note-action{padding:7px 10px;color:#287b71;background:#edf7f4;flex:1}.delete{padding:7px;color:#b64d55}
 .colors{display:flex;gap:10px;padding:3px 15px 13px}.color{width:19px;height:19px;border-radius:50%;border:2px solid #fff;outline:1px solid #dce3e8}.color[aria-pressed=true]{outline:2px solid #607b86}
-textarea{display:block;width:100%;min-height:135px;max-height:300px;resize:vertical;border:0;outline:0;padding:13px 15px;color:#334155;background:#fffdf0;font-size:15px;line-height:1.65}.footer{display:flex;align-items:center;justify-content:space-between;padding:9px 13px;color:#82908f;font-size:12px}.done{padding:6px 14px;background:#287b71;color:white}.done:hover{background:#20675f}
-.preview{position:absolute;pointer-events:none;width:max-content;max-width:320px;max-height:240px;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere;padding:11px 14px;background:#fff7b2;color:#514a28;border:1px solid #dfd49b;border-radius:10px;box-shadow:0 5px 18px #4a421d22;font-size:15px;line-height:1.65}
+textarea{display:block;width:100%;min-height:135px;max-height:min(50vh,420px);resize:vertical;border:0;outline:0;padding:13px 15px;color:#334155;background:#fffdf0;font-size:var(--note-size,15px);line-height:1.65}.footer{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 13px;color:#82908f;font-size:12px}.sizes{display:flex;align-items:center;gap:2px;margin-left:auto}.size{padding:3px 7px;color:#5d6b75;font-size:12px}.size-value{min-width:20px;text-align:center;font-variant-numeric:tabular-nums}.done{padding:6px 14px;background:#287b71;color:white}.done:hover{background:#20675f}
+.preview{position:absolute;pointer-events:auto;cursor:pointer;display:flex;flex-direction:column;width:max-content;max-width:360px;max-height:min(420px,60vh);background:#fff7b2;color:#514a28;border:1px solid #dfd49b;border-radius:10px;box-shadow:0 5px 18px #4a421d22;font-size:15px;line-height:1.65;overflow:hidden}
+.preview-text{overflow:auto;overscroll-behavior:contain;white-space:pre-wrap;overflow-wrap:anywhere;padding:11px 14px 6px;font-size:var(--note-size,15px)}.preview-hint{flex-shrink:0;padding:4px 14px 8px;font-size:12px;color:#8a7d3f}.preview:hover{border-color:#cdbd6a}
 .note-indicator{position:absolute;pointer-events:auto;display:grid;place-items:center;width:22px;height:16px;padding:0;background:#fff7b2;color:#554b22;border:1px solid #dfce83;border-radius:4px;box-shadow:0 1px 4px #4a421d18;font:700 14px/1 system-ui;user-select:none}
 .note-indicator:hover{background:#fff19a}.note-indicator[data-previewing=true]{background:transparent;border-color:transparent;box-shadow:none;color:transparent}
 `;
@@ -47,6 +52,9 @@ export class AnnotationPopup {
   private shadow: ShadowRoot;
   private panel = element('div', 'popup');
   private preview = element('div', 'preview');
+  private previewText = element('div', 'preview-text');
+  private hideTimer: ReturnType<typeof setTimeout> | null = null;
+  private overPreview = false;
   private input = element('textarea');
   private actions = element('div', 'actions');
   private colors = element('div', 'colors');
@@ -54,6 +62,8 @@ export class AnnotationPopup {
   private colorInput = element('input');
   private colorTarget: { id: string; group: string; value: string } | null = null;
   private footer = element('div', 'footer');
+  private sizeLabel = element('span', 'size-value');
+  private fontSize = 15;
   private title = element('span');
   private noteButton = button('添加笔记', 'note-action');
   private current: Annotation | null = null;
@@ -72,8 +82,24 @@ export class AnnotationPopup {
     style.textContent = css;
     this.panel.setAttribute('role', 'group');
     this.panel.setAttribute('aria-label', '批注笔记编辑');
-    this.preview.setAttribute('role', 'tooltip');
-    this.preview.setAttribute('aria-label', '批注笔记预览');
+    this.preview.setAttribute('role', 'button');
+    this.preview.setAttribute('aria-label', '批注笔记预览，点击编辑');
+    this.preview.tabIndex = -1;
+    // The preview stays while the pointer is on it, so long notes can be scrolled and read;
+    // clicking it opens the note for editing.
+    this.preview.append(this.previewText, element('div', 'preview-hint', '点击编辑笔记'));
+    this.preview.onpointerenter = () => {
+      this.overPreview = true;
+      this.cancelHide();
+    };
+    this.preview.onpointerleave = () => {
+      this.overPreview = false;
+      this.scheduleHide();
+    };
+    this.preview.onclick = () => {
+      const a = this.previewAnnotation;
+      if (a) this.show(a, true);
+    };
     const head = element('div', 'head');
     const close = button('关闭笔记', '', '×');
     close.onclick = () => this.close();
@@ -137,13 +163,23 @@ export class AnnotationPopup {
     };
     const done = button('完成笔记', 'done', '完成');
     done.onclick = () => this.close();
-    this.footer.append(element('span', '', '自动保存 · 悬停原文查看'), done);
+    const smaller = button('缩小笔记字号', 'size', 'A−');
+    const larger = button('放大笔记字号', 'size', 'A+');
+    smaller.onclick = () => this.callbacks.fontSize(Math.max(NOTE_FONT_MIN, this.fontSize - 1));
+    larger.onclick = () => this.callbacks.fontSize(Math.min(NOTE_FONT_MAX, this.fontSize + 1));
+    this.sizeLabel.title = '笔记字号';
+    const sizes = element('span', 'sizes');
+    sizes.append(smaller, this.sizeLabel, larger);
+    this.footer.append(element('span', 'saved', '自动保存'), sizes, done);
     this.panel.append(head, this.actions, this.colors, this.input, this.footer);
     this.panel.hidden = this.preview.hidden = true;
     this.shadow.append(style, this.panel, this.preview);
+    this.setFontSize(this.fontSize);
     for (const type of ['mousedown', 'mouseup', 'click', 'dblclick'])
       this.host.addEventListener(type, (e) => e.stopPropagation());
     this.host.addEventListener('pointermove', (e) => e.stopPropagation());
+    // Scrolling a long note shouldn't scroll or zoom the page underneath.
+    this.host.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
     this.host.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -162,6 +198,13 @@ export class AnnotationPopup {
     document.body.append(this.host);
   }
 
+  setFontSize(size: number) {
+    this.fontSize = Math.max(NOTE_FONT_MIN, Math.min(NOTE_FONT_MAX, Math.round(size) || 15));
+    this.host.style.setProperty('--note-size', `${this.fontSize}px`);
+    this.sizeLabel.textContent = String(this.fontSize);
+    this.reposition();
+  }
+
   sync(annotations: Annotation[]) {
     if (this.colorTarget && !annotations.some((a) => a.id === this.colorTarget?.id))
       this.colorTarget = null;
@@ -177,7 +220,7 @@ export class AnnotationPopup {
     if (this.previewAnnotation) {
       const a = annotations.find((a) => a.id === this.previewAnnotation?.id);
       this.previewAnnotation = a || null;
-      this.preview.textContent = a?.note || '';
+      this.previewText.textContent = a?.note || '';
       this.preview.hidden = !a?.note.trim();
     }
     const annotated = annotations.filter((a) => a.quote && a.note.trim());
@@ -237,7 +280,15 @@ export class AnnotationPopup {
 
   hover(a: Annotation | null) {
     if (!this.panel.hidden) return;
-    if (this.hovered === (a?.id || '')) return;
+    // Leaving the text toward the preview (or anywhere) gives it a moment before it goes.
+    if (!a?.note.trim() && this.previewAnnotation && !this.preview.hidden) {
+      this.scheduleHide();
+      return;
+    }
+    if (this.hovered === (a?.id || '')) {
+      this.cancelHide();
+      return;
+    }
     this.clearPreview();
     if (!a?.note.trim()) return;
     this.hovered = a.id;
@@ -248,7 +299,8 @@ export class AnnotationPopup {
         return;
       }
       this.previewAnnotation = latest;
-      this.preview.textContent = latest.note;
+      this.previewText.textContent = latest.note;
+      this.previewText.scrollTop = 0;
       this.preview.hidden = false;
       this.reposition();
     }, 280);
@@ -260,7 +312,7 @@ export class AnnotationPopup {
       el.hidden = true;
       return;
     }
-    el.style.maxWidth = `${Math.min(el === this.preview ? 320 : 304, Math.max(0, innerWidth - 16))}px`;
+    el.style.maxWidth = `${Math.min(el === this.preview ? 360 : 304, Math.max(0, innerWidth - 16))}px`;
     const width = el.offsetWidth;
     const height = el.offsetHeight;
     el.style.left = `${Math.max(8, Math.min(innerWidth - width - 8, r.left))}px`;
@@ -290,7 +342,19 @@ export class AnnotationPopup {
       );
   }
 
+  private scheduleHide() {
+    this.cancelHide();
+    this.hideTimer = setTimeout(() => {
+      if (!this.overPreview) this.clearPreview();
+    }, 350);
+  }
+  private cancelHide() {
+    if (this.hideTimer) clearTimeout(this.hideTimer);
+    this.hideTimer = null;
+  }
   private clearPreview() {
+    this.cancelHide();
+    this.overPreview = false;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     this.hovered = '';

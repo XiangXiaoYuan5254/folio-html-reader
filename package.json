@@ -1,7 +1,7 @@
 {
   "name": "folio-html-reader",
   "productName": "页间",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "本地 HTML / PDF 阅读、批注与项目管理",
   "type": "module",
   "main": "electron/main.cjs",
@@ -13,7 +13,7 @@
     "build": "tsc -b && vite build",
     "start": "electron .",
     "test": "node --test tests/*.test.cjs",
-    "test:e2e": "npm run build && node tests/e2e.mjs && node tests/annotations.e2e.mjs && node tests/reading-interactions.e2e.mjs && node tests/zoom.e2e.mjs && node tests/pdf.e2e.mjs && node tests/tabs.e2e.mjs && node tests/text-width.e2e.mjs && node tests/source.e2e.mjs && node tests/open-file.e2e.mjs",
+    "test:e2e": "npm run build && node tests/e2e.mjs && node tests/annotations.e2e.mjs && node tests/reading-interactions.e2e.mjs && node tests/zoom.e2e.mjs && node tests/pdf.e2e.mjs && node tests/tabs.e2e.mjs && node tests/text-width.e2e.mjs && node tests/source.e2e.mjs && node tests/open-file.e2e.mjs && node tests/ai.e2e.mjs",
     "test:annotations": "npm run build && node tests/annotations.e2e.mjs",
     "pack": "npm run build && electron-builder --mac dir",
     "format": "prettier --write src electron scripts tests vite.config.ts",
@@ -26,12 +26,15 @@
     "test:text-width": "npm run build && node tests/text-width.e2e.mjs",
     "test:source": "npm run build && node tests/source.e2e.mjs && node tests/open-file.e2e.mjs",
     "test:open-file": "npm run build && node tests/open-file.e2e.mjs",
+    "test:ai": "npm run build && node tests/ai.e2e.mjs",
+    "test:ai-live": "npm run build && node tests/ai-live.mjs",
     "test:windows": "node tests/windows.e2e.mjs",
     "test:update": "npm run build && node tests/update.e2e.mjs",
     "website:shots": "npm run build && node scripts/website-shots/shoot.mjs",
     "website:downloads": "node scripts/website-downloads.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.129.0",
     "@codemirror/commands": "^6.8.1",
     "@codemirror/lang-html": "^6.4.9",
     "@codemirror/language": "^6.12.4",

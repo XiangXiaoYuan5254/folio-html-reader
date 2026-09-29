@@ -14,8 +14,11 @@ import {
   ChevronDown,
   Minimize,
   SlidersHorizontal,
+  Languages,
+  Lightbulb,
+  MessageCircleQuestion,
 } from 'lucide-react';
-import { invoke, subscribe, useWorkspace, isDesktop } from './api';
+import { invoke, subscribe, useWorkspace, isDesktop, documentUrl } from './api';
 import { isMac, shortcut, trashName } from './platform';
 import type {
   Anchor,
@@ -36,7 +39,7 @@ import { DocumentReader } from './components/DocumentReader';
 import { ReadingResizer } from './components/ReadingResizer';
 import { stickyNoteSize, textNoteWidth } from './reader/note-size';
 import type { ReaderHandle } from './components/ReaderFrame';
-import { Inspector } from './components/Inspector';
+import { Inspector, annotationLabels } from './components/Inspector';
 import type { InspectorTab } from './components/Inspector';
 import { Dialog } from './components/Dialog';
 import type { DialogOptions } from './components/Dialog';
@@ -50,6 +53,17 @@ import { HistoryPanel, backupLabel } from './components/HistoryPanel';
 import type { RecentProject } from './components/ProjectPicker';
 import { annotationColors, defaultColor, normalizeColor } from './colors';
 import { zoomAfterWheel } from './zoom';
+import { Assistant, useAssistantCard } from './ai/assistant';
+import type { AiHost } from './ai/host';
+import type { DocText } from './ai/types';
+import { withHiddenReader } from './ai/hidden-reader';
+import { AssistantPanel } from './components/AssistantPanel';
+import type { AssistantMode } from './components/AssistantPanel';
+import { AiSettings } from './components/AiSettings';
+import { AiSelectionCard } from './components/AiSelectionCard';
+import { AiSourceEdit } from './components/AiSourceEdit';
+import { SelectionToolbar } from './components/SelectionToolbar';
+import type { ScreenBox } from './components/SelectionToolbar';
 const SourceEditor = lazy(() => import('./components/SourceEditor'));
 import type { SourceEditorHandle } from './components/SourceEditor';
 const toolHints: Record<Tool, string> = {
@@ -76,27 +90,53 @@ function readableFiles(tree: WorkspaceInfo['tree']): string[] {
     n.kind === 'html' || n.kind === 'pdf' ? [n.path] : readableFiles(n.children || []),
   );
 }
+// What the reader's ai-text reply looks like for HTML and PDF.
+function docText(path: string, raw: { title?: string; text?: string; pages?: string[] }): DocText {
+  const kind = /\.pdf$/i.test(path) ? 'pdf' : 'html';
+  return {
+    path,
+    kind,
+    title: raw.title || path.split('/').at(-1) || path,
+    text: raw.pages ? raw.pages.join('\n\n') : raw.text || '',
+    pages: raw.pages,
+  };
+}
 type PaneSide = 'left' | 'right';
 type ReaderState = {
   selected: string | null;
   selection: Anchor | null;
+  // Where the selected text is on screen, for placing the selection toolbar.
+  selectionBox: ScreenBox | null;
   rebind: string | null;
   outline: OutlineItem[];
   orphans: string[];
+  // Annotation ids in reading order, as the document last reported them.
+  order: string[];
   progress: number;
 };
 const emptyReaderState: ReaderState = {
   selected: null,
   selection: null,
+  selectionBox: null,
   rebind: null,
   outline: [],
   orphans: [],
+  order: [],
   progress: 0,
 };
 export default function App() {
   const [workspace, setWorkspace] = useState<WorkspaceInfo | null>(null);
-  const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null);
-  const notify = useCallback((text: string, error = false) => setNotice({ text, error }), []);
+  const [notice, setNotice] = useState<{
+    text: string;
+    error: boolean;
+    // A button in the notice, such as “撤销”.
+    action?: { label: string; run: () => void };
+  } | null>(null);
+  const notify = useCallback(
+    (text: string, error = false, action?: { label: string; run: () => void }) =>
+      setNotice({ text, error, action }),
+    [],
+  );
   const onError = useCallback((s: string) => notify(s, true), [notify]);
   const model = useDocuments(onError);
   const doc = model.docs.find((d) => d.id === model.active);
@@ -196,9 +236,25 @@ export default function App() {
       return textNoteWidth(null);
     }
   });
+  // Text size of highlight notes, set from the note editor in the page.
+  const [noteFontSize, setNoteFontSize] = useState(() => {
+    try {
+      const saved = Number(localStorage.getItem('folio.note-font-size'));
+      return saved >= 12 && saved <= 26 ? saved : 15;
+    } catch {
+      return 15;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('folio.note-font-size', String(noteFontSize));
+    } catch {}
+  }, [noteFontSize]);
   const [tab, setTab] = useState<InspectorTab>('annotations');
+  // Asks the note tab to show its end, where saved AI answers land.
+  const [noteReveal, setNoteReveal] = useState(false);
   const [readerStates, setReaderStates] = useState<Record<string, ReaderState>>({});
-  const { selected, outline, orphans, selection, rebind, progress } =
+  const { selected, outline, orphans, order, selection, selectionBox, rebind, progress } =
     readerStates[doc?.id || ''] || emptyReaderState;
   function patchReader(id: string, patch: Partial<ReaderState>) {
     setReaderStates((states) => ({
@@ -210,6 +266,37 @@ export default function App() {
   const setSelection = (selection: Anchor | null) => doc && patchReader(doc.id, { selection });
   const setRebind = (rebind: string | null) => doc && patchReader(doc.id, { rebind });
   const [dialog, setDialog] = useState<DialogOptions | null>(null);
+  const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
+  const [assistantMode, setAssistantMode] = useState<AssistantMode>(() => {
+    try {
+      return localStorage.getItem('folio.assistant-mode') === 'project' ? 'project' : 'doc';
+    } catch {
+      return 'doc';
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('folio.assistant-mode', assistantMode);
+    } catch {}
+  }, [assistantMode]);
+  // Source mode: the AI edit panel, and the edited version the preview shows while reviewing.
+  const [aiSourceOpen, setAiSourceOpen] = useState(false);
+  const [aiPreview, setAiPreview] = useState<string | null>(null);
+  useEffect(() => setAiSourceOpen(false), [mode, doc?.id]);
+  // The AI features reach the app through this host; it is refreshed on every render.
+  const hostImpl = useRef<AiHost>(null!);
+  const [assistant] = useState(
+    () =>
+      new Assistant(
+        new Proxy({} as AiHost, {
+          get:
+            (_, key) =>
+            (...args: unknown[]) =>
+              (hostImpl.current as any)[key](...args),
+        }),
+      ),
+  );
+  const aiCard = useAssistantCard(assistant);
   const [appVersion, setAppVersion] = useState('');
   const [update, setUpdate] = useState<UpdateState>({ status: 'idle' });
   // “稍后” hides the card; the title bar keeps a button to bring it back.
@@ -319,7 +406,8 @@ export default function App() {
   }, [sessionSignature, model.active, workspace?.token, splitLeftPath, splitRightPath]);
   useEffect(() => {
     if (!notice || notice.error) return;
-    const timer = setTimeout(() => setNotice(null), 3500);
+    // Leave time to reach a notice's button.
+    const timer = setTimeout(() => setNotice(null), notice.action ? 6000 : 3500);
     return () => clearTimeout(timer);
   }, [notice]);
   const previousActive = useRef('');
@@ -378,6 +466,7 @@ export default function App() {
         if (e.type === 'find') liveActions.current.find();
         if (e.type === 'close-request') liveActions.current.close();
         if (e.type === 'files-changed') liveActions.current.refresh();
+        if (e.type === 'ai-settings') setAiSettingsOpen(true);
         if (e.type === 'open-file' && sessionReady.current) liveActions.current.openFiles();
         if (e.type === 'toggle-focus') liveActions.current.focus();
         if (e.type === 'update') setUpdate(e.update);
@@ -505,6 +594,7 @@ export default function App() {
     });
   }
   async function refresh() {
+    assistant.forgetText();
     setWorkspace(await invoke<WorkspaceInfo>('tree'));
   }
   function restoreSplit(w: WorkspaceInfo) {
@@ -572,7 +662,9 @@ export default function App() {
   }
   async function loadWorkspace(w: WorkspaceInfo) {
     sessionReady.current = false;
+    await assistant.flush();
     model.clear();
+    assistant.reset();
     setSplit(null);
     setReaderStates({});
     useWorkspace(w);
@@ -686,6 +778,7 @@ export default function App() {
     close: () =>
       guardDirty(model.docs, async () => {
         await model.flush();
+        await assistant.flush();
         await invoke('close');
       }),
     refresh: () => run(refresh),
@@ -714,6 +807,7 @@ export default function App() {
   const restartToUpdate = () =>
     guardDirty(model.docs, async () => {
       await model.flush();
+      await assistant.flush();
       await invoke('update-restart');
     });
   function fileAction(action: FileAction, path: string) {
@@ -792,6 +886,42 @@ export default function App() {
     sendToActive('clear-selection');
     setSelection(null);
   }
+  // Two-column reading with `id` on `side` and `beside` kept on the other side.
+  function placeBeside(id: string, beside: string, side: PaneSide) {
+    const keep = split && (split.left === beside || split.right === beside);
+    const sideOf = split?.left === beside ? 'right' : 'left';
+    const target: PaneSide = keep ? sideOf : side;
+    focusedSide.current = target;
+    setSplit((s) =>
+      keep && s
+        ? { ...s, [target]: id }
+        : target === 'right'
+          ? { left: beside, right: id }
+          : { left: id, right: beside },
+    );
+  }
+  // Page links in notes (paper.pdf#page=3) open the PDF next to the note at that page.
+  async function openPdfPage(path: string, page: number, from: string) {
+    const visible = split && [split.left, split.right];
+    const id = await model.open(path, false, keepPanes());
+    setMode('read');
+    if (id !== from && !visible?.includes(id)) placeBeside(id, from, 'left');
+    else if (split) focusedSide.current = split.left === id ? 'left' : 'right';
+    model.setActive(id);
+    let reader: ReaderHandle | undefined;
+    for (let i = 0; i < 60 && !(reader = readers.current.get(id)); i++)
+      await new Promise((r) => setTimeout(r, 100));
+    await reader?.whenReady();
+    reader?.send('pdf-page', { page });
+  }
+  function openAiCard(cardMode: 'explain' | 'translate' | 'ask') {
+    if (!doc || !selection) return;
+    assistant.openCard(cardMode, { docId: doc.id, path: doc.path, anchor: selection });
+  }
+  function openAssistant() {
+    setRight(true);
+    setTab('assistant');
+  }
   function event(id: string, e: FrameEvent) {
     const doc = model.docsRef.current.find((d) => d.id === id);
     if (!doc) return;
@@ -809,7 +939,10 @@ export default function App() {
         patchReader(id, { outline: e.items });
         break;
       case 'selection':
-        patchReader(id, { selection: e.quote });
+        patchReader(id, { selection: e.quote, selectionBox: e.quote ? e.rect : null });
+        break;
+      case 'selection-box':
+        patchReader(id, { selectionBox: e.rect });
         break;
       case 'zoom-wheel': {
         if (!Number.isFinite(e.delta)) break;
@@ -846,6 +979,9 @@ export default function App() {
       case 'orphans':
         patchReader(id, { orphans: e.ids });
         break;
+      case 'order':
+        if (Array.isArray(e.ids)) patchReader(id, { order: e.ids });
+        break;
       case 'create': {
         const a = e.annotation;
         if (
@@ -861,6 +997,10 @@ export default function App() {
       }
       case 'select-annotation':
         patchReader(id, { selected: e.id });
+        break;
+      case 'note-font-size':
+        if (Number.isFinite(e.size))
+          setNoteFontSize(Math.max(12, Math.min(26, Math.round(e.size))));
         break;
       case 'update-annotation':
         if (e.patch?.size) {
@@ -927,7 +1067,9 @@ export default function App() {
             const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
             if (parts.shift() !== workspace?.token) return;
             const path = parts.join('/');
-            if (/\.(html?|pdf)$/i.test(path))
+            const page = Number(url.hash.match(/^#page=(\d+)$/)?.[1]);
+            if (/\.pdf$/i.test(path) && page > 0) await openPdfPage(path, page, id);
+            else if (/\.(html?|pdf)$/i.test(path))
               await openDocument(path, split?.right === id ? 'right' : 'left');
             else notify('该链接不是 HTML 或 PDF 文档');
           } else if (!isDesktop && url.pathname.startsWith('/__asset/')) {
@@ -940,6 +1082,28 @@ export default function App() {
         });
         break;
     }
+  }
+  // Deleting from the side panel says what went and offers to bring it back.
+  function deleteFromList(id: string) {
+    if (!doc) return;
+    const docId = doc.id;
+    const before = doc.data.annotations;
+    const index = before.findIndex((a) => a.id === id);
+    if (index < 0) return;
+    const removed = before[index];
+    model.annotate(docId, (all) => all.filter((a) => a.id !== id));
+    const after = model.docsRef.current.find((d) => d.id === docId)?.data.annotations;
+    notify(`已删除${annotationLabels[removed.type] || '批注'}`, false, {
+      label: '撤销',
+      run: () => {
+        const current = model.docsRef.current.find((d) => d.id === docId);
+        if (!current) return;
+        // Nothing changed since: a plain undo, so redo still works.
+        if (current.data.annotations === after) model.undo(docId);
+        else if (!current.data.annotations.some((a) => a.id === id))
+          model.annotate(docId, (all) => [...all.slice(0, index), removed, ...all.slice(index)]);
+      },
+    });
   }
   function exportNotes() {
     if (!doc) return;
@@ -986,6 +1150,121 @@ export default function App() {
     : undefined;
   const dropPreviewSide = existingDragPane?.side || readingDropSide || 'right';
   const dropBoundary = readingSplit ? splitRatio : 0.5;
+  const otherPane = readingSplit
+    ? panes.find((pane) => pane.doc && pane.doc.id !== doc?.id)?.doc
+    : undefined;
+  const reading = doc
+    ? {
+        scope: doc.id,
+        docs: [doc, ...(otherPane ? [otherPane] : [])].map((d) => ({ id: d.id, path: d.path })),
+      }
+    : null;
+  const keepPanes = () => (split ? [split.left, split.right] : []);
+  // The reader showing `path`; with `show`, the document is opened first.
+  async function readerFor(path: string, show = false) {
+    const open = model.docsRef.current.find((d) => d.path === path);
+    let reader = open && readers.current.get(open.id);
+    if (reader || !show) return reader;
+    await openDocument(path);
+    setMode('read');
+    const id = model.docsRef.current.find((d) => d.path === path)?.id;
+    for (let i = 0; i < 60 && id && !(reader = readers.current.get(id)); i++)
+      await new Promise((r) => setTimeout(r, 100));
+    return reader;
+  }
+  function offscreen<T>(path: string, type: string, payload: Record<string, unknown> = {}) {
+    return withHiddenReader(
+      documentUrl(path, Date.now()),
+      /\.pdf$/i.test(path) ? 'pdf' : 'html',
+      (request) => request<T>(type, payload),
+    );
+  }
+  hostImpl.current = {
+    projectName: () => workspace?.name || '',
+    root: () => workspace?.root,
+    files: () => files.map((path) => ({ path, kind: /\.pdf$/i.test(path) ? 'pdf' : 'html' })),
+    activePath: () => doc?.path,
+    async docText(path) {
+      const reader = await readerFor(path);
+      type Raw = { title?: string; text?: string; pages?: string[] };
+      const raw = reader
+        ? await reader.request<Raw>('ai-text', {}, 90_000)
+        : await offscreen<Raw>(path, 'ai-text');
+      return docText(path, raw);
+    },
+    async anchors(path, quotes) {
+      const reader = await readerFor(path);
+      type Result = (Anchor | null)[];
+      if (!reader) return offscreen<Result>(path, 'ai-anchors', { quotes });
+      const found = await reader.request<Result>('ai-anchors', { quotes }, 90_000);
+      // A reader that places nothing may be mid-reload; a freshly loaded copy decides.
+      if (quotes.length && found.every((a) => !a)) {
+        const again = await offscreen<Result>(path, 'ai-anchors', { quotes }).catch(() => found);
+        return found.map((a, i) => a || again[i] || null);
+      }
+      return found;
+    },
+    async flash(path, quote) {
+      const reader = await readerFor(path, true);
+      return !!reader && (await reader.request<boolean>('ai-flash', { quote }, 30_000));
+    },
+    async documentData(path) {
+      const open = model.docsRef.current.find((d) => d.path === path);
+      if (open) return { id: open.id, kind: open.kind, data: open.data, source: open.draft };
+      const raw = await invoke<OpenDocument>('document', { path });
+      return { id: raw.id, kind: raw.kind, data: raw.data, source: raw.source };
+    },
+    // Changes land in the document like manual ones: one undo step, saved as usual.
+    async addAnnotations(path, annotations) {
+      const id = await model.open(path, false, keepPanes());
+      model.annotate(id, (all) => [...all, ...annotations]);
+    },
+    async setNote(path, note) {
+      const id = await model.open(path, false, keepPanes());
+      model.data(id, { note });
+    },
+    async showNote(path) {
+      await openDocument(path);
+      setRight(true);
+      setTab('note');
+      setNoteReveal(true);
+    },
+    async setSource(path, source) {
+      const id = await model.open(path, false, keepPanes());
+      model.edit(id, source, false);
+      if (!autosave) return { saved: false };
+      await model.save(id);
+      return { saved: true };
+    },
+    async createHtml(path, content) {
+      setWorkspace(await invoke<WorkspaceInfo>('create', { path, kind: 'file', content }));
+    },
+    async open(path) {
+      await openDocument(path);
+      setMode('read');
+    },
+    async openBeside(path, beside) {
+      const other = model.docsRef.current.find((d) => d.path === beside);
+      const id = await model.open(path, false, keepPanes());
+      setMode('read');
+      if (!other || other.id === id) return model.setActive(id);
+      // The source stays the active document, so its conversation (and the result
+      // message) stays in the assistant.
+      placeBeside(id, other.id, 'right');
+      focusedSide.current = 'left';
+      model.setActive(other.id);
+    },
+    confirm: (options) =>
+      new Promise((resolve) =>
+        setDialog({
+          ...options,
+          onConfirm: () => resolve(true),
+          onCancel: () => resolve(false),
+        }),
+      ),
+    notify,
+    openSettings: () => setAiSettingsOpen(true),
+  };
   return (
     <div
       className={`app-shell ${left ? '' : 'hide-left'} ${right ? '' : 'hide-right'}${focus.enabled ? ' focus-mode' : ''}${focus.toolsVisible ? ' focus-tools-visible' : ''}`}
@@ -1140,6 +1419,14 @@ export default function App() {
                 doc && guardDirty([doc], () => model.reload(doc.id), '重新载入文件？')
               }
               onHistory={() => setHistoryOpen(true)}
+              aiEditing={aiSourceOpen}
+              onAiEdit={isDesktop ? () => setAiSourceOpen((v) => !v) : undefined}
+              assistantOpen={right && tab === 'assistant'}
+              onAssistant={
+                isDesktop
+                  ? () => (right && tab === 'assistant' ? setRight(false) : openAssistant())
+                  : undefined
+              }
               dirty={!!doc && doc.draft !== doc.source}
               onUndo={() => doc && model.undo(doc.id)}
               onRedo={() => doc && model.undo(doc.id, true)}
@@ -1205,6 +1492,23 @@ export default function App() {
                           : '已保存'}
                     </span>
                   </div>
+                  {aiSourceOpen ? (
+                    <AiSourceEdit
+                      doc={doc}
+                      store={assistant}
+                      editorSelection={() => sourceEditor.current?.selection() || ''}
+                      onPreview={setAiPreview}
+                      onApply={(source) => {
+                        model.edit(doc.id, source, autosave);
+                        notify(
+                          autosave
+                            ? '已应用 AI 修改；修改前的版本已自动备份，也可以在编辑器中撤销'
+                            : '已应用 AI 修改，保存后写入文件',
+                        );
+                      }}
+                      onClose={() => setAiSourceOpen(false)}
+                    />
+                  ) : null}
                   <Suspense fallback={<div className="editor-loading">正在载入编辑器…</div>}>
                     <SourceEditor
                       ref={sourceEditor}
@@ -1307,6 +1611,7 @@ export default function App() {
                       <DocumentReader
                         key={paneDoc.id}
                         live={mode === 'source'}
+                        override={mode === 'source' && paneDoc.id === doc.id ? aiPreview : null}
                         inspect={mode === 'source' && inspecting}
                         ref={(handle) => {
                           if (handle) readers.current.set(paneDoc.id, handle);
@@ -1323,6 +1628,7 @@ export default function App() {
                         eraserMode={eraserMode}
                         stickySize={stickySize}
                         textWidth={textWidth}
+                        noteFontSize={noteFontSize}
                         zoom={mode === 'source' ? 0 : paneDoc.data.zoom}
                         zoomable={mode === 'read'}
                         linkedScroll={!!readingSplit && !!readingSplit.right && linkedScroll}
@@ -1337,7 +1643,7 @@ export default function App() {
                       </div>
                     )}
                     {paneDoc?.id === doc.id && selection && mode === 'read' ? (
-                      <div className="selection-toolbar" onMouseDown={(e) => e.preventDefault()}>
+                      <SelectionToolbar box={selectionBox} onMouseDown={(e) => e.preventDefault()}>
                         <span>已选 {selection.exact.length} 字</span>
                         {rebind ? (
                           <button
@@ -1362,10 +1668,58 @@ export default function App() {
                           <Underline size={15} />
                           划线
                         </button>
+                        {isDesktop ? (
+                          <>
+                            <i className="selection-divider" aria-hidden="true" />
+                            <button
+                              className="selection-ai"
+                              onClick={() => openAiCard('explain')}
+                              title="AI 解释选中的文字"
+                            >
+                              <Lightbulb size={15} />
+                              解释
+                            </button>
+                            <button
+                              className="selection-ai"
+                              onClick={() => openAiCard('translate')}
+                              title="AI 翻译选中的文字"
+                            >
+                              <Languages size={15} />
+                              翻译
+                            </button>
+                            <button
+                              className="selection-ai"
+                              onClick={() => openAiCard('ask')}
+                              title="就选中的文字向 AI 提问"
+                            >
+                              <MessageCircleQuestion size={15} />
+                              提问
+                            </button>
+                          </>
+                        ) : null}
                         <IconButton label="取消文字选择" onClick={clearSelection}>
                           <X size={13} />
                         </IconButton>
-                      </div>
+                      </SelectionToolbar>
+                    ) : null}
+                    {aiCard && paneDoc?.id === aiCard.docId && mode === 'read' ? (
+                      <AiSelectionCard
+                        card={aiCard}
+                        onAsk={(q) => assistant.askCard(q)}
+                        onStop={() => assistant.stopCard()}
+                        onClose={() => assistant.closeCard()}
+                        onSave={() =>
+                          run(async () => {
+                            await assistant.saveCard(color);
+                            clearSelection();
+                          })
+                        }
+                        onContinue={() => {
+                          if (reading) assistant.continueCard(reading.docs);
+                          setAssistantMode('doc');
+                          openAssistant();
+                        }}
+                      />
                     ) : null}
                   </div>
                 </Fragment>
@@ -1445,7 +1799,10 @@ export default function App() {
           doc={doc}
           tab={tab}
           onTab={setTab}
+          noteReveal={noteReveal}
+          onNoteRevealed={() => setNoteReveal(false)}
           outline={outline}
+          order={order}
           selected={selected}
           onSelect={(id) => {
             setSelected(id);
@@ -1455,12 +1812,30 @@ export default function App() {
             doc &&
             model.annotate(doc.id, (all) => all.map((a) => (a.id === id ? { ...a, note } : a)))
           }
-          onDelete={(id) => doc && model.annotate(doc.id, (all) => all.filter((a) => a.id !== id))}
+          onDelete={deleteFromList}
           onNote={(note) => doc && model.data(doc.id, { note })}
           onHeading={(id) => sendToActive('heading', { id })}
           onExport={exportNotes}
           orphans={orphans}
           saving={model.saving}
+          assistant={
+            isDesktop ? (
+              <AssistantPanel
+                store={assistant}
+                mode={assistantMode}
+                onMode={setAssistantMode}
+                reading={reading}
+                selection={mode === 'read' ? selection?.exact || '' : ''}
+                onClearSelection={clearSelection}
+                onOpenSettings={() => setAiSettingsOpen(true)}
+                hasFiles={files.length > 0}
+              />
+            ) : (
+              <div className="inspector-empty">
+                <h3>AI 助手仅在桌面版中可用</h3>
+              </div>
+            )
+          }
         />
       </div>
       {notice ? (
@@ -1470,6 +1845,18 @@ export default function App() {
         >
           {notice.error ? <AlertCircle size={17} /> : <Check size={17} />}
           <span>{notice.text.replace(/Error invoking remote method '[^']+': Error: /, '')}</span>
+          {notice.action ? (
+            <button
+              type="button"
+              className="toast-action"
+              onClick={() => {
+                notice.action?.run();
+                setNotice(null);
+              }}
+            >
+              {notice.action.label}
+            </button>
+          ) : null}
           <IconButton label="关闭提示" onClick={() => setNotice(null)}>
             <X size={15} />
           </IconButton>
@@ -1499,6 +1886,13 @@ export default function App() {
           unsaved={doc.draft !== doc.source && (!autosave || !!doc.autosavePaused)}
           onRestore={restoreBackup}
           onClose={() => setHistoryOpen(false)}
+        />
+      ) : null}
+      {aiSettingsOpen ? (
+        <AiSettings
+          onClose={() => setAiSettingsOpen(false)}
+          root={workspace?.root}
+          projectName={workspace?.name}
         />
       ) : null}
       {dialog ? <Dialog options={dialog} onClose={() => setDialog(null)} /> : null}

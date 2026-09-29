@@ -7,6 +7,8 @@
 - `npm run test:reading`：验证首次拖入的左右分栏、各栏关闭、文件移动、Tab 切换工具、全选退出和双栏重启恢复。
 - `npm run test:zoom`：验证 Command + 原生滚轮连续缩放、指针附近阅读位置、双栏独立缩放、缩放范围与适合宽度、画笔落点，以及退出时保存最后一次缩放；模拟漏接首次加载通知，检查双栏和已保存批注仍能恢复。
 - `npm run test:pdf`：PDF 页面与文字层、高亮笔记、手绘及两种擦除、便签和文本注释、缩放定位、旋转页面、无文字页面、混合双栏、密码重试、损坏文件、原始 PDF 字节与批注重启恢复。可用 `FOLIO_TEST_PDF=/本地/文件.pdf` 额外验证个人 PDF，测试只使用临时副本。
+- `npm run test:ai`：在本地模拟的 OpenAI 兼容服务上验证 AI 设置（模型列表、测试连接、Key 不以明文保存）、首次发送确认、流式回答与思考过程、原文引用的核对与跳转、存入笔记、AI 划重点（HTML 与 PDF，一次撤销）、划词翻译存为高亮笔记、源码 AI 修改的对比预览与写入、项目 Agent 的确认与跳过、对话保存。不需要真实 API Key，也不联网。`npm test` 另外覆盖三种接入方式（OpenAI 兼容、Claude、通过模拟的 Codex App Server 使用 ChatGPT 账号）的流式解析与工具调用、错误说明与重试、原文引用的模糊定位、查找/替换修改和长文档分段。
+- `npm run test:ai-live`：用 AI 设置里已配置的真实服务跑一遍问答、划重点、总结、翻译、源码修改、项目 Agent 和 PDF（需要联网，会产生少量费用）；`FOLIO_AI_LIVE=codex` 改为通过本机 Codex 使用 ChatGPT 账号。不在 CI 中运行。
 - `npm run dist:mac`：类型检查、生产构建、macOS arm64 安装包和 SHA-256 校验文件。
 
 测试数据均在临时工作空间中运行。`FOLIO_TEST_SAMPLES` 可指定额外本地 HTML，`FOLIO_QA_DIR` 可指定截图目录。默认示例不加载远程服务。

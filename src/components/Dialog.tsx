@@ -8,12 +8,18 @@ export type DialogOptions = {
   confirmLabel?: string;
   danger?: boolean;
   onConfirm: (value: string) => unknown | Promise<unknown>;
+  // Called when the dialog is dismissed without confirming.
+  onCancel?: () => void;
 };
 export function Dialog({ options, onClose }: { options: DialogOptions; onClose: () => void }) {
   const [value, setValue] = useState(options.initial || '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const input = useRef<HTMLInputElement>(null);
+  const cancel = () => {
+    options.onCancel?.();
+    onClose();
+  };
   useEffect(() => {
     input.current?.focus();
     input.current?.select();
@@ -22,7 +28,7 @@ export function Dialog({ options, onClose }: { options: DialogOptions; onClose: 
     <div
       className="modal-backdrop"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !busy) onClose();
+        if (e.target === e.currentTarget && !busy) cancel();
       }}
     >
       <form
@@ -43,7 +49,7 @@ export function Dialog({ options, onClose }: { options: DialogOptions; onClose: 
           }
         }}
         onKeyDown={(e) => {
-          if (e.key === 'Escape' && !busy) onClose();
+          if (e.key === 'Escape' && !busy) cancel();
         }}
       >
         <div className="dialog-heading">
@@ -51,7 +57,7 @@ export function Dialog({ options, onClose }: { options: DialogOptions; onClose: 
             {options.danger ? <AlertTriangle size={19} /> : null}
             {options.title}
           </h2>
-          <button type="button" className="icon-button" aria-label="取消" onClick={onClose}>
+          <button type="button" className="icon-button" aria-label="取消" onClick={cancel}>
             <X size={18} />
           </button>
         </div>
@@ -71,7 +77,7 @@ export function Dialog({ options, onClose }: { options: DialogOptions; onClose: 
           </p>
         ) : null}
         <div className="dialog-actions">
-          <button type="button" className="secondary-button" disabled={busy} onClick={onClose}>
+          <button type="button" className="secondary-button" disabled={busy} onClick={cancel}>
             取消
           </button>
           <button className={`primary-button ${options.danger ? 'danger' : ''}`} disabled={busy}>

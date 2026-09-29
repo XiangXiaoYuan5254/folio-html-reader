@@ -11,6 +11,8 @@ import { ReaderZoom } from './zoom';
 import { LinkedScroll } from './linked-scroll';
 import { capturePdfRects, pdfQuoteRects, pdfPageAnchor } from './pdf-anchors';
 import { ElementInspector } from './inspector';
+import { readableText } from './readable-text';
+import { findQuote } from '../ai/quote-match';
 (() => {
   const channel = 'folio-reader-v1';
   const send = (type: string, payload: Record<string, unknown> = {}) =>
@@ -27,6 +29,9 @@ import { ElementInspector } from './inspector';
   let textWidth = textNoteWidth(null);
   let selection: Anchor | null = null;
   let selectionClick = false;
+  let selectionBoxPending = false;
+  // The annotation ids last reported in reading order.
+  let readingOrder = '';
   let points: Point[] = [];
   let drawingAnchor: Annotation['anchor'];
   let isDrawing = false;
@@ -109,6 +114,33 @@ import { ElementInspector } from './inspector';
       ...(document.documentElement.dataset.folioPdf ? { pdfRects: capturePdfRects(r) } : {}),
     };
   }
+  // The selected text's box in this window, so the app can place its toolbar beside it.
+  function selectionBox() {
+    const s = window.getSelection();
+    if (!s || s.isCollapsed || !s.rangeCount) return null;
+    let box: { left: number; top: number; right: number; bottom: number } | null = null;
+    for (const r of Array.from(s.getRangeAt(0).getClientRects())) {
+      if (!r.width || !r.height) continue;
+      box = box
+        ? {
+            left: Math.min(box.left, r.left),
+            top: Math.min(box.top, r.top),
+            right: Math.max(box.right, r.right),
+            bottom: Math.max(box.bottom, r.bottom),
+          }
+        : { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+    }
+    return box;
+  }
+  // The selection moves with the page; its toolbar follows once per frame.
+  function followSelection() {
+    if (!selection || selectionBoxPending) return;
+    selectionBoxPending = true;
+    requestAnimationFrame(() => {
+      selectionBoxPending = false;
+      if (selection) send('selection-box', { rect: selectionBox() });
+    });
+  }
   function locate(quote: Anchor, index = textIndex()) {
     const { text, nodes } = index;
     let pos = -1;
@@ -144,14 +176,116 @@ import { ElementInspector } from './inspector';
       if (ambiguous) pos = -1;
     }
     if (pos < 0) return null;
-    const end = pos + quote.exact.length;
-    const a = nodes.find((n) => n.start <= pos && n.end > pos),
+    return rangeAt(pos, pos + quote.exact.length, nodes);
+  }
+  function rangeAt(start: number, end: number, nodes: ReturnType<typeof textIndex>['nodes']) {
+    const a = nodes.find((n) => n.start <= start && n.end > start),
       b = nodes.find((n) => n.start < end && n.end >= end);
     if (!a || !b) return null;
     const r = document.createRange();
-    r.setStart(a.node, pos - a.start);
+    r.setStart(a.node, start - a.start);
     r.setEnd(b.node, end - b.start);
     return r;
+  }
+  const isPdf = () => !!document.documentElement.dataset.folioPdf;
+  // PDF text layers load in the background; HTML may still be filled in by its own scripts.
+  function whenTextReady() {
+    if (isPdf())
+      return new Promise<void>((resolve) =>
+        document.dispatchEvent(new CustomEvent('folio:pdf-when-text', { detail: { resolve } })),
+      );
+    if (document.readyState === 'complete') return new Promise((r) => setTimeout(r, 150));
+    return new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, 4000);
+      window.addEventListener('load', () => {
+        clearTimeout(timer);
+        setTimeout(resolve, 150);
+      });
+    });
+  }
+  async function aiText() {
+    await whenTextReady();
+    if (isPdf())
+      return new Promise((resolve) =>
+        document.dispatchEvent(new CustomEvent('folio:pdf-text', { detail: { resolve } })),
+      );
+    return { title: document.title, text: readableText(document.body) };
+  }
+  // Anchors for quotes a model chose, in the same form a manual highlight saves.
+  async function aiAnchors(quotes: string[]) {
+    await whenTextReady();
+    const index = textIndex();
+    return quotes.map((quote): Anchor | null => {
+      const found = typeof quote === 'string' ? findQuote(index.text, quote) : null;
+      if (!found) return null;
+      const { start, end } = found;
+      const anchor: Anchor = {
+        exact: index.text.slice(start, end),
+        prefix: index.text.slice(Math.max(0, start - 48), start),
+        suffix: index.text.slice(end, end + 48),
+        start,
+        end,
+      };
+      // PDF highlights keep page geometry; if it can't be measured right now, the text
+      // anchor alone still finds the passage, as it does in HTML.
+      if (isPdf()) {
+        const range = rangeAt(start, end, index.nodes);
+        const rects = range ? capturePdfRects(range) : undefined;
+        if (rects?.length) anchor.pdfRects = rects;
+      }
+      return anchor;
+    });
+  }
+  // Briefly marks a cited passage without saving anything.
+  let citeLayer: SVGGElement | null = null;
+  let citeTimer: ReturnType<typeof setTimeout> | undefined;
+  async function flashQuote(quote: string) {
+    await whenTextReady();
+    const index = textIndex();
+    const found = findQuote(index.text, quote);
+    const range = found && rangeAt(found.start, found.end, index.nodes);
+    const rects = Array.from(range?.getClientRects() || []).filter((r) => r.width && r.height);
+    if (!rects.length) return false;
+    const first = rects[0];
+    if (first.top < 40 || first.bottom > innerHeight - 40)
+      scrollTo({ top: Math.max(0, first.top + scrollY - innerHeight / 3), behavior: 'auto' });
+    citeLayer?.remove();
+    clearTimeout(citeTimer);
+    const layerNode = svgEl('g', {
+      'data-folio-cite': '',
+      'pointer-events': 'none',
+    }) as SVGGElement;
+    for (const r of Array.from(range!.getClientRects()).filter((r) => r.width && r.height))
+      layerNode.append(
+        svgEl('rect', {
+          x: r.left + scrollX - 2,
+          y: r.top + scrollY - 1,
+          width: r.width + 4,
+          height: r.height + 2,
+          rx: 3,
+          fill: '#6654d9',
+          'fill-opacity': '.16',
+          stroke: '#6654d9',
+          'stroke-width': 1.2,
+          'stroke-dasharray': '4 3',
+        }),
+      );
+    layerNode.setAttribute('transform', `translate(${-scrollX},${-scrollY})`);
+    svg.append(layerNode);
+    citeLayer = layerNode;
+    const fade = matchMedia('(prefers-reduced-motion: reduce)').matches
+      ? null
+      : layerNode.animate([{ opacity: 1 }, { opacity: 0 }], {
+          delay: 2600,
+          duration: 600,
+          fill: 'forwards',
+        });
+    citeTimer = setTimeout(() => {
+      fade?.cancel();
+      layerNode.remove();
+      if (citeLayer === layerNode) citeLayer = null;
+    }, 3300);
+    return true;
   }
   function point(e: PointerEvent): Point {
     return {
@@ -223,6 +357,7 @@ import { ElementInspector } from './inspector';
     layer.setAttribute('transform', `translate(${-scrollX},${-scrollY})`);
     const index = textIndex();
     const missing: string[] = [];
+    const marked = new Map<string, number>();
     hitRegions = [];
     for (const a of annotations) {
       if (a.quote) {
@@ -232,6 +367,8 @@ import { ElementInspector } from './inspector';
           missing.push(a.id);
           continue;
         }
+        const first = rects.find((r) => r.width && r.height);
+        if (first) marked.set(a.id, first.top + scrollY);
         for (const rect of rects) {
           if (!rect.width || !rect.height) continue;
           const e = svgEl('rect', {
@@ -268,10 +405,42 @@ import { ElementInspector } from './inspector';
     }
     notes?.sync(annotations);
     popup?.sync(annotations);
+    reportReadingOrder(marked);
     const current = annotations.find((a) => a.id === located);
     indicator?.sync(current?.id || null, current ? selectionRects(current) : []);
     if (attentionPending && current) indicator.flash();
     attentionPending = false;
+  }
+  // The side panel lists annotations in reading order. Text marks follow their text
+  // (which keeps two-column PDFs column by column); notes and drawings go before the
+  // first mark below them. Marks whose text is gone come last.
+  function reportReadingOrder(marked: Map<string, number>) {
+    const marks: { id: string; top: number; start: number }[] = [];
+    const placed: { id: string; top: number; left: number }[] = [];
+    const unplaced: string[] = [];
+    for (const a of annotations) {
+      if (a.quote) {
+        const top = marked.get(a.id);
+        if (top === undefined) unplaced.push(a.id);
+        else marks.push({ id: a.id, top, start: a.quote.start || 0 });
+        continue;
+      }
+      const r = selectionRects(a)[0];
+      if (r) placed.push({ id: a.id, top: r.top, left: r.left });
+      else unplaced.push(a.id);
+    }
+    marks.sort((a, b) => a.start - b.start);
+    placed.sort((a, b) => a.top - b.top || a.left - b.left);
+    const ids: string[] = [];
+    let next = 0;
+    for (const m of marks) {
+      while (next < placed.length && placed[next].top <= m.top) ids.push(placed[next++].id);
+      ids.push(m.id);
+    }
+    ids.push(...placed.slice(next).map((p) => p.id), ...unplaced);
+    if (ids.join(',') === readingOrder) return;
+    readingOrder = ids.join(',');
+    send('order', { ids });
   }
   function selectionRects(a: Annotation): SelectionRect[] {
     if (a.quote)
@@ -667,6 +836,10 @@ import { ElementInspector } from './inspector';
         send('delete', { id });
         schedule();
       },
+      fontSize: (size) => {
+        popup.setFontSize(size);
+        send('note-font-size', { size });
+      },
     });
     // Pointer events inside the sandboxed reader do not bubble to the app shell.
     // Notify it without consuming the gesture, so the first stroke still draws.
@@ -706,7 +879,7 @@ import { ElementInspector } from './inspector';
       setTimeout(() => {
         const q = captureSelection();
         selection = q;
-        send('selection', { quote: q });
+        send('selection', { quote: q, rect: q ? selectionBox() : null });
         if (q && ['highlight', 'underline'].includes(tool)) annotate(tool);
       }, 0);
     });
@@ -822,6 +995,7 @@ import { ElementInspector } from './inspector';
         layer.setAttribute('transform', `translate(${-scrollX},${-scrollY})`);
         previewLayer.setAttribute('transform', `translate(${-scrollX},${-scrollY})`);
         laserLayer.setAttribute('transform', `translate(${-scrollX},${-scrollY})`);
+        citeLayer?.setAttribute('transform', `translate(${-scrollX},${-scrollY})`);
         notes.reposition();
         popup.reposition();
         const now = Date.now();
@@ -848,7 +1022,10 @@ import { ElementInspector } from './inspector';
     window.addEventListener('resize', () => {
       restorePosition();
       schedule();
+      followSelection();
     });
+    // Captures scrolling inside the page's own scroll areas as well as the window.
+    document.addEventListener('scroll', followSelection, { capture: true, passive: true });
     new ResizeObserver(schedule).observe(document.body);
     new MutationObserver((records) => {
       if (
@@ -1003,6 +1180,7 @@ import { ElementInspector } from './inspector';
       eraserMode = m.eraserMode === 'stroke' ? 'stroke' : 'partial';
       stickySize = stickyNoteSize(m.stickySize);
       textWidth = textNoteWidth(m.textWidth);
+      if (Number.isFinite(m.noteFontSize)) popup.setFontSize(m.noteFontSize);
       if (!temporaryEraser) setTool(m.tool || 'select');
       inspector.setEnabled(!!m.inspect);
       schedule();
@@ -1023,6 +1201,15 @@ import { ElementInspector } from './inspector';
       }
     }
     if (m.type === 'annotate') annotate(m.tool);
+    // Requests from the app's AI features answer with a reply to the same id.
+    const reply = (work: Promise<unknown>) =>
+      work.then(
+        (result) => send('reply', { replyTo: m.replyTo, result }),
+        (e) => send('reply', { replyTo: m.replyTo, error: String(e?.message || e) }),
+      );
+    if (m.type === 'ai-text') reply(aiText());
+    if (m.type === 'ai-anchors') reply(aiAnchors(Array.isArray(m.quotes) ? m.quotes : []));
+    if (m.type === 'ai-flash') reply(flashQuote(String(m.quote || '')));
     if (m.type === 'clear-selection') {
       window.getSelection()?.removeAllRanges();
       selection = null;

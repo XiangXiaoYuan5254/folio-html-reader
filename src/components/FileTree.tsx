@@ -99,6 +99,33 @@ export function FileTree({
     folderHover.current = null;
   }
   useEffect(() => () => clearHover(), []);
+  // Any press outside the menu closes it, as does Escape or leaving the window (which
+  // is also how a click inside the reader's iframe shows up here).
+  useEffect(() => {
+    if (menu === null) return;
+    const dismiss = (e: PointerEvent) => {
+      const t = e.target as Element;
+      // The menu's own ⋯ button toggles it in its click handler.
+      if (
+        t.closest?.('.tree-menu') ||
+        t.closest?.('[data-menu-for]')?.getAttribute('data-menu-for') === menu
+      )
+        return;
+      setMenu(null);
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenu(null);
+    };
+    const close = () => setMenu(null);
+    document.addEventListener('pointerdown', dismiss, true);
+    document.addEventListener('keydown', key, true);
+    window.addEventListener('blur', close);
+    return () => {
+      document.removeEventListener('pointerdown', dismiss, true);
+      document.removeEventListener('keydown', key, true);
+      window.removeEventListener('blur', close);
+    };
+  }, [menu]);
   function endDrag() {
     onReadingDrag(null);
     dragSource.current = null;
@@ -259,6 +286,7 @@ export function FileTree({
           </button>
           <IconButton
             label={`${n.name} 的操作`}
+            data-menu-for={n.path}
             onClick={() => setMenu(menu === n.path ? null : n.path)}
           >
             <MoreHorizontal size={15} />
@@ -344,7 +372,7 @@ export function FileTree({
           e.preventDefault();
           setPasteDestination('');
           e.currentTarget.focus();
-          setMenu(menu === '' ? null : '');
+          setMenu('');
         }}
         {...dropHandlers('')}
       >

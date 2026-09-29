@@ -13,12 +13,14 @@ export const DocumentReader = forwardRef<
     onError: (message: string) => void;
     // Source mode always previews the draft: previews carry source offsets for picking.
     live?: boolean;
+    // Shows other source instead, e.g. an AI edit being reviewed.
+    override?: string | null;
   }
->(function DocumentReader({ doc, onError, live = false, ...props }, ref) {
+>(function DocumentReader({ doc, onError, live = false, override = null, ...props }, ref) {
   const [preview, setPreview] = useState<string | null>(null);
   const hasPreview = !!preview;
   // Depend on the previewed text only, so saving (which changes doc.source) doesn't reload it.
-  const draft = live || doc.draft !== doc.source ? doc.draft : null;
+  const draft = override ?? (live || doc.draft !== doc.source ? doc.draft : null);
   useEffect(() => {
     if (draft === null) {
       setPreview(null);

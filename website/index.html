@@ -91,8 +91,8 @@
       <section class="hero" id="top">
         <div class="container hero-copy">
           <a class="pill" href="#changelog">
-            <span class="pill-tag">新版 <span data-release="version">0.8.0</span></span>
-            自动更新
+            <span class="pill-tag">新版 <span data-release="version">0.9.0</span></span>
+            AI 助手
             <svg class="icon" aria-hidden="true"><use href="#i-arrow-right" /></svg>
           </a>
           <h1 class="hero-title">
@@ -116,7 +116,7 @@
             </a>
           </div>
           <p class="hero-meta">
-            免费 · <span data-release="version">0.8.0</span> 版 · macOS 12+（Apple 芯片）· Windows 10 / 11
+            免费 · <span data-release="version">0.9.0</span> 版 · macOS 12+（Apple 芯片）· Windows 10 / 11
             <span data-other-download hidden>· <a href="#download"></a></span>
           </p>
           <p class="platform-hint" data-platform-hint hidden>
@@ -389,7 +389,7 @@
             <p class="eyebrow">数据</p>
             <h2>你的文件，始终是你的</h2>
             <p class="lead">
-              页间不上传你的任何文档。批注、笔记和阅读位置，都保存在文档旁边一个隐藏的
+              页间不上传你的任何文档，只有你用 AI 助手时，相关的文字才会发给你自己选的服务商。批注、笔记和阅读位置，都保存在文档旁边一个隐藏的
               <code>.html-reader</code> 文件夹里。备份、迁移、换电脑，把整个文件夹带走就行。
             </p>
             <ul class="checks">
@@ -429,19 +429,19 @@
                   <svg class="icon" aria-hidden="true"><use href="#i-download" /></svg>
                   <span data-download-label>下载 macOS 版</span>
                 </a>
-                <span class="download-file">DMG · <span data-size="mac">125 MB</span></span>
+                <span class="download-file">DMG · <span data-size="mac">127 MB</span></span>
               </div>
               <div class="download-option" data-platform="win">
                 <a class="btn btn-light btn-lg" href="#install" data-download="win">
                   <svg class="icon" aria-hidden="true"><use href="#i-download" /></svg>
                   <span data-download-label>下载 Windows 版</span>
                 </a>
-                <span class="download-file">安装程序 · <span data-size="win">107 MB</span></span>
+                <span class="download-file">安装程序 · <span data-size="win">108 MB</span></span>
               </div>
             </div>
             <dl class="specs">
-              <div><dt>版本</dt><dd data-release="version">0.8.0</dd></div>
-              <div><dt>更新于</dt><dd data-release="date">2026.09.28</dd></div>
+              <div><dt>版本</dt><dd data-release="version">0.9.0</dd></div>
+              <div><dt>更新于</dt><dd data-release="date">2026.09.29</dd></div>
               <div><dt>macOS</dt><dd>12+ · Apple 芯片</dd></div>
               <div><dt>Windows</dt><dd>10 / 11 · 64 位</dd></div>
             </dl>
@@ -517,13 +517,15 @@
 
             <div class="install-col reveal" id="changelog">
               <h3>
-                <span data-release="version">0.8.0</span> 更新了什么
+                <span data-release="version">0.9.0</span> 更新了什么
               </h3>
               <ul class="changes">
-                <li><strong>自动更新</strong>新版本在后台下载好后提示你重启；选「稍后」，下次退出时自动安装。</li>
-                <li><strong>手动检查</strong>点标题栏中间的「页间」，随时检查有没有新版本。</li>
+                <li><strong>AI 助手</strong>接入你自己的 AI 服务或 ChatGPT 账号，问文档、总结、划重点、写精读笔记。回答里的引用点一下就跳回原文。</li>
+                <li><strong>划词和看图</strong>选中文字让 AI 解释、翻译、提问；也可以框选页面上的图表、公式来问。</li>
+                <li><strong>源码 AI 修改</strong>描述想怎么改，先看改动对比和预览，确认后才写入。</li>
+                <li><strong>右侧栏调宽</strong>拖动右侧栏的边缘调整宽度；文档笔记可以预览 Markdown。</li>
               </ul>
-              <p class="fine">这是最后一次手动更新：先退出旧版，Mac 把新版拖进「应用程序」替换，Windows 直接运行新版安装程序。批注存在你的文件夹里，不受影响。</p>
+              <p class="fine">已装 0.8.0 的页间会自动更新。0.7.0 及更早的版本请先退出旧版，Mac 把新版拖进「应用程序」替换，Windows 直接运行新版安装程序。批注存在你的文件夹里，不受影响。</p>
             </div>
           </div>
         </div>
@@ -563,6 +565,9 @@
               <summary>会上传我的文档吗？</summary>
               <p>
                 不会。页间本身不上传任何内容，也不需要账号。只有当你的 HTML 里本来就引用了网上的字体、图片或脚本时，这些资源会像在浏览器里一样从对应网站加载。
+              </p>
+              <p>
+                使用 AI 助手时，相关的文字会发送给你在「AI 设置」里选的服务商，第一次使用某个服务前会先问你是否同意；API Key 只保存在你的电脑上。用本机运行的模型（Ollama、LM Studio）时，文档不会离开电脑。
               </p>
             </details>
             <details>
