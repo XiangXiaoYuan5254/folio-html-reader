@@ -28,6 +28,7 @@ let quitting = false;
 let watcher;
 let refreshTimer;
 let focusWindowState = null;
+let appearance = null;
 const previews = new Map();
 let ai;
 if (process.env.FOLIO_USER_DATA) app.setPath('userData', process.env.FOLIO_USER_DATA);
@@ -89,6 +90,18 @@ async function readSettings() {
   } catch {
     return {};
   }
+}
+// The window's own colors follow the page's theme, so starting up shows no flash of another theme.
+function appearanceColors(value) {
+  const hex = (color) => typeof color === 'string' && /^#[\da-f]{6}$/i.test(color);
+  return value && hex(value.window) && hex(value.titlebar) && hex(value.symbol)
+    ? { window: value.window, titlebar: value.titlebar, symbol: value.symbol }
+    : null;
+}
+async function rememberAppearance(colors) {
+  const settings = await readSettings();
+  if (JSON.stringify(settings.appearance) === JSON.stringify(colors)) return;
+  await atomicWrite(settingsFile(), JSON.stringify({ ...settings, appearance: colors }));
 }
 async function rememberWorkspace(root) {
   const settings = await readSettings();
@@ -231,6 +244,10 @@ function menu() {
             click: () => win.webContents.send('folio:event', { type: 'find' }),
           },
           {
+            label: '界面主题…',
+            click: () => win.webContents.send('folio:event', { type: 'theme-picker' }),
+          },
+          {
             label: '切换专注阅读',
             accelerator: 'CmdOrCtrl+Shift+F',
             click: () => win.webContents.send('folio:event', { type: 'toggle-focus' }),
@@ -271,6 +288,7 @@ app
   .whenReady()
   .then(async () => {
     await initialWorkspace();
+    appearance = appearanceColors((await readSettings()).appearance);
     ai = createAi({
       file: path.join(app.getPath('userData'), 'ai.json'),
       fetch: (url, init) => net.fetch(url, init),
@@ -383,6 +401,7 @@ app
           'ai-cancel',
           'ai-codex-status',
           'ai-codex-login',
+          'appearance',
         ].includes(action) &&
         token !== workspace.token
       )
@@ -557,6 +576,20 @@ app
           return ai.codexStatus();
         case 'ai-codex-login':
           return ai.codexLogin();
+        case 'appearance': {
+          const colors = appearanceColors(payload);
+          if (!colors) throw Error('颜色无效');
+          appearance = colors;
+          win.setBackgroundColor(colors.window);
+          if (!isMac)
+            win.setTitleBarOverlay({
+              color: colors.titlebar,
+              symbolColor: colors.symbol,
+              height: 47,
+            });
+          await rememberAppearance(colors);
+          return true;
+        }
         case 'ai-history':
           return workspace.aiHistory(payload);
         case 'ai-save-history':
@@ -574,12 +607,18 @@ app
         minWidth: 900,
         minHeight: 620,
         title: '页间 · Folio',
-        backgroundColor: '#f7f8fa',
+        backgroundColor: appearance?.window || '#f7f8fa',
         titleBarStyle: 'hidden',
         // The title bar is drawn by the page; Windows keeps its own caption buttons on top of it.
         ...(isMac
           ? { trafficLightPosition: { x: 18, y: 17 } }
-          : { titleBarOverlay: { color: '#ffffff', symbolColor: '#5f6b77', height: 47 } }),
+          : {
+              titleBarOverlay: {
+                color: appearance?.titlebar || '#ffffff',
+                symbolColor: appearance?.symbol || '#5f6b77',
+                height: 47,
+              },
+            }),
         webPreferences: {
           preload: path.join(__dirname, 'preload.cjs'),
           contextIsolation: true,

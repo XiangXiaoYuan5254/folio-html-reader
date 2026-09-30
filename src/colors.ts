@@ -20,5 +20,5 @@ export const colorPickerStyles = `
 .custom-color[data-selected=true]{outline:1px solid var(--custom-ink);outline-offset:3px}
 .custom-color[data-selected=true]::after{content:'';position:absolute;inset:5px;border-radius:50%;background:var(--custom-ink);box-shadow:0 0 0 1.5px #fff;pointer-events:none}
 .custom-color input{position:absolute;inset:0;width:100%;height:100%;margin:0;padding:0;border:0;opacity:0;cursor:pointer}
-.custom-color:focus-within{outline:2px solid #287b71;outline-offset:3px}
+.custom-color:focus-within{outline:2px solid var(--accent,#287b71);outline-offset:3px}
 `;

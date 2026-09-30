@@ -1,0 +1,1259 @@
+/* Interface themes. Every color in styles.css and ai.css comes from these tokens.
+   A theme block applies to <html> and to any element with the same data-theme,
+   which is how the theme picker draws its previews. */
+
+/* Tokens that follow others. Declared on every theme element so they resolve there. */
+:root,
+[data-theme] {
+  --font-display: var(--font-sans);
+  --titlebar-bg: var(--surface);
+  --toolbar-bg: var(--surface);
+  --tabs-bg: var(--bg);
+  --accent-fill: var(--accent);
+  --ai-fill: var(--ai);
+  --on-ai: #fff;
+  --code-bg: var(--surface);
+  --dot-ring: transparent;
+}
+
+:root,
+[data-theme='default'] {
+  color-scheme: light;
+  --font-sans:
+    Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif;
+
+  --bg: #f7f8fa;
+  --surface: #fff;
+  --raised: #fff;
+  --surface-2: #fafbfc;
+  --surface-3: #f6f8f9;
+  --fill: #f1f4f5;
+  --hover: #eef2f3;
+  --sidebar-bg: linear-gradient(110deg, #f9fafb, #f5f7f9);
+  --desk: #fff;
+  --paper: #fff;
+  --pdf-desk: #edf0f4;
+  --pdf-desk-text: #7b8796;
+
+  --text-strong: #1f2e39;
+  --text: #253342;
+  --text-2: #445560;
+  --text-3: #5d6b75;
+  --text-4: #7a8893;
+  --muted: #8a96a0;
+  --faint: #98a3ad;
+  --fainter: #a6b0b8;
+
+  --line: #e3e7eb;
+  --line-strong: #dae1e5;
+  --line-soft: #edf0f2;
+  --track: #cdd6da;
+  --knob: #fff;
+
+  --accent: #287b71;
+  --accent-text: #1f7268;
+  --accent-deep: #4a6f66;
+  --accent-muted: #74978d;
+  --accent-2: #489580;
+  --accent-focus: #78ada4;
+  --accent-line-strong: #91c1b7;
+  --accent-line: #b3d5cd;
+  --accent-line-soft: #d3e6e0;
+  --accent-soft-2: #dfede9;
+  --accent-soft: #e9f3f0;
+  --accent-tint: #f8fcfb;
+  --accent-fill-hover: #236a61;
+  --on-accent: #fff;
+  --success: #2f7d6d;
+
+  --ai: #6654d9;
+  --ai-text: #5a4bb8;
+  --ai-soft: #f1effd;
+  --ai-soft-2: #e7e2fb;
+  --ai-line: #dcd6f7;
+  --ai-line-strong: #aea3ef;
+  --ai-tint: #faf9ff;
+  --ai-fill-hover: #5646c4;
+
+  --danger: #b0605a;
+  --danger-strong: #8c4a40;
+  --danger-soft: #fbf1ee;
+  --danger-line: #edc8be;
+  --danger-fill: #b95d57;
+  --danger-fill-hover: #a44f49;
+  --diff-add: #2b8a4a;
+  --diff-del: #c0503f;
+  --diff-add-bg: #ecf8ef;
+  --diff-del-bg: #fcefec;
+  --warn: #a8773a;
+  --warn-soft: #f6ecdc;
+
+  --folder: #ad7e30;
+  --folder-fill: #f2d89c66;
+  --folder-text: #785f39;
+  --file-html: #5489b0;
+  --file-pdf: #c35859;
+  --dirty: #d49d42;
+
+  --tooltip-bg: #293c42;
+  --tooltip-text: #fff;
+  --tooltip-muted: #d2dfdf;
+  --backdrop: #22323f44;
+  --scrollbar: #c5cfd566;
+  --scrollbar-hover: #aabac499;
+  --shadow-rgb: 38 61 73;
+  --shadow-k: 1;
+
+  --code-gutter-bg: #f7f8fa;
+  --code-gutter-text: #98a2ac;
+  --code-active-line: rgb(47 139 126 / 0.06);
+  --code-active-gutter: #e6efec;
+  --code-selection: #dfe5ea;
+  --code-selection-focus: #bfe0d8;
+  --code-mark-rgb: 47 139 126;
+  --syn-meta: #404740;
+  --syn-keyword: #708;
+  --syn-atom: #219;
+  --syn-literal: #164;
+  --syn-string: #a11;
+  --syn-escape: #e40;
+  --syn-def: #00f;
+  --syn-local: #30a;
+  --syn-type: #085;
+  --syn-class: #167;
+  --syn-macro: #256;
+  --syn-prop: #00c;
+  --syn-attr: currentColor;
+  --syn-comment: #940;
+  --syn-invalid: #f00;
+}
+
+/* 宣纸：暖白纸色，朱砂为强调，标题用宋体。 */
+[data-theme='paper'] {
+  color-scheme: light;
+  --font-display:
+    'Songti SC', STSong, 'Source Han Serif SC', 'Noto Serif CJK SC', 'Noto Serif SC', SimSun, serif;
+
+  --bg: #f2ece1;
+  --surface: #fcf9f3;
+  --raised: #fffdf8;
+  --surface-2: #f8f3ea;
+  --surface-3: #f4eee3;
+  --fill: #eee6d8;
+  --hover: #ebe2d2;
+  --sidebar-bg:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .42 0 0 0 0 .33 0 0 0 0 .2 0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
+    linear-gradient(180deg, #f5efe4, #f0e9dc);
+  --titlebar-bg: #f7f2e8;
+  --tabs-bg: #efe8dc;
+  --desk: #f2ece1;
+  --paper: #fffdf8;
+  --pdf-desk: #e8e0d1;
+  --pdf-desk-text: #8a7d69;
+
+  --text-strong: #1f1a15;
+  --text: #2e2821;
+  --text-2: #4b4238;
+  --text-3: #6a5f53;
+  --text-4: #85796b;
+  --muted: #938676;
+  --faint: #a69a8a;
+  --fainter: #b8ad9d;
+
+  --line: #e5dccc;
+  --line-strong: #d8ccb8;
+  --line-soft: #ede5d8;
+  --track: #d6cab6;
+  --knob: #fffdf8;
+
+  --accent: #b23a2a;
+  --accent-text: #a13426;
+  --accent-deep: #7d3a2d;
+  --accent-muted: #a3705f;
+  /* Saved / connected dots stay green so they don't read as errors next to the red accent. */
+  --accent-2: #5f8c6a;
+  --accent-focus: #d48e7c;
+  --accent-line-strong: #d9a293;
+  --accent-line: #e8c6ba;
+  --accent-line-soft: #efd9cf;
+  --accent-soft-2: #f1dcd2;
+  --accent-soft: #f6e8e0;
+  --accent-tint: #fbf3ee;
+  --accent-fill-hover: #9a3123;
+  --on-accent: #fffaf2;
+  --success: #4f7a4a;
+
+  --ai: #4b5aa3;
+  --ai-text: #43508f;
+  --ai-soft: #eceef6;
+  --ai-soft-2: #dfe2f0;
+  --ai-line: #d2d6ea;
+  --ai-line-strong: #9ea7d6;
+  --ai-tint: #f6f6fa;
+  --ai-fill-hover: #3f4c8e;
+
+  --danger: #a94a3c;
+  --danger-strong: #823527;
+  --danger-soft: #f8ebe4;
+  --danger-line: #e9c4b6;
+  --danger-fill: #a94a3c;
+  --danger-fill-hover: #923d31;
+  --diff-add: #3d7a3f;
+  --diff-del: #b0412f;
+  --diff-add-bg: #edf3e3;
+  --diff-del-bg: #f8e8e1;
+  --warn: #9a6a2c;
+  --warn-soft: #f3e6cf;
+
+  --folder: #a8792c;
+  --folder-fill: #e9cf9466;
+  --folder-text: #6f5530;
+  --file-html: #50789a;
+  --file-pdf: #b54a3e;
+  --dirty: #c98f36;
+
+  --tooltip-bg: #2e2821;
+  --tooltip-text: #fbf6ec;
+  --tooltip-muted: #d5cab8;
+  --backdrop: #2e282140;
+  --scrollbar: #bfb29c66;
+  --scrollbar-hover: #a8997f99;
+  --shadow-rgb: 84 62 34;
+  --shadow-k: 1;
+
+  --code-gutter-bg: #f5efe4;
+  --code-gutter-text: #a69a8a;
+  --code-active-line: rgb(178 58 42 / 0.05);
+  --code-active-gutter: #f1e3da;
+  --code-selection: #eadfcd;
+  --code-selection-focus: #f0cfc2;
+  --code-mark-rgb: 178 58 42;
+  --syn-meta: #6a5f53;
+  --syn-keyword: #7b3f8c;
+  --syn-atom: #2e4f8f;
+  --syn-literal: #2f6b4f;
+  --syn-string: #2f6b4f;
+  --syn-escape: #b8621b;
+  --syn-def: #2e4f8f;
+  --syn-local: #5a3a8a;
+  --syn-type: #9c3b25;
+  --syn-class: #2f6b6b;
+  --syn-macro: #3a5a6a;
+  --syn-prop: #2e4f8f;
+  --syn-attr: #7a5c2e;
+  --syn-comment: #a39580;
+  --syn-invalid: #c0392b;
+}
+
+/* 晴空：冷调通透，按钮用蓝紫渐变。 */
+[data-theme='sky'] {
+  color-scheme: light;
+
+  --bg: #edf1f8;
+  --surface: #fff;
+  --raised: #fff;
+  --surface-2: #f8fafd;
+  --surface-3: #f3f6fb;
+  --fill: #edf1f8;
+  --hover: #eaeff8;
+  --sidebar-bg: linear-gradient(165deg, #eef3fc 0%, #f2f1fc 100%);
+  --titlebar-bg: #f8faff;
+  --tabs-bg: #eef2f9;
+  --desk: #eef2f8;
+  --paper: #fff;
+  --pdf-desk: #e4e9f2;
+  --pdf-desk-text: #7a869c;
+
+  --text-strong: #172033;
+  --text: #1f2a3d;
+  --text-2: #3a4760;
+  --text-3: #56637c;
+  --text-4: #707d96;
+  --muted: #8290a8;
+  --faint: #97a3b8;
+  --fainter: #aab4c6;
+
+  --line: #e1e6f0;
+  --line-strong: #d3dae8;
+  --line-soft: #eaeef5;
+  --track: #cbd3e2;
+  --knob: #fff;
+
+  --accent: #3a62d7;
+  --accent-text: #2f55c4;
+  --accent-deep: #3a4f86;
+  --accent-muted: #6b80b4;
+  --accent-2: #4a74e0;
+  --accent-focus: #86a1ea;
+  --accent-line-strong: #93aaec;
+  --accent-line: #bccaf2;
+  --accent-line-soft: #d5dff8;
+  --accent-soft-2: #dde5fb;
+  --accent-soft: #e9eefd;
+  --accent-tint: #f5f7fe;
+  --accent-fill: linear-gradient(135deg, #3f6ae0, #6d5ae6);
+  --accent-fill-hover: linear-gradient(135deg, #3459c9, #5d4ad4);
+  --on-accent: #fff;
+  --success: #2f8a6d;
+
+  --ai: #7b4fd8;
+  --ai-text: #6a41c4;
+  --ai-soft: #f3eefd;
+  --ai-soft-2: #e9dffb;
+  --ai-line: #ddd0f7;
+  --ai-line-strong: #b89cf0;
+  --ai-tint: #faf8ff;
+  --ai-fill: linear-gradient(135deg, #7b4fd8, #b24fc4);
+  --ai-fill-hover: linear-gradient(135deg, #6a41c4, #a042b2);
+
+  --danger: #bf4f55;
+  --danger-strong: #963a40;
+  --danger-soft: #fdf0f1;
+  --danger-line: #f1c9cc;
+  --danger-fill: #c9545a;
+  --danger-fill-hover: #b0444a;
+  --diff-add: #1f8a53;
+  --diff-del: #c8434a;
+  --diff-add-bg: #e9f7ef;
+  --diff-del-bg: #fdeeee;
+  --warn: #b07a2a;
+  --warn-soft: #f8eedb;
+
+  --folder: #d19a36;
+  --folder-fill: #f6dc9f66;
+  --folder-text: #7a5a26;
+  --file-html: #3f7fd0;
+  --file-pdf: #d24f55;
+  --dirty: #e0a13e;
+
+  --tooltip-bg: #1f2a44;
+  --tooltip-text: #fff;
+  --tooltip-muted: #c3cde3;
+  --backdrop: #1f2a4440;
+  --scrollbar: #b9c3d766;
+  --scrollbar-hover: #9daac499;
+  --shadow-rgb: 40 60 110;
+  --shadow-k: 1;
+
+  --code-gutter-bg: #f6f8fc;
+  --code-gutter-text: #9aa5bb;
+  --code-active-line: rgb(58 98 215 / 0.05);
+  --code-active-gutter: #e6ecfb;
+  --code-selection: #dde4f2;
+  --code-selection-focus: #c9d6f6;
+  --code-mark-rgb: 58 98 215;
+  --syn-meta: #56637c;
+  --syn-keyword: #c2366b;
+  --syn-atom: #1f6fb0;
+  --syn-literal: #0b6e8a;
+  --syn-string: #0b6e8a;
+  --syn-escape: #d06a1c;
+  --syn-def: #6a41c4;
+  --syn-local: #6a41c4;
+  --syn-type: #2458c6;
+  --syn-class: #0f7a7a;
+  --syn-macro: #2458c6;
+  --syn-prop: #1f6fb0;
+  --syn-attr: #8a4fd0;
+  --syn-comment: #8a95a8;
+  --syn-invalid: #d23b3b;
+}
+
+/* 桃夭：樱粉与奶白，柔和低对比。 */
+[data-theme='blossom'] {
+  color-scheme: light;
+
+  --bg: #f8eef0;
+  --surface: #fffbfb;
+  --raised: #fff;
+  --surface-2: #fdf6f7;
+  --surface-3: #fbf1f3;
+  --fill: #f6e9ec;
+  --hover: #f5e6ea;
+  --sidebar-bg: linear-gradient(170deg, #fcf2f4 0%, #f7ecf1 100%);
+  --titlebar-bg: #fdf6f7;
+  --toolbar-bg: #fffbfb;
+  --tabs-bg: #f7ecef;
+  --desk: #f8eef0;
+  --paper: #fff;
+  --pdf-desk: #f1e4e8;
+  --pdf-desk-text: #9a7f89;
+
+  --text-strong: #2e1f25;
+  --text: #3a2a31;
+  --text-2: #58434c;
+  --text-3: #75606a;
+  --text-4: #8f7a84;
+  --muted: #9d8993;
+  --faint: #b19fa7;
+  --fainter: #c2b3b9;
+
+  --line: #f0e0e5;
+  --line-strong: #e6d0d7;
+  --line-soft: #f5e9ec;
+  --track: #e3cdd4;
+  --knob: #fff;
+
+  --accent: #c44d77;
+  --accent-text: #b13f68;
+  --accent-deep: #8a4560;
+  --accent-muted: #b27a8e;
+  --accent-2: #d2688d;
+  --accent-focus: #e59bb6;
+  --accent-line-strong: #e7a3bc;
+  --accent-line: #f0c6d5;
+  --accent-line-soft: #f5d9e3;
+  --accent-soft-2: #f7dce6;
+  --accent-soft: #fbe9ef;
+  --accent-tint: #fef6f9;
+  --accent-fill-hover: #ad3e66;
+  --on-accent: #fff;
+  --success: #3f8a6a;
+
+  --ai: #8a5cd0;
+  --ai-text: #7648be;
+  --ai-soft: #f4eefc;
+  --ai-soft-2: #eadff8;
+  --ai-line: #e1d3f5;
+  --ai-line-strong: #c1a3ec;
+  --ai-tint: #fbf8fe;
+  --ai-fill-hover: #7648be;
+
+  --danger: #c24b4b;
+  --danger-strong: #943636;
+  --danger-soft: #fcefee;
+  --danger-line: #f0c9c8;
+  --danger-fill: #c9534f;
+  --danger-fill-hover: #b04440;
+  --diff-add: #2f8a55;
+  --diff-del: #c8434a;
+  --diff-add-bg: #eaf6ee;
+  --diff-del-bg: #fdeeef;
+  --warn: #b07630;
+  --warn-soft: #f8ecdb;
+
+  --folder: #c99440;
+  --folder-fill: #f3d9a466;
+  --folder-text: #7a5a2c;
+  --file-html: #6c83c4;
+  --file-pdf: #d0505e;
+  --dirty: #e09a4a;
+
+  --tooltip-bg: #4a2f3b;
+  --tooltip-text: #fff;
+  --tooltip-muted: #e8cfd9;
+  --backdrop: #4a2f3b40;
+  --scrollbar: #d9c0c866;
+  --scrollbar-hover: #c4a4b099;
+  --shadow-rgb: 110 50 72;
+  --shadow-k: 0.9;
+
+  --code-gutter-bg: #fcf3f5;
+  --code-gutter-text: #b19fa7;
+  --code-active-line: rgb(196 77 119 / 0.05);
+  --code-active-gutter: #f9e4eb;
+  --code-selection: #f1e1e6;
+  --code-selection-focus: #f5ccda;
+  --code-mark-rgb: 196 77 119;
+  --syn-meta: #75606a;
+  --syn-keyword: #8a5cd0;
+  --syn-atom: #3a6fb0;
+  --syn-literal: #2f7a6a;
+  --syn-string: #2f7a6a;
+  --syn-escape: #c7702a;
+  --syn-def: #3a6fb0;
+  --syn-local: #7648be;
+  --syn-type: #b13f68;
+  --syn-class: #2f7a7a;
+  --syn-macro: #3a6fb0;
+  --syn-prop: #3a6fb0;
+  --syn-attr: #8a5cd0;
+  --syn-comment: #b19fa7;
+  --syn-invalid: #d23b3b;
+}
+
+/* 夜读：深蓝灰夜间界面，青绿微光。 */
+[data-theme='night'] {
+  color-scheme: dark;
+
+  --bg: #14181e;
+  --surface: #1b2027;
+  --raised: #2a313b;
+  --surface-2: #1f242c;
+  --surface-3: #222830;
+  --fill: #252b34;
+  --hover: #2a313b;
+  --sidebar-bg: linear-gradient(180deg, #171b21, #15191f);
+  --titlebar-bg: #15191f;
+  --tabs-bg: #15191f;
+  --desk: #12161b;
+  --paper: #fff;
+  --pdf-desk: #11151a;
+  --pdf-desk-text: #7d8797;
+
+  --text-strong: #f0f3f7;
+  --text: #dde2ea;
+  --text-2: #c5ccd7;
+  --text-3: #a6afbd;
+  --text-4: #8d97a6;
+  --muted: #7f8998;
+  --faint: #6d7786;
+  --fainter: #5f6877;
+
+  --line: #2a3039;
+  --line-strong: #353c47;
+  --line-soft: #242a32;
+  --track: #3a424e;
+  --knob: #f0f3f7;
+
+  --accent: #5ec2b1;
+  --accent-text: #7dd3c4;
+  --accent-deep: #a3d9ce;
+  --accent-muted: #7eaaa1;
+  --accent-2: #4fae9c;
+  --accent-focus: #4c9d90;
+  --accent-line-strong: #3f8076;
+  --accent-line: #33625b;
+  --accent-line-soft: #2b4a46;
+  --accent-soft-2: #25413e;
+  --accent-soft: #1e3432;
+  --accent-tint: #1b2b2b;
+  --accent-fill: #2e8c7f;
+  --accent-fill-hover: #35a090;
+  --on-accent: #fff;
+  --success: #6fcf9f;
+
+  --ai: #a898ff;
+  --ai-text: #b9adff;
+  --ai-soft: #272440;
+  --ai-soft-2: #312d52;
+  --ai-line: #3b3663;
+  --ai-line-strong: #6b61b5;
+  --ai-tint: #201e32;
+  --ai-fill: #6b5bd6;
+  --ai-fill-hover: #7a6be0;
+
+  --danger: #f0897d;
+  --danger-strong: #f6a79d;
+  --danger-soft: #3a2426;
+  --danger-line: #5e3531;
+  --danger-fill: #c2544b;
+  --danger-fill-hover: #d0625a;
+  --diff-add: #6fcf97;
+  --diff-del: #f28b82;
+  --diff-add-bg: #1c3326;
+  --diff-del-bg: #3b2224;
+  --warn: #e3b35f;
+  --warn-soft: #3a3020;
+
+  --folder: #d8a64e;
+  --folder-fill: #d8a64e33;
+  --folder-text: #d7bf93;
+  --file-html: #72a9dd;
+  --file-pdf: #e8787a;
+  --dirty: #e0a54e;
+
+  --tooltip-bg: #353d4a;
+  --tooltip-text: #f0f3f7;
+  --tooltip-muted: #aab4c3;
+  --backdrop: #05080bb0;
+  --scrollbar: #ffffff24;
+  --scrollbar-hover: #ffffff40;
+  --shadow-rgb: 0 0 0;
+  --shadow-k: 2.6;
+  --dot-ring: #ffffff40;
+
+  --code-gutter-bg: #181c22;
+  --code-gutter-text: #5f6877;
+  --code-active-line: rgb(94 194 177 / 0.06);
+  --code-active-gutter: #213330;
+  --code-selection: #2c3440;
+  --code-selection-focus: #2c4d49;
+  --code-mark-rgb: 94 194 177;
+  --syn-meta: #8d97a6;
+  --syn-keyword: #c678dd;
+  --syn-atom: #d19a66;
+  --syn-literal: #98c379;
+  --syn-string: #98c379;
+  --syn-escape: #56b6c2;
+  --syn-def: #61afef;
+  --syn-local: #e5c07b;
+  --syn-type: #e06c75;
+  --syn-class: #e5c07b;
+  --syn-macro: #56b6c2;
+  --syn-prop: #61afef;
+  --syn-attr: #d19a66;
+  --syn-comment: #6b7585;
+  --syn-invalid: #ff6b6b;
+}
+
+/* 墨金：墨色底，鎏金按钮，宋体标题。 */
+[data-theme='ink'] {
+  color-scheme: dark;
+  --font-display:
+    'Songti SC', STSong, 'Source Han Serif SC', 'Noto Serif CJK SC', 'Noto Serif SC', SimSun, serif;
+
+  --bg: #12110f;
+  --surface: #1a1816;
+  --raised: #2b2723;
+  --surface-2: #1d1b18;
+  --surface-3: #211e1b;
+  --fill: #25221e;
+  --hover: #2b2723;
+  --sidebar-bg: linear-gradient(180deg, #171513, #13120f);
+  --titlebar-bg: #141210;
+  --tabs-bg: #141210;
+  --desk: #100f0d;
+  --paper: #fff;
+  --pdf-desk: #0f0e0c;
+  --pdf-desk-text: #8b8272;
+
+  --text-strong: #f6f0e4;
+  --text: #e7dfd0;
+  --text-2: #d2c8b7;
+  --text-3: #b3a894;
+  --text-4: #978d7c;
+  --muted: #888070;
+  --faint: #72695c;
+  --fainter: #625a4f;
+
+  --line: #2c2823;
+  --line-strong: #3a352e;
+  --line-soft: #25221e;
+  --track: #413b33;
+  --knob: #f6f0e4;
+
+  --accent: #d6ad62;
+  --accent-text: #e6c27e;
+  --accent-deep: #e0cda6;
+  --accent-muted: #b39f78;
+  --accent-2: #c9a05a;
+  --accent-focus: #a9864a;
+  --accent-line-strong: #7d6537;
+  --accent-line: #5e4c2b;
+  --accent-line-soft: #463a23;
+  --accent-soft-2: #3a3020;
+  --accent-soft: #2e271b;
+  --accent-tint: #221d16;
+  --accent-fill: linear-gradient(135deg, #e3be76, #b98c45);
+  --accent-fill-hover: linear-gradient(135deg, #ebca88, #c69a52);
+  --on-accent: #1c150a;
+  --success: #9ccf8a;
+
+  --ai: #c0a8f0;
+  --ai-text: #cdb9f5;
+  --ai-soft: #2a2433;
+  --ai-soft-2: #342c40;
+  --ai-line: #40364e;
+  --ai-line-strong: #76649a;
+  --ai-tint: #211d25;
+  --ai-fill: #7e66c4;
+  --ai-fill-hover: #8d76d0;
+
+  --danger: #ec9180;
+  --danger-strong: #f4ad9f;
+  --danger-soft: #3a2420;
+  --danger-line: #5c362e;
+  --danger-fill: #b8574a;
+  --danger-fill-hover: #c96658;
+  --diff-add: #9ccf8a;
+  --diff-del: #ec8a7a;
+  --diff-add-bg: #1f2e1d;
+  --diff-del-bg: #3a221f;
+  --warn: #e0b060;
+  --warn-soft: #3a2f1d;
+
+  --folder: #d2a452;
+  --folder-fill: #d2a45233;
+  --folder-text: #dcc49a;
+  --file-html: #8fb4dc;
+  --file-pdf: #e38a78;
+  --dirty: #e0a54e;
+
+  --tooltip-bg: #3a352e;
+  --tooltip-text: #f6f0e4;
+  --tooltip-muted: #bfb3a0;
+  --backdrop: #050403b0;
+  --scrollbar: #fff1d624;
+  --scrollbar-hover: #fff1d640;
+  --shadow-rgb: 0 0 0;
+  --shadow-k: 2.6;
+  --dot-ring: #fff1d64a;
+
+  --code-gutter-bg: #171513;
+  --code-gutter-text: #625a4f;
+  --code-active-line: rgb(214 173 98 / 0.06);
+  --code-active-gutter: #2e271b;
+  --code-selection: #34302a;
+  --code-selection-focus: #4a3d24;
+  --code-mark-rgb: 214 173 98;
+  --syn-meta: #978d7c;
+  --syn-keyword: #d49bd0;
+  --syn-atom: #e0b060;
+  --syn-literal: #a9c47f;
+  --syn-string: #a9c47f;
+  --syn-escape: #8ec5b8;
+  --syn-def: #8fb4dc;
+  --syn-local: #e6c27e;
+  --syn-type: #e6a26b;
+  --syn-class: #e6c27e;
+  --syn-macro: #8ec5b8;
+  --syn-prop: #8fb4dc;
+  --syn-attr: #d6ad62;
+  --syn-comment: #72695c;
+  --syn-invalid: #ff7b6b;
+}
+
+/* ——— Bold styles: these also change shapes and type, see theme-styles.css ——— */
+
+/* 新粗野：奶油底、粗黑描边、硬投影、撞色色块。 */
+[data-theme='brutal'] {
+  color-scheme: light;
+  --font-sans:
+    'Avenir Next', 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei UI',
+    'Microsoft YaHei', sans-serif;
+
+  --bg: #fff8e7;
+  --surface: #fff;
+  --raised: #fff;
+  --surface-2: #fffcf3;
+  --surface-3: #fff4d6;
+  --fill: #ffeab0;
+  --hover: #ffe27a;
+  --sidebar-bg: #fff8e7;
+  --titlebar-bg: #ffd23f;
+  --tabs-bg: #7fe0f7;
+  --desk: #fff8e7;
+  --paper: #fff;
+  --pdf-desk: #fff1c9;
+  --pdf-desk-text: #111;
+
+  --text-strong: #000;
+  --text: #111;
+  --text-2: #1c1c1c;
+  --text-3: #2e2e2e;
+  --text-4: #474747;
+  --muted: #5a5a5a;
+  --faint: #737373;
+  --fainter: #8c8c8c;
+
+  --line: #111;
+  --line-strong: #111;
+  --line-soft: #11111133;
+  --track: #d9ceb4;
+  --knob: #fff;
+
+  --accent: #d6246e;
+  --accent-text: #b81c5d;
+  --accent-deep: #6b1d44;
+  --accent-muted: #9a4a6f;
+  --accent-2: #14b85a;
+  --accent-focus: #111;
+  --accent-line-strong: #111;
+  --accent-line: #111;
+  --accent-line-soft: #ff7ab6;
+  --accent-soft-2: #ffbddc;
+  --accent-soft: #ffd6ea;
+  --accent-tint: #fff0f7;
+  --accent-fill: #ff7ab6;
+  --accent-fill-hover: #ff62a8;
+  --on-accent: #111;
+  --success: #0f7a3b;
+
+  --ai: #5b3df5;
+  --ai-text: #4527d6;
+  --ai-soft: #e6ddff;
+  --ai-soft-2: #d4c6ff;
+  --ai-line: #111;
+  --ai-line-strong: #111;
+  --ai-tint: #f4f0ff;
+  --ai-fill: #c5b4ff;
+  --ai-fill-hover: #b39dff;
+  --on-ai: #111;
+
+  --danger: #d62828;
+  --danger-strong: #9d0208;
+  --danger-soft: #ffd9d6;
+  --danger-line: #111;
+  --danger-fill: #f0443a;
+  --danger-fill-hover: #d93229;
+  --diff-add: #0f7a3b;
+  --diff-del: #c1121f;
+  --diff-add-bg: #c9f7cf;
+  --diff-del-bg: #ffd6d6;
+  --warn: #a35f00;
+  --warn-soft: #ffe8a3;
+
+  --folder: #111;
+  --folder-fill: #ffd23f;
+  --folder-text: #111;
+  --file-html: #1d4ed8;
+  --file-pdf: #e11d48;
+  --dirty: #ff7ab6;
+
+  --tooltip-bg: #111;
+  --tooltip-text: #fff;
+  --tooltip-muted: #ffd23f;
+  --backdrop: #11111166;
+  --scrollbar: #111111aa;
+  --scrollbar-hover: #111;
+  --shadow-rgb: 17 17 17;
+  --shadow-k: 1;
+  --dot-ring: #111;
+
+  --code-gutter-bg: #fff8e7;
+  --code-gutter-text: #6b6b6b;
+  --code-active-line: rgb(255 210 63 / 0.18);
+  --code-active-gutter: #ffd23f;
+  --code-selection: #ffe9a6;
+  --code-selection-focus: #ffd6ea;
+  --code-mark-rgb: 214 36 110;
+  --syn-meta: #555;
+  --syn-keyword: #1d4ed8;
+  --syn-atom: #a35f00;
+  --syn-literal: #0f7a3b;
+  --syn-string: #0f7a3b;
+  --syn-escape: #c2410c;
+  --syn-def: #1d4ed8;
+  --syn-local: #5b3df5;
+  --syn-type: #d6246e;
+  --syn-class: #0e7490;
+  --syn-macro: #0e7490;
+  --syn-prop: #1d4ed8;
+  --syn-attr: #5b3df5;
+  --syn-comment: #8a8a8a;
+  --syn-invalid: #d62828;
+
+  --edge-w: 3px;
+  --edge: 3px solid #111;
+  --control-edge: 2px solid #111;
+  --field-edge: 2px solid #111;
+  --card-edge: 2px solid #111;
+  --pop-edge: 3px solid #111;
+  --radius-control: 8px;
+  --radius-card: 10px;
+  --radius-pop: 12px;
+  --control-weight: 700;
+  --control-shadow: 3px 3px 0 #111;
+  --control-shadow-hover: 5px 5px 0 #111;
+  --control-lift: translate(-2px, -2px);
+  --control-press: translate(3px, 3px);
+  --card-shadow: 4px 4px 0 #111;
+  --pop-shadow: 8px 8px 0 #111;
+  --indicator-h: 4px;
+}
+
+/* 报刊：新闻纸底色，宋体排版，黑色细线与朱红。 */
+[data-theme='editorial'] {
+  color-scheme: light;
+  --font-sans:
+    'Songti SC', STSong, 'Source Han Serif SC', 'Noto Serif CJK SC', 'Noto Serif SC', Georgia,
+    'Times New Roman', SimSun, serif;
+
+  --bg: #efebe2;
+  --surface: #f7f4ec;
+  --raised: #fffdf7;
+  --surface-2: #f3efe5;
+  --surface-3: #ece7dc;
+  --fill: #e6e0d3;
+  --hover: #e8e1d2;
+  --sidebar-bg: #f3efe5;
+  --titlebar-bg: #f7f4ec;
+  --tabs-bg: #efebe2;
+  --desk: #efebe2;
+  --paper: #fffdf8;
+  --pdf-desk: #e6e1d6;
+  --pdf-desk-text: #444;
+
+  --text-strong: #0b0b0b;
+  --text: #141414;
+  --text-2: #2b2b2b;
+  --text-3: #444;
+  --text-4: #5e5b55;
+  --muted: #6f6b63;
+  --faint: #8a857b;
+  --fainter: #a39e93;
+
+  --line: #1a1a1a;
+  --line-strong: #1a1a1a;
+  --line-soft: #c9c2b3;
+  --track: #bdb6a7;
+  --knob: #fffdf7;
+
+  --accent: #c8102e;
+  --accent-text: #a50d26;
+  --accent-deep: #5c0a17;
+  --accent-muted: #8a4a52;
+  --accent-2: #1a1a1a;
+  --accent-focus: #1a1a1a;
+  --accent-line-strong: #1a1a1a;
+  --accent-line: #1a1a1a;
+  --accent-line-soft: #d9b8bd;
+  --accent-soft-2: #f0d6d6;
+  --accent-soft: #f3e2de;
+  --accent-tint: #f8eeea;
+  --accent-fill: #1a1a1a;
+  --accent-fill-hover: #c8102e;
+  --on-accent: #f7f4ec;
+  --success: #1b6b3a;
+
+  --ai: #1f3a93;
+  --ai-text: #1f3a93;
+  --ai-soft: #e3e5ec;
+  --ai-soft-2: #d3d8ea;
+  --ai-line: #1a1a1a;
+  --ai-line-strong: #1a1a1a;
+  --ai-tint: #eeefef;
+  --ai-fill: #1f3a93;
+  --ai-fill-hover: #172c70;
+
+  --danger: #b3001b;
+  --danger-strong: #7a0012;
+  --danger-soft: #f3dedb;
+  --danger-line: #1a1a1a;
+  --danger-fill: #b3001b;
+  --danger-fill-hover: #8f0015;
+  --diff-add: #1b6b3a;
+  --diff-del: #b3001b;
+  --diff-add-bg: #e3eddc;
+  --diff-del-bg: #f5dfdc;
+  --warn: #8a5a00;
+  --warn-soft: #efe3c4;
+
+  --folder: #1a1a1a;
+  --folder-fill: #d9d2c3;
+  --folder-text: #1a1a1a;
+  --file-html: #1f3a93;
+  --file-pdf: #c8102e;
+  --dirty: #c8102e;
+
+  --tooltip-bg: #141414;
+  --tooltip-text: #f7f4ec;
+  --tooltip-muted: #c9c2b3;
+  --backdrop: #14141440;
+  --scrollbar: #1a1a1a55;
+  --scrollbar-hover: #1a1a1a99;
+  --shadow-rgb: 30 25 15;
+  --shadow-k: 0.6;
+  --dot-ring: #1a1a1a;
+
+  --code-gutter-bg: #f0ece2;
+  --code-gutter-text: #8a857b;
+  --code-active-line: rgb(200 16 46 / 0.04);
+  --code-active-gutter: #e9e2d3;
+  --code-selection: #e2dccf;
+  --code-selection-focus: #f0d0d0;
+  --code-mark-rgb: 200 16 46;
+  --syn-meta: #5e5b55;
+  --syn-keyword: #1f3a93;
+  --syn-atom: #8a5a00;
+  --syn-literal: #1b6b3a;
+  --syn-string: #1b6b3a;
+  --syn-escape: #8a5a00;
+  --syn-def: #1f3a93;
+  --syn-local: #1f3a93;
+  --syn-type: #c8102e;
+  --syn-class: #5c0a17;
+  --syn-macro: #444;
+  --syn-prop: #1f3a93;
+  --syn-attr: #1f3a93;
+  --syn-comment: #8a857b;
+  --syn-invalid: #c8102e;
+
+  --edge-w: 1px;
+  --edge: 1px solid #1a1a1a;
+  --control-edge: 1px solid #1a1a1a;
+  --field-edge: 1px solid #1a1a1a;
+  --card-edge: 1px solid #1a1a1a;
+  --pop-edge: 1px solid #1a1a1a;
+  --radius-control: 0;
+  --radius-card: 0;
+  --radius-pop: 0;
+  --control-weight: 600;
+  --control-shadow: none;
+  --control-shadow-hover: none;
+  --control-lift: none;
+  --control-press: none;
+  --card-shadow: none;
+  --pop-shadow: 0 18px 40px rgb(30 25 15 / 0.16);
+  --indicator-h: 3px;
+}
+
+/* 终端：黑底荧光绿，等宽字，扫描线与微光，琥珀色给 AI。 */
+[data-theme='terminal'] {
+  color-scheme: dark;
+  --font-sans:
+    'SF Mono', 'JetBrains Mono', Menlo, Consolas, 'PingFang SC', 'Microsoft YaHei', monospace;
+  --scanlines: repeating-linear-gradient(0deg, #0000004d 0 1px, transparent 1px 3px);
+
+  --bg: #050805;
+  --surface: #070b07;
+  --raised: #0d170d;
+  --surface-2: #081008;
+  --surface-3: #0a130a;
+  --fill: #0f1d0f;
+  --hover: #102410;
+  --sidebar-bg: var(--scanlines), #060a06;
+  --titlebar-bg: #040704;
+  --tabs-bg: #050805;
+  --desk: #030503;
+  --paper: #fff;
+  --pdf-desk: #030503;
+  --pdf-desk-text: #33ff66;
+
+  --text-strong: #c8ffd4;
+  --text: #7dff9a;
+  --text-2: #6cf08a;
+  --text-3: #52cc6e;
+  --text-4: #45ad5d;
+  --muted: #3c9451;
+  --faint: #307a42;
+  --fainter: #276537;
+
+  --line: #1b5e2c;
+  --line-strong: #238a3e;
+  --line-soft: #0f2e17;
+  --track: #1b5e2c;
+  --knob: #33ff66;
+
+  --accent: #33ff66;
+  --accent-text: #7dffa0;
+  --accent-deep: #c8ffd4;
+  --accent-muted: #4fd46f;
+  --accent-2: #33ff66;
+  --accent-focus: #33ff66;
+  --accent-line-strong: #33ff66;
+  --accent-line: #238a3e;
+  --accent-line-soft: #164a24;
+  --accent-soft-2: #0f3a1a;
+  --accent-soft: #0b2913;
+  --accent-tint: #081b0d;
+  --accent-fill: #33ff66;
+  --accent-fill-hover: #7dffa0;
+  --on-accent: #021405;
+  --success: #33ff66;
+
+  --ai: #ffb000;
+  --ai-text: #ffc233;
+  --ai-soft: #2a1d00;
+  --ai-soft-2: #3a2900;
+  --ai-line: #7a5400;
+  --ai-line-strong: #ffb000;
+  --ai-tint: #1a1300;
+  --ai-fill: #ffb000;
+  --ai-fill-hover: #ffc233;
+  --on-ai: #1a1000;
+
+  --danger: #ff5555;
+  --danger-strong: #ff8080;
+  --danger-soft: #2a0b0b;
+  --danger-line: #7a2020;
+  --danger-fill: #cc3333;
+  --danger-fill-hover: #e04444;
+  --diff-add: #33ff66;
+  --diff-del: #ff5555;
+  --diff-add-bg: #0b2913;
+  --diff-del-bg: #2a0b0b;
+  --warn: #ffb000;
+  --warn-soft: #2a1d00;
+
+  --folder: #ffb000;
+  --folder-fill: #ffb00026;
+  --folder-text: #ffc233;
+  --file-html: #33ff66;
+  --file-pdf: #ff5555;
+  --dirty: #ffb000;
+
+  --tooltip-bg: #0d170d;
+  --tooltip-text: #7dff9a;
+  --tooltip-muted: #45ad5d;
+  --backdrop: #000000c0;
+  --scrollbar: #33ff6655;
+  --scrollbar-hover: #33ff66aa;
+  --shadow-rgb: 0 0 0;
+  --shadow-k: 3;
+  --dot-ring: #33ff6680;
+
+  --code-bg: #050805;
+  --code-gutter-bg: #050805;
+  --code-gutter-text: #307a42;
+  --code-active-line: rgb(51 255 102 / 0.06);
+  --code-active-gutter: #0f2e17;
+  --code-selection: #0f3a1a;
+  --code-selection-focus: #145a26;
+  --code-mark-rgb: 51 255 102;
+  --syn-meta: #45ad5d;
+  --syn-keyword: #ffb000;
+  --syn-atom: #ffc233;
+  --syn-literal: #c8ffd4;
+  --syn-string: #c8ffd4;
+  --syn-escape: #ffb000;
+  --syn-def: #7dffa0;
+  --syn-local: #7dffa0;
+  --syn-type: #33ff66;
+  --syn-class: #ffc233;
+  --syn-macro: #7dffa0;
+  --syn-prop: #7dffa0;
+  --syn-attr: #ffb000;
+  --syn-comment: #307a42;
+  --syn-invalid: #ff5555;
+
+  --edge-w: 1px;
+  --edge: 1px solid #1f7a36;
+  --control-edge: 1px solid #238a3e;
+  --field-edge: 1px solid #238a3e;
+  --card-edge: 1px dashed #238a3e;
+  --pop-edge: 1px solid #33ff66;
+  --radius-control: 0;
+  --radius-card: 0;
+  --radius-pop: 0;
+  --control-weight: 500;
+  --control-shadow: none;
+  --control-shadow-hover: 0 0 0 1px #33ff66, 0 0 14px rgb(51 255 102 / 0.35);
+  --control-lift: none;
+  --control-press: none;
+  --card-shadow: none;
+  --pop-shadow: 0 0 0 4px #050805, 0 0 36px rgb(51 255 102 / 0.18);
+  --indicator-h: 2px;
+}
+
+/* 极光：深夜底上的极光渐变，半透明毛玻璃面板悬浮其上。 */
+[data-theme='aurora'] {
+  color-scheme: dark;
+  --aurora:
+    radial-gradient(55% 45% at 8% 0%, #7c5cff8c, transparent 70%),
+    radial-gradient(45% 55% at 96% 6%, #00c2ff66, transparent 70%),
+    radial-gradient(55% 55% at 72% 100%, #ff4fb466, transparent 70%),
+    radial-gradient(45% 45% at 0% 100%, #00f0a84d, transparent 70%), #0b0b1a;
+
+  --bg: #0b0b1a;
+  --surface: #17172ee0;
+  --raised: #ffffff24;
+  --surface-2: #ffffff0d;
+  --surface-3: #ffffff12;
+  --fill: #ffffff14;
+  --hover: #ffffff1c;
+  --sidebar-bg: #10102459;
+  --titlebar-bg: transparent;
+  --toolbar-bg: #13132ab3;
+  --tabs-bg: #0c0c2059;
+  --desk: #0c0c1e80;
+  --paper: #fff;
+  --pdf-desk: #101026;
+  --pdf-desk-text: #9592c2;
+
+  --text-strong: #fff;
+  --text: #eceaff;
+  --text-2: #d6d3f5;
+  --text-3: #b5b2de;
+  --text-4: #9895c5;
+  --muted: #8986b6;
+  --faint: #716e9e;
+  --fainter: #5f5c8b;
+
+  --line: #ffffff1f;
+  --line-strong: #ffffff30;
+  --line-soft: #ffffff12;
+  --track: #ffffff33;
+  --knob: #fff;
+
+  --accent: #9ab6ff;
+  --accent-text: #b8cbff;
+  --accent-deep: #dbe4ff;
+  --accent-muted: #9aa8d8;
+  --accent-2: #5ef2c8;
+  --accent-focus: #9ab6ff;
+  --accent-line-strong: #9ab6ff99;
+  --accent-line: #9ab6ff59;
+  --accent-line-soft: #9ab6ff38;
+  --accent-soft-2: #8f9dff3d;
+  --accent-soft: #8f9dff29;
+  --accent-tint: #8f9dff14;
+  --accent-fill: linear-gradient(135deg, #7c5cff, #00b8ff);
+  --accent-fill-hover: linear-gradient(135deg, #8d70ff, #2ac8ff);
+  --on-accent: #fff;
+  --success: #5ef2c8;
+
+  --ai: #ff8ad8;
+  --ai-text: #ffb0e6;
+  --ai-soft: #ff8ad826;
+  --ai-soft-2: #ff8ad842;
+  --ai-line: #ff8ad84d;
+  --ai-line-strong: #ff8ad8;
+  --ai-tint: #ff8ad812;
+  --ai-fill: linear-gradient(135deg, #ff5fc8, #9d5cff);
+  --ai-fill-hover: linear-gradient(135deg, #ff78d2, #ad72ff);
+
+  --danger: #ff8a8a;
+  --danger-strong: #ffb0b0;
+  --danger-soft: #ff5a5a26;
+  --danger-line: #ff8a8a4d;
+  --danger-fill: #e0556a;
+  --danger-fill-hover: #f06a7e;
+  --diff-add: #7ef0b0;
+  --diff-del: #ff8a8a;
+  --diff-add-bg: #3ee08a1f;
+  --diff-del-bg: #ff5a5a1f;
+  --warn: #ffd37a;
+  --warn-soft: #ffd37a1f;
+
+  --folder: #ffd37a;
+  --folder-fill: #ffd37a33;
+  --folder-text: #ffe3a8;
+  --file-html: #9ab6ff;
+  --file-pdf: #ff8a9a;
+  --dirty: #ffd37a;
+
+  --tooltip-bg: #22224a;
+  --tooltip-text: #fff;
+  --tooltip-muted: #b5b2de;
+  --backdrop: #05051080;
+  --scrollbar: #ffffff2e;
+  --scrollbar-hover: #ffffff4d;
+  --shadow-rgb: 0 0 0;
+  --shadow-k: 2.4;
+  --dot-ring: #ffffff59;
+
+  --code-bg: #0e0e24d9;
+  --code-gutter-bg: #0e0e2466;
+  --code-gutter-text: #716e9e;
+  --code-active-line: rgb(154 182 255 / 0.06);
+  --code-active-gutter: #9ab6ff1f;
+  --code-selection: #ffffff1a;
+  --code-selection-focus: #7c5cff59;
+  --code-mark-rgb: 154 182 255;
+  --syn-meta: #9895c5;
+  --syn-keyword: #c792ea;
+  --syn-atom: #ffd37a;
+  --syn-literal: #5ef2c8;
+  --syn-string: #5ef2c8;
+  --syn-escape: #89ddff;
+  --syn-def: #82aaff;
+  --syn-local: #ffd37a;
+  --syn-type: #ff8ad8;
+  --syn-class: #ffd37a;
+  --syn-macro: #89ddff;
+  --syn-prop: #82aaff;
+  --syn-attr: #9ab6ff;
+  --syn-comment: #716e9e;
+  --syn-invalid: #ff5370;
+
+  --edge-w: 1px;
+  --edge: 1px solid #ffffff1f;
+  --control-edge: 1px solid #ffffff2e;
+  --field-edge: 1px solid #ffffff2e;
+  --card-edge: 1px solid #ffffff1f;
+  --pop-edge: 1px solid #ffffff2e;
+  --radius-control: 10px;
+  --radius-card: 14px;
+  --radius-pop: 18px;
+  --control-weight: 500;
+  --control-shadow: inset 0 1px 0 #ffffff1f, 0 4px 14px #0000004d;
+  --control-shadow-hover: inset 0 1px 0 #ffffff2e, 0 6px 22px #7c5cff59;
+  --control-lift: translateY(-1px);
+  --control-press: none;
+  --card-shadow: inset 0 1px 0 #ffffff14, 0 8px 24px #0000004d;
+  --pop-shadow: 0 24px 60px #00000080, inset 0 1px 0 #ffffff26;
+  --indicator-h: 2px;
+}

@@ -1,13 +1,26 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { Decoration, EditorView, keymap } from '@codemirror/view';
 import type { DecorationSet } from '@codemirror/view';
-import { EditorSelection, EditorState, StateEffect, StateField } from '@codemirror/state';
+import {
+  Compartment,
+  EditorSelection,
+  EditorState,
+  StateEffect,
+  StateField,
+} from '@codemirror/state';
 import type { Range } from '@codemirror/state';
 import { basicSetup } from 'codemirror';
 import { html } from '@codemirror/lang-html';
 import { indentWithTab } from '@codemirror/commands';
-import { ensureSyntaxTree, syntaxTree } from '@codemirror/language';
+import {
+  ensureSyntaxTree,
+  HighlightStyle,
+  syntaxHighlighting,
+  syntaxTree,
+} from '@codemirror/language';
+import { tags as t } from '@lezer/highlight';
 import { openSearchPanel } from '@codemirror/search';
+import { themeInfo, useTheme } from '../theme';
 
 export type SourceEditorHandle = {
   find: () => void;
@@ -35,6 +48,31 @@ const phrases = EditorState.phrases.of({
   'Go to line': '跳到行',
   go: '跳转',
 });
+
+// CodeMirror's default highlighting, with its colors taken from the interface theme.
+const themedHighlight = HighlightStyle.define([
+  { tag: t.meta, color: 'var(--syn-meta)' },
+  { tag: t.link, textDecoration: 'underline' },
+  { tag: t.heading, textDecoration: 'underline', fontWeight: 'bold' },
+  { tag: t.emphasis, fontStyle: 'italic' },
+  { tag: t.strong, fontWeight: 'bold' },
+  { tag: t.strikethrough, textDecoration: 'line-through' },
+  { tag: t.keyword, color: 'var(--syn-keyword)' },
+  { tag: [t.atom, t.bool, t.url, t.contentSeparator, t.labelName], color: 'var(--syn-atom)' },
+  { tag: [t.literal, t.inserted], color: 'var(--syn-literal)' },
+  { tag: [t.string, t.deleted], color: 'var(--syn-string)' },
+  { tag: [t.regexp, t.escape, t.special(t.string)], color: 'var(--syn-escape)' },
+  { tag: t.definition(t.variableName), color: 'var(--syn-def)' },
+  { tag: t.local(t.variableName), color: 'var(--syn-local)' },
+  { tag: [t.typeName, t.namespace], color: 'var(--syn-type)' },
+  { tag: t.className, color: 'var(--syn-class)' },
+  { tag: [t.special(t.variableName), t.macroName], color: 'var(--syn-macro)' },
+  { tag: t.definition(t.propertyName), color: 'var(--syn-prop)' },
+  { tag: t.attributeName, color: 'var(--syn-attr)' },
+  { tag: t.comment, color: 'var(--syn-comment)' },
+  { tag: t.invalid, color: 'var(--syn-invalid)' },
+]);
+const darkness = new Compartment();
 
 type Target = { from: number; to: number; tagFrom: number; tagTo: number };
 const setTarget = StateEffect.define<Target | null>();
@@ -96,6 +134,9 @@ export default forwardRef<
 >(function SourceEditor({ value, onChange, onSave }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | null>(null);
+  const { active } = useTheme();
+  const activeTheme = useRef(active);
+  activeTheme.current = active;
   const callbacks = useRef({ onChange, onSave });
   callbacks.current = { onChange, onSave };
   useImperativeHandle(ref, () => ({
@@ -153,27 +194,48 @@ export default forwardRef<
             },
           ]),
           EditorView.lineWrapping,
+          syntaxHighlighting(themedHighlight),
+          darkness.of(EditorView.darkTheme.of(themeInfo(activeTheme.current).dark)),
           EditorView.theme({
-            '&': { height: '100%', fontSize: '13px' },
+            '&': {
+              height: '100%',
+              fontSize: '13px',
+              color: 'var(--text)',
+              backgroundColor: 'var(--code-bg)',
+            },
             '.cm-scroller': {
               overflow: 'auto',
               fontFamily: '"SFMono-Regular", Consolas, monospace',
             },
-            '.cm-content': { padding: '18px 0' },
-            '.cm-gutters': { backgroundColor: '#f7f8fa', color: '#98a2ac', border: 'none' },
+            '.cm-content': { padding: '18px 0', caretColor: 'var(--text)' },
+            '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--text)' },
+            '.cm-gutters': {
+              backgroundColor: 'var(--code-gutter-bg)',
+              color: 'var(--code-gutter-text)',
+              border: 'none',
+            },
             // The selection is drawn beneath the text, so the active line must stay
             // translucent or it hides selections on the cursor's line.
-            '.cm-activeLine': { backgroundColor: 'rgba(47, 139, 126, 0.06)' },
-            '.cm-activeLineGutter': { backgroundColor: '#e6efec' },
-            '.cm-selectionBackground': { backgroundColor: '#dfe5ea' },
+            '.cm-activeLine': { backgroundColor: 'var(--code-active-line)' },
+            '.cm-activeLineGutter': { backgroundColor: 'var(--code-active-gutter)' },
+            '.cm-selectionBackground': { backgroundColor: 'var(--code-selection)' },
             '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': {
-              backgroundColor: '#bfe0d8',
+              backgroundColor: 'var(--code-selection-focus)',
             },
-            '.cm-inspect-line': { backgroundColor: 'rgba(47, 139, 126, 0.07)' },
+            '.cm-inspect-line': { backgroundColor: 'rgb(var(--code-mark-rgb) / 0.07)' },
             '.cm-inspect-tag': {
-              backgroundColor: 'rgba(47, 139, 126, 0.22)',
+              backgroundColor: 'rgb(var(--code-mark-rgb) / 0.22)',
               borderRadius: '2px',
-              outline: '1px solid rgba(47, 139, 126, 0.55)',
+              outline: '1px solid rgb(var(--code-mark-rgb) / 0.55)',
+            },
+            '.cm-panels': { backgroundColor: 'var(--surface-2)', color: 'var(--text)' },
+            '.cm-panels.cm-panels-top': { borderBottom: '1px solid var(--line)' },
+            '.cm-panels.cm-panels-bottom': { borderTop: '1px solid var(--line)' },
+            '.cm-textfield': { borderColor: 'var(--line-strong)' },
+            '.cm-tooltip': {
+              backgroundColor: 'var(--surface)',
+              color: 'var(--text)',
+              border: '1px solid var(--line)',
             },
           }),
           EditorView.updateListener.of((update) => {
@@ -188,6 +250,11 @@ export default forwardRef<
       editor.current = null;
     };
   }, []);
+  useEffect(() => {
+    editor.current?.dispatch({
+      effects: darkness.reconfigure(EditorView.darkTheme.of(themeInfo(active).dark)),
+    });
+  }, [active]);
   useEffect(() => {
     const v = editor.current;
     if (v && v.state.doc.toString() !== value)

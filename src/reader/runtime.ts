@@ -1166,6 +1166,12 @@ import { findQuote } from '../ai/quote-match';
     }
     if (m.type === 'zoom-state') readerZoom.apply(m.scale, m.enabled);
     if (m.type === 'scroll-link-state') linkedScroll.setEnabled(!!m.enabled);
+    if (m.type === 'appearance' && document.documentElement.dataset.folioPdf) {
+      const color = (value: unknown) =>
+        typeof value === 'string' && /^#[\da-f]{3,8}$/i.test(value) ? value : '';
+      document.documentElement.style.setProperty('--folio-desk', color(m.desk));
+      document.documentElement.style.setProperty('--folio-desk-text', color(m.deskText));
+    }
     if (m.type === 'linked-scroll') linkedScroll.move(m.delta, m.scale);
     if (m.type === 'sync') {
       const currentInk = new Map(annotations.map((a) => [a.id, a]));

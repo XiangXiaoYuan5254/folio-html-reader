@@ -2,7 +2,8 @@
   color-scheme: light;
   font-family:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  background: #edf0f4;
+  /* The app sends the theme's colors through the reader channel. */
+  background: var(--folio-desk, #edf0f4);
   color: #334155;
 }
 * {
@@ -41,7 +42,7 @@ body {
   right: 0;
   text-align: center;
   padding-top: 7px;
-  color: #7b8796;
+  color: var(--folio-desk-text, #7b8796);
   font-size: 11px;
   user-select: none;
   pointer-events: none;

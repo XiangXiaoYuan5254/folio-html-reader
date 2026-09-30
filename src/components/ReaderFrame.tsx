@@ -8,6 +8,7 @@ import {
 } from 'react';
 import type { Annotation, EraserMode, FrameEvent, Tool } from '../types';
 import type { NoteSize } from '../reader/note-size';
+import { useTheme } from '../theme';
 export type ReaderHandle = {
   send: (type: string, payload?: Record<string, unknown>) => void;
   // Asks the document for something (AI text, anchors) and waits for its reply.
@@ -52,6 +53,7 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
   const [error, setError] = useState(false);
   const live = useRef(p);
   live.current = p;
+  const theme = useTheme().active;
   const pending = useRef(new Map<string, Pending>());
   const readyWaiters = useRef<(() => void)[]>([]);
   const isReady = useRef(false);
@@ -93,6 +95,14 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
       },
       '*',
     );
+  }
+  // The PDF viewer draws its page background in the theme's colors.
+  function sendAppearance() {
+    const style = getComputedStyle(document.documentElement);
+    send('appearance', {
+      desk: style.getPropertyValue('--pdf-desk').trim(),
+      deskText: style.getPropertyValue('--pdf-desk-text').trim(),
+    });
   }
   // A box in the document's own viewport, in window coordinates; the frame is scaled for zoom.
   function onScreen(r?: { left: number; top: number; right: number; bottom: number } | null) {
@@ -172,6 +182,7 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
           noteFontSize: live.current.noteFontSize,
           inspect: !!live.current.inspect,
         });
+        sendAppearance();
         send('restore', { scroll: live.current.scroll });
         send('scroll-link-state', { enabled: !!live.current.linkedScroll });
       }
@@ -201,6 +212,9 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
   useEffect(() => {
     if (ready) send('scroll-link-state', { enabled: !!p.linkedScroll });
   }, [ready, p.linkedScroll]);
+  useEffect(() => {
+    if (ready) sendAppearance();
+  }, [ready, theme]);
   useEffect(() => {
     if (ready)
       send('sync', {

@@ -17,6 +17,7 @@ import {
   Languages,
   Lightbulb,
   MessageCircleQuestion,
+  Palette,
 } from 'lucide-react';
 import { invoke, subscribe, useWorkspace, isDesktop, documentUrl } from './api';
 import { isMac, shortcut, trashName } from './platform';
@@ -63,6 +64,7 @@ import { AiSettings } from './components/AiSettings';
 import { AiSelectionCard } from './components/AiSelectionCard';
 import { AiSourceEdit } from './components/AiSourceEdit';
 import { SelectionToolbar } from './components/SelectionToolbar';
+import { ThemePicker } from './components/ThemePicker';
 import type { ScreenBox } from './components/SelectionToolbar';
 const SourceEditor = lazy(() => import('./components/SourceEditor'));
 import type { SourceEditorHandle } from './components/SourceEditor';
@@ -267,6 +269,7 @@ export default function App() {
   const setRebind = (rebind: string | null) => doc && patchReader(doc.id, { rebind });
   const [dialog, setDialog] = useState<DialogOptions | null>(null);
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
+  const [themePickerOpen, setThemePickerOpen] = useState(false);
   const [assistantMode, setAssistantMode] = useState<AssistantMode>(() => {
     try {
       return localStorage.getItem('folio.assistant-mode') === 'project' ? 'project' : 'doc';
@@ -467,6 +470,7 @@ export default function App() {
         if (e.type === 'close-request') liveActions.current.close();
         if (e.type === 'files-changed') liveActions.current.refresh();
         if (e.type === 'ai-settings') setAiSettingsOpen(true);
+        if (e.type === 'theme-picker') setThemePickerOpen(true);
         if (e.type === 'open-file' && sessionReady.current) liveActions.current.openFiles();
         if (e.type === 'toggle-focus') liveActions.current.focus();
         if (e.type === 'update') setUpdate(e.update);
@@ -1303,6 +1307,18 @@ export default function App() {
             </button>
           ) : null}
           <span className="titlebar-document">{workspace?.name}</span>
+          <div className="theme-menu">
+            <IconButton
+              label="界面主题"
+              help="切换配色，可跟随系统浅色 / 深色"
+              className="theme-button"
+              active={themePickerOpen}
+              onClick={() => setThemePickerOpen((open) => !open)}
+            >
+              <Palette size={16} />
+            </IconButton>
+            {themePickerOpen ? <ThemePicker onClose={() => setThemePickerOpen(false)} /> : null}
+          </div>
         </div>
       </header>
       <div className="workspace-layout">
