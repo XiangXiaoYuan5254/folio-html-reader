@@ -37,10 +37,12 @@ import { citeKey, plainCites, taskLabels, useAssistantState } from '../ai/assist
 import type { Assistant, ReadingContext, Task } from '../ai/assistant';
 import { Markdown } from '../ai/Markdown';
 import { fileName } from '../ai/context';
+import { draftText } from '../ai/companion';
 import { DiffView } from './DiffView';
 import { ModelMenu } from './ModelMenu';
 import { IconButton } from './IconButton';
 import { RegionCapture } from './RegionCapture';
+import { ImageViewer } from './ImageViewer';
 import { isImageFile, maxImages, prepareImage, seesImages } from '../ai/images';
 
 export type AssistantMode = 'doc' | 'project';
@@ -368,7 +370,7 @@ export function AssistantPanel(p: {
           }}
         />
         <div className="assistant-composer-foot">
-          <ModelMenu config={config} onOpenSettings={p.onOpenSettings} />
+          <ModelMenu onOpenSettings={p.onOpenSettings} />
           <IconButton
             className="assistant-tool"
             label="框选区域问 AI"
@@ -438,25 +440,6 @@ export function AssistantPanel(p: {
   );
 }
 
-function ImageViewer({ src, onClose }: { src: string; onClose: () => void }) {
-  useEffect(() => {
-    const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', key, true);
-    return () => window.removeEventListener('keydown', key, true);
-  }, []);
-  return createPortal(
-    <div className="image-viewer" role="dialog" aria-label="查看图片" onClick={onClose}>
-      <img src={src} alt="" />
-    </div>,
-    document.body,
-  );
-}
-
 function SetupCard({ onOpen }: { onOpen: () => void }) {
   return (
     <div className="assistant-empty assistant-setup">
@@ -466,7 +449,7 @@ function SetupCard({ onOpen }: { onOpen: () => void }) {
       <h3>接入你自己的 AI</h3>
       <p>
         填入 API Key 即可使用 DeepSeek、通义千问、Kimi、智谱、豆包、Claude、OpenAI、Gemini；也可以用
-        ChatGPT 账号（通过 Codex），或在本机运行的 Ollama。
+        ChatGPT 账号（通过 Codex 登录），或在本机运行的 Ollama。
       </p>
       <button className="primary-button" onClick={onOpen}>
         配置 AI 服务
@@ -548,6 +531,34 @@ function UserMessage({ message, onView }: { message: ChatMessage; onView: (src: 
   );
 }
 
+// What a long piece has written so far, followed to its end unless scrolled back.
+function LiveDraft({ draft }: { draft: string }) {
+  const box = useRef<HTMLDivElement>(null);
+  const follow = useRef(true);
+  const toEnd = () => {
+    const el = box.current;
+    if (el && follow.current) el.scrollTop = el.scrollHeight;
+  };
+  useLayoutEffect(toEnd, [draft]);
+  return (
+    <details className="chat-reasoning chat-draft" onToggle={toEnd}>
+      <summary>
+        <FileText size={12} />
+        查看正在写的内容
+      </summary>
+      <div
+        ref={box}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+        }}
+      >
+        {draftText(draft)}
+      </div>
+    </details>
+  );
+}
+
 function AnswerMessage(p: {
   message: ChatMessage;
   thread: ChatThread;
@@ -613,8 +624,21 @@ function AnswerMessage(p: {
           ),
         )
       ) : (
-        <Markdown text={m.text} streaming={streaming} renderCite={renderCite} onLink={onLink} />
+        <>
+          {m.searches?.map((step) => (
+            <StepCard
+              key={step.id}
+              step={step}
+              autoApply={p.autoApply}
+              onApprove={() => {}}
+              onAutoApply={() => {}}
+              onShowNote={() => {}}
+            />
+          ))}
+          <Markdown text={m.text} streaming={streaming} renderCite={renderCite} onLink={onLink} />
+        </>
       )}
+      {m.draft ? <LiveDraft draft={m.draft} /> : null}
       {streaming && empty && !m.reasoning ? (
         <div className="chat-waiting">
           <LoaderCircle className="spin" size={14} />

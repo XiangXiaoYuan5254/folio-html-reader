@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Blocks,
   Check,
   CircleX,
   ExternalLink,
@@ -11,12 +12,14 @@ import {
   ShieldCheck,
   Sparkle,
   Trash2,
+  UserRound,
   X,
 } from 'lucide-react';
 import { invoke } from '../api';
-import { errorText, savePrefs, setAiConfig, useAiConfig } from '../ai/client';
-import type { AiConfig, AiPreset, AiProvider, CodexStatus, ModelOption } from '../ai/types';
+import { errorText, savePrefs, setAiConfig, useAiConfig, useInfo } from '../ai/client';
+import type { AiConfig, AiPreset, AiProvider, AiUse, CodexStatus, ModelOption } from '../ai/types';
 import { effortLabel, forgetModelOptions } from '../ai/levels';
+import { ModelMenu } from './ModelMenu';
 
 const blurbs: Record<string, string> = {
   deepseek: '国内直连，价格低，长文档友好',
@@ -93,6 +96,8 @@ export function AiSettings({
   const [modelsOpen, setModelsOpen] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [advanced, setAdvanced] = useState(false);
+  // A page besides the services: the reader profile, or each part's model.
+  const [side, setSide] = useState<'' | 'profile' | 'uses'>('');
   const panel = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!config || selected !== null || adding) return;
@@ -119,6 +124,7 @@ export function AiSettings({
   }, [form, config]);
   function pick(p: AiProvider) {
     setAdding(false);
+    setSide('');
     setSelected(p.id);
     setForm(fromProvider(p));
     setStatus(null);
@@ -274,7 +280,7 @@ export function AiSettings({
             {config?.providers.map((p) => (
               <button
                 key={p.id}
-                className={selected === p.id ? 'active' : ''}
+                className={selected === p.id && !side ? 'active' : ''}
                 onClick={() => pick(p)}
               >
                 <strong>{p.name}</strong>
@@ -283,9 +289,10 @@ export function AiSettings({
               </button>
             ))}
             <button
-              className={`ai-add-provider ${adding ? 'active' : ''}`}
+              className={`ai-add-provider ${adding && !side ? 'active' : ''}`}
               onClick={() => {
                 setAdding(true);
+                setSide('');
                 setSelected(null);
                 setForm(null);
                 setStatus(null);
@@ -294,13 +301,32 @@ export function AiSettings({
               <Plus size={14} />
               添加服务
             </button>
+            <button
+              className={`ai-profile-link ${side === 'uses' ? 'active' : ''}`}
+              disabled={!config?.providers.length}
+              onClick={() => setSide('uses')}
+            >
+              <Blocks size={14} />
+              各功能的模型
+            </button>
+            <button
+              className={`ai-profile-link ${side === 'profile' ? 'active' : ''}`}
+              onClick={() => setSide('profile')}
+            >
+              <UserRound size={14} />
+              读者画像
+            </button>
           </nav>
           <section className="ai-settings-main">
-            {adding || !form ? (
+            {side === 'profile' ? (
+              <ReaderProfile saved={config?.prefs.profile || ''} />
+            ) : side === 'uses' ? (
+              <UseModels />
+            ) : adding || !form ? (
               <div className="ai-presets">
                 <p className="ai-settings-lead">
                   选择一个服务，填入在它官网申请的 API Key，费用由服务商按用量收取，页间不经手。已有
-                  ChatGPT 套餐的话，可以选“ChatGPT（通过 Codex）”，直接用套餐额度。
+                  ChatGPT 套餐的话，可以选“Codex”，直接用套餐额度。
                 </p>
                 {groups.map((g) => (
                   <div key={g.region}>
@@ -467,9 +493,7 @@ export function AiSettings({
                           </option>
                         ))}
                       </select>
-                      <em className="ai-field-hint">
-                        也可以在助手输入框下方随时切换。解释、翻译和划重点总是用最快的档位。
-                      </em>
+                      <em className="ai-field-hint">也可以在助手输入框下方随时切换。</em>
                     </label>
                   ) : null}
                   <button
@@ -625,6 +649,85 @@ export function AiSettings({
           </div>
         </footer>
       </div>
+    </div>
+  );
+}
+
+// Who is reading, in the reader's own words; 精读笔记 pitch their groundwork and focus at it.
+function ReaderProfile({ saved }: { saved: string }) {
+  const [text, setText] = useState(saved);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  async function save() {
+    setBusy(true);
+    setStatus(null);
+    try {
+      await savePrefs({ profile: text });
+      setStatus({ ok: true, text: '已保存' });
+    } catch (e) {
+      setStatus({ ok: false, text: errorText(e) });
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <form
+      className="ai-provider-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void save();
+      }}
+    >
+      <div className="ai-form-fields">
+        <p className="ai-settings-lead">
+          写一段自我介绍，比如背景、基础等等。AI
+          会按你的情况来写精读笔记。只对「制作精读笔记」生效，不写也没关系。
+        </p>
+        <label>
+          <span>读者画像</span>
+          <textarea
+            rows={10}
+            maxLength={2000}
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              setStatus(null);
+            }}
+          />
+        </label>
+        {status ? (
+          <p className={`ai-status ${status.ok ? 'ok' : 'error'}`} role="status">
+            {status.ok ? <Check size={14} /> : <CircleX size={14} />}
+            {status.text}
+          </p>
+        ) : null}
+      </div>
+      <div className="ai-form-actions">
+        <span className="toolbar-flex" />
+        <button className="primary-button" disabled={busy || text.trim() === saved}>
+          {busy ? '保存中…' : '保存'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+// Which service, model and reasoning level each part of the app uses.
+function UseModels() {
+  return (
+    <div className="ai-uses">
+      <p className="ai-settings-lead">
+        每个功能可以用不同的服务、模型和推理强度，比如翻译用便宜快速的模型，聊天和白板用更强的模型。没有单独选的功能跟随助手聊天。
+      </p>
+      {(Object.keys(useInfo) as AiUse[]).map((use) => (
+        <div className="ai-use-row" key={use}>
+          <div>
+            <strong>{useInfo[use].label}</strong>
+            <span>{useInfo[use].hint}</span>
+          </div>
+          <ModelMenu use={use} className="model-pick" />
+        </div>
+      ))}
     </div>
   );
 }

@@ -110,6 +110,8 @@ class Workspace {
     try {
       real = await fs.realpath(full);
     } catch (e) {
+      if (e.code === 'ENOENT' && !(await fs.stat(this.root).catch(() => null)))
+        throw Error('项目文件夹已被移动或删除');
       if (!create || e.code !== 'ENOENT') throw e;
       real = path.join(await fs.realpath(path.dirname(full)), path.basename(full));
     }
@@ -254,6 +256,77 @@ class Workspace {
       await atomicWrite(await this.aiHistoryPath(key), json);
       return true;
     });
+  }
+  // Whiteboard lessons, for the whole project: one file each, and a small index for the list.
+  boardPath(id) {
+    if (typeof id !== 'string' || !/^[\w-]{8,64}$/.test(id)) throw Error('无效的白板');
+    return path.join(this.meta, 'boards', `${id}.json`);
+  }
+  async boardIndex() {
+    try {
+      const list = JSON.parse(
+        await fs.readFile(path.join(this.meta, 'boards', 'index.json'), 'utf8'),
+      );
+      return Array.isArray(list) ? list : [];
+    } catch (e) {
+      if (e.code === 'ENOENT' || e instanceof SyntaxError) return [];
+      throw e;
+    }
+  }
+  async boards() {
+    return this.serial(() => this.boardIndex());
+  }
+  async board({ id }) {
+    return this.serial(async () => {
+      try {
+        const value = JSON.parse(await fs.readFile(this.boardPath(id), 'utf8'));
+        return value?.version === 1 ? value : null;
+      } catch (e) {
+        if (e.code === 'ENOENT' || e instanceof SyntaxError) return null;
+        throw e;
+      }
+    });
+  }
+  async saveBoard({ entry, data }) {
+    return this.serial(async () => {
+      if (data?.version !== 1 || data.id !== entry?.id) throw Error('无效的白板');
+      const json = JSON.stringify(data);
+      if (json.length > 60_000_000) throw Error('白板太大，保存不了');
+      await atomicWrite(this.boardPath(entry.id), json);
+      const list = (await this.boardIndex()).filter((b) => b.id !== entry.id);
+      list.unshift(entry);
+      await atomicWrite(path.join(this.meta, 'boards', 'index.json'), JSON.stringify(list));
+      return true;
+    });
+  }
+  async deleteBoard({ id }) {
+    return this.serial(async () => {
+      await fs.rm(this.boardPath(id), { force: true });
+      const list = (await this.boardIndex()).filter((b) => b.id !== id);
+      await atomicWrite(path.join(this.meta, 'boards', 'index.json'), JSON.stringify(list));
+      return true;
+    });
+  }
+  // Pictures in document notes (a whiteboard, a pasted screenshot): files beside the notes,
+  // which the notes refer to by name.
+  noteImagePath(name) {
+    if (typeof name !== 'string' || !/^[\w-]{1,80}\.(png|jpe?g|webp)$/.test(name))
+      throw Error('无效的图片');
+    if (!this.meta) throw Error('请先选择项目');
+    return path.join(this.meta, 'note-images', name);
+  }
+  async saveNoteImage({ data, prefix = 'img' }) {
+    const m = typeof data === 'string' && data.match(/^data:image\/(png|jpeg|webp);base64,(.+)$/);
+    if (!m || !/^[a-z]{1,12}$/.test(prefix)) throw Error('无效的图片');
+    const bytes = Buffer.from(m[2], 'base64');
+    if (bytes.length > 30_000_000) throw Error('图片太大，存不了');
+    const name = `${prefix}-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}.${m[1] === 'jpeg' ? 'jpg' : m[1]}`;
+    await atomicWrite(this.noteImagePath(name), bytes);
+    return name;
+  }
+  async deleteNoteImage({ name }) {
+    await fs.rm(this.noteImagePath(name), { force: true });
+    return true;
   }
   async saveSource({ path: relative, source, version }) {
     return this.serial(async () => {

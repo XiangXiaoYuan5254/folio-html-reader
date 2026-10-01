@@ -19,7 +19,10 @@ export type ReaderHandle = {
   ) => Promise<T>;
   // Resolves once the document has loaded and listens for messages.
   whenReady: () => Promise<void>;
+  // A box in window coordinates in the document's own viewport, if the frame shows its middle.
+  inFrame: (box: Box) => Box | null;
 };
+type Box = { left: number; top: number; right: number; bottom: number };
 type Pending = { resolve: (value: any) => void; reject: (e: Error) => void };
 export type ReaderProps = {
   url: string;
@@ -120,7 +123,20 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
     isReady.current
       ? Promise.resolve()
       : new Promise<void>((resolve) => readyWaiters.current.push(resolve));
-  useImperativeHandle(ref, () => ({ send, request, whenReady }), []);
+  function inFrame(box: Box) {
+    const f = frame.current?.getBoundingClientRect();
+    const x = (box.left + box.right) / 2;
+    const y = (box.top + box.bottom) / 2;
+    if (!f || x < f.left || x > f.right || y < f.top || y > f.bottom) return null;
+    const s = actualScale.current;
+    return {
+      left: (box.left - f.left) / s,
+      top: (box.top - f.top) / s,
+      right: (box.right - f.left) / s,
+      bottom: (box.bottom - f.top) / s,
+    };
+  }
+  useImperativeHandle(ref, () => ({ send, request, whenReady, inFrame }), []);
   useLayoutEffect(() => {
     const observer = new ResizeObserver(() => setWidth(paper.current?.clientWidth || 800));
     if (paper.current) {

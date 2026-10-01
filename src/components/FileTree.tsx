@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import type { FileNode, WorkspaceInfo } from '../types';
 import { IconButton } from './IconButton';
+import { atPointer, belowButton, PopupMenu, type MenuAnchor, type MenuItem } from './PopupMenu';
 import { fileManager, isMac, shortcut, trashName } from '../platform';
 import { SidebarResizer } from './SidebarResizer';
 import { importFiles, invoke } from '../api';
@@ -34,6 +35,7 @@ export function FileTree({
   onReadingDrag,
   onImported,
   onImportError,
+  boards,
   status,
 }: {
   workspace: WorkspaceInfo | null;
@@ -47,11 +49,14 @@ export function FileTree({
   onReadingDrag: (path: string | null) => void;
   onImported: (result: { workspace: WorkspaceInfo; imported: string[] }) => void;
   onImportError: (message: string) => void;
+  // The project's whiteboards, under its files.
+  boards?: ReactNode;
   status?: ReactNode;
 }) {
   const [query, setQuery] = useState('');
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [menu, setMenu] = useState<string | null>(null);
+  // The file or folder whose menu is open, or null for the project's root.
+  const [menu, setMenu] = useState<{ node: FileNode | null; at: MenuAnchor } | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
@@ -99,33 +104,36 @@ export function FileTree({
     folderHover.current = null;
   }
   useEffect(() => () => clearHover(), []);
-  // Any press outside the menu closes it, as does Escape or leaving the window (which
-  // is also how a click inside the reader's iframe shows up here).
-  useEffect(() => {
-    if (menu === null) return;
-    const dismiss = (e: PointerEvent) => {
-      const t = e.target as Element;
-      // The menu's own ⋯ button toggles it in its click handler.
-      if (
-        t.closest?.('.tree-menu') ||
-        t.closest?.('[data-menu-for]')?.getAttribute('data-menu-for') === menu
-      )
-        return;
-      setMenu(null);
+  // What a file or folder's menu offers; the project's root only takes pasted files.
+  function menuItems(n: FileNode | null): MenuItem[] {
+    const paste: MenuItem = {
+      label: n ? '粘贴文件' : '粘贴到工作空间',
+      hint: shortcut('mod', 'V'),
+      disabled: copying,
+      onSelect: () => void copyFiles(n ? (n.kind === 'folder' ? n.path : parentOf(n.path)) : ''),
     };
-    const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMenu(null);
-    };
-    const close = () => setMenu(null);
-    document.addEventListener('pointerdown', dismiss, true);
-    document.addEventListener('keydown', key, true);
-    window.addEventListener('blur', close);
-    return () => {
-      document.removeEventListener('pointerdown', dismiss, true);
-      document.removeEventListener('keydown', key, true);
-      window.removeEventListener('blur', close);
-    };
-  }, [menu]);
+    if (!n) return [paste];
+    const actions: [FileAction, string][] = [
+      ...(n.kind === 'folder'
+        ? ([
+            ['create-file', '新建 HTML'],
+            ['create-folder', '新建文件夹'],
+          ] as [FileAction, string][])
+        : []),
+      ['rename', '重命名'],
+      ['move', '移动到…'],
+      ['reveal', isMac ? '在 Finder 中显示' : '在资源管理器中显示'],
+      ['trash', `移到${trashName}`],
+    ];
+    return [
+      paste,
+      ...actions.map(([action, label]) => ({
+        label,
+        danger: action === 'trash',
+        onSelect: () => onAction(action, n.path),
+      })),
+    ];
+  }
   function endDrag() {
     onReadingDrag(null);
     dragSource.current = null;
@@ -220,6 +228,7 @@ export function FileTree({
     return nodes.filter(match).map((n) => (
       <div key={n.path}>
         <div
+          data-menu-open={menu?.node?.path === n.path || undefined}
           className={`tree-row ${n.kind} ${n.path === active ? 'selected' : ''} ${dragging === n.path ? 'dragging' : ''} ${n.kind === 'folder' && pasteDestination === n.path ? 'paste-destination' : ''} ${n.kind === 'folder' && dropTarget === n.path ? 'drop-target' : ''}`}
           onPointerDownCapture={() =>
             setPasteDestination(n.kind === 'folder' ? n.path : parentOf(n.path))
@@ -228,7 +237,7 @@ export function FileTree({
             e.preventDefault();
             setPasteDestination(n.kind === 'folder' ? n.path : parentOf(n.path));
             e.currentTarget.querySelector('button')?.focus();
-            setMenu(n.path);
+            setMenu({ node: n, at: atPointer(e) });
           }}
           data-file-path={n.path}
           style={{ paddingLeft: 12 + depth * 16 }}
@@ -286,46 +295,17 @@ export function FileTree({
           </button>
           <IconButton
             label={`${n.name} 的操作`}
-            data-menu-for={n.path}
-            onClick={() => setMenu(menu === n.path ? null : n.path)}
+            aria-haspopup="menu"
+            aria-expanded={menu?.node?.path === n.path}
+            onClick={(e) =>
+              setMenu(
+                menu?.node?.path === n.path ? null : { node: n, at: belowButton(e.currentTarget) },
+              )
+            }
           >
             <MoreHorizontal size={15} />
           </IconButton>
         </div>
-        {menu === n.path ? (
-          <div className="tree-menu">
-            <button
-              disabled={copying}
-              onClick={() => void copyFiles(n.kind === 'folder' ? n.path : parentOf(n.path))}
-            >
-              粘贴文件 <kbd>{shortcut('mod', 'V')}</kbd>
-            </button>
-            {(n.kind === 'folder'
-              ? [
-                  ['create-file', '新建 HTML'],
-                  ['create-folder', '新建文件夹'],
-                ]
-              : []
-            )
-              .concat([
-                ['rename', '重命名'],
-                ['move', '移动到…'],
-                ['reveal', isMac ? '在 Finder 中显示' : '在资源管理器中显示'],
-                ['trash', `移到${trashName}`],
-              ])
-              .map(([action, label]) => (
-                <button
-                  key={action}
-                  onClick={() => {
-                    onAction(action as FileAction, n.path);
-                    setMenu(null);
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
-          </div>
-        ) : null}
         {n.kind === 'folder' && !collapsed.has(n.path) ? rows(n.children || [], depth + 1) : null}
       </div>
     ));
@@ -372,7 +352,7 @@ export function FileTree({
           e.preventDefault();
           setPasteDestination('');
           e.currentTarget.focus();
-          setMenu('');
+          setMenu({ node: null, at: atPointer(e) });
         }}
         {...dropHandlers('')}
       >
@@ -393,13 +373,6 @@ export function FileTree({
           <Folder size={14} />
         </IconButton>
       </div>
-      {menu === '' && workspace ? (
-        <div className="tree-menu">
-          <button disabled={copying} onClick={() => void copyFiles('')}>
-            粘贴到工作空间 <kbd>{shortcut('mod', 'V')}</kbd>
-          </button>
-        </div>
-      ) : null}
       <div
         className={`file-tree ${dropTarget === '' ? 'drop-target' : ''}`}
         tabIndex={0}
@@ -415,7 +388,7 @@ export function FileTree({
             e.preventDefault();
             setPasteDestination('');
             e.currentTarget.focus();
-            setMenu('');
+            setMenu({ node: null, at: atPointer(e) });
           }
         }}
         role="navigation"
@@ -441,6 +414,15 @@ export function FileTree({
                   ? '拖到阅读区并排打开，或拖到文件夹移动'
                   : '拖到文件夹或项目名称移动'}
         </div>
+      ) : null}
+      {workspace ? boards : null}
+      {menu && workspace ? (
+        <PopupMenu
+          at={menu.at}
+          label={menu.node?.name || workspace.name}
+          items={menuItems(menu.node)}
+          onClose={() => setMenu(null)}
+        />
       ) : null}
       <div className="sidebar-footer">
         <div>

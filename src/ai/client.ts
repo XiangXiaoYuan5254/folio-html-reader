@@ -1,6 +1,14 @@
 import { useSyncExternalStore } from 'react';
 import { invoke, isDesktop, subscribe } from '../api';
-import type { AiConfig, AiPrefs, AiProvider, ChatResult, ToolDef, WireMessage } from './types';
+import type {
+  AiConfig,
+  AiPrefs,
+  AiProvider,
+  AiUse,
+  ChatResult,
+  ToolDef,
+  WireMessage,
+} from './types';
 
 // The settings every AI surface reads; the settings dialog replaces them after each change.
 let config: AiConfig | null = null;
@@ -35,6 +43,28 @@ export function useAiConfig() {
 export function activeProvider(c: AiConfig | null): AiProvider | undefined {
   return c?.providers.find((p) => p.id === c.active) || c?.providers[0];
 }
+// The parts of the app that can each have their own model and reasoning level.
+export const useInfo: Record<AiUse, { label: string; hint: string }> = {
+  chat: { label: '助手聊天', hint: '右侧助手的对话、总结、划重点、精读笔记和项目助手' },
+  explain: { label: '解释与提问', hint: '选中文字后的“解释”和“提问”' },
+  translate: { label: '翻译', hint: '选中文字后的“翻译”' },
+  board: { label: '白板讲解', hint: '页老师在白板上边写边讲' },
+  edit: { label: 'AI 修改源码', hint: '源码模式里描述想怎么改，由 AI 生成修改' },
+};
+// A part's own choice, while its service is still there; none means it follows chat.
+export function useChoice(c: AiConfig | null, use: AiUse) {
+  const choice = use === 'chat' ? undefined : c?.uses?.[use];
+  return choice && c?.providers.some((p) => p.id === choice.provider) ? choice : undefined;
+}
+// The service, model and reasoning level a part of the app asks with.
+export function providerFor(c: AiConfig | null, use: AiUse = 'chat'): AiProvider | undefined {
+  const choice = useChoice(c, use);
+  if (choice) {
+    const p = c!.providers.find((x) => x.id === choice.provider)!;
+    return { ...p, model: choice.model || p.model, effort: choice.effort };
+  }
+  return activeProvider(c);
+}
 export function providerReady(p: AiProvider | undefined, c: AiConfig | null) {
   if (!p || !p.model) return false;
   const preset = c?.presets.find((x) => x.id === p.preset);
@@ -58,28 +88,35 @@ export type ChatRequest = {
   system?: string;
   messages: WireMessage[];
   tools?: ToolDef[];
-  // Quick tasks (translate, explain) skip long reasoning where the service allows it.
-  fast?: boolean;
   json?: boolean;
   // Room for a long reply, e.g. a whole notes page.
   maxTokens?: number;
-  providerId?: string;
+  // The part of the app asking, which picks the service and model; chat by default.
+  use?: AiUse;
+  // Lets the model search the web when it decides to (Codex only).
+  web?: boolean;
 };
 export type ChatHandlers = {
   onText?: (delta: string) => void;
   onReasoning?: (delta: string) => void;
   onTool?: (name: string) => void;
+  onSearch?: (search: { id: string; title: string; done: boolean }) => void;
   signal?: AbortSignal;
 };
 export async function chat(request: ChatRequest, handlers: ChatHandlers = {}) {
   if (!isDesktop) throw Error('请在桌面版中使用 AI 功能');
   if (handlers.signal?.aborted) throw abortError();
   const requestId = crypto.randomUUID();
+  let streamed = '';
   const off = subscribe((e) => {
     if (e.type !== 'ai-delta' || e.requestId !== requestId) return;
-    if (e.text) handlers.onText?.(e.text);
+    if (e.text) {
+      streamed += e.text;
+      handlers.onText?.(e.text);
+    }
     if (e.reasoning) handlers.onReasoning?.(e.reasoning);
     if (e.tool) handlers.onTool?.(e.tool);
+    if (e.search) handlers.onSearch?.(e.search);
   });
   const cancel = () => void invoke('ai-cancel', { requestId }).catch(() => {});
   handlers.signal?.addEventListener('abort', cancel);
@@ -89,6 +126,9 @@ export async function chat(request: ChatRequest, handlers: ChatHandlers = {}) {
       ...request,
     });
     if (result.stopped || handlers.signal?.aborted) throw abortError();
+    // A reply that comes in one burst can get here before its last pieces do.
+    if (result.text?.length > streamed.length && result.text.startsWith(streamed))
+      handlers.onText?.(result.text.slice(streamed.length));
     return result;
   } catch (e) {
     if (isAbort(e)) throw e;

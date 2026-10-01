@@ -27,6 +27,10 @@ import { InkThumbnail } from './InkThumbnail';
 import { SidebarResizer } from './SidebarResizer';
 import { Markdown } from '../ai/Markdown';
 import { invoke, isDesktop } from '../api';
+import { ImageViewer } from './ImageViewer';
+import { isImageFile, prepareImage } from '../ai/images';
+// Pictures in the note: where one is shown from, and keeping a new one in the project.
+export type NoteImages = { url: (name: string) => string; save: (data: string) => Promise<string> };
 export type InspectorTab = 'annotations' | 'note' | 'outline' | 'assistant';
 export const annotationLabels: Record<string, string> = {
   highlight: '高亮',
@@ -60,6 +64,10 @@ export function Inspector(p: {
   onUpdate: (id: string, note: string) => void;
   onDelete: (id: string) => void;
   onNote: (s: string) => void;
+  // Opens a whiteboard a note links to.
+  onBoard: (id: string) => void;
+  noteImages?: NoteImages;
+  onError: (message: string) => void;
   onHeading: (id: string) => void;
   onExport: () => void;
   orphans: string[];
@@ -176,6 +184,9 @@ export function Inspector(p: {
           onChange={p.onNote}
           reveal={p.noteReveal}
           onRevealed={p.onNoteRevealed}
+          onBoard={p.onBoard}
+          images={p.noteImages}
+          onError={(message) => p.onError(message)}
         />
       ) : null}
       {p.tab === 'assistant' ? p.assistant : null}
@@ -214,7 +225,36 @@ function DocumentNote(p: {
   onChange: (note: string) => void;
   reveal: boolean;
   onRevealed: () => void;
+  onBoard: (id: string) => void;
+  images?: NoteImages;
+  onError: (message: string) => void;
 }) {
+  const [viewing, setViewing] = useState('');
+  const [adding, setAdding] = useState(false);
+  // Pasted or dropped pictures are kept in the project and written in where the cursor is.
+  async function addImages(files: File[]) {
+    const images = files.filter(isImageFile);
+    const box = input.current;
+    if (!images.length || !p.images || !box) return;
+    setAdding(true);
+    try {
+      const names = [];
+      for (const file of images) names.push(await p.images.save(await prepareImage(file)));
+      const text = names.map((n) => `![图片](note-image:${n})`).join('\n\n');
+      const { selectionStart: a, selectionEnd: b, value } = box;
+      const before = value.slice(0, a);
+      const insert =
+        (before && !before.endsWith('\n') ? '\n\n' : before && !before.endsWith('\n\n') ? '\n' : '') +
+        text +
+        '\n';
+      p.onChange(before + insert + value.slice(b));
+      requestAnimationFrame(() => box.setSelectionRange(a + insert.length, a + insert.length));
+    } catch (e) {
+      p.onError('图片没有存上：' + (e as Error).message);
+    } finally {
+      setAdding(false);
+    }
+  }
   // An empty note opens ready to write; otherwise the last chosen view.
   const [editing, setEditing] = useState(() => {
     if (!p.note.trim()) return true;
@@ -265,22 +305,45 @@ function DocumentNote(p: {
           aria-label="文档笔记"
           autoFocus={chosen.current}
           placeholder={
-            '读到这里，你想到了什么？\n\n记下总结、疑问，或下次要继续探索的线索。\n支持 Markdown 文本。'
+            '读到这里，你想到了什么？\n\n记下总结、疑问，或下次要继续探索的线索。\n支持 Markdown 和 $公式$' +
+            (p.images ? '，可以直接粘贴或拖入图片。' : '。')
           }
           value={p.note}
-          disabled={p.disabled}
+          disabled={p.disabled || adding}
           onChange={(e) => p.onChange(e.target.value)}
+          onPaste={(e) => {
+            const files = [...e.clipboardData.files];
+            if (!p.images || !files.some(isImageFile)) return;
+            e.preventDefault();
+            void addImages(files);
+          }}
+          onDragOver={(e) => {
+            if (p.images && e.dataTransfer.types.includes('Files')) e.preventDefault();
+          }}
+          onDrop={(e) => {
+            const files = [...e.dataTransfer.files];
+            if (!p.images || !files.some(isImageFile)) return;
+            e.preventDefault();
+            void addImages(files);
+          }}
         />
       ) : (
         <div className="note-preview" ref={view} aria-label="文档笔记预览">
           {p.note.trim() ? (
-            <Markdown text={p.note} onLink={openLink} />
+            <Markdown
+              text={p.note}
+              onLink={openLink}
+              onBoard={p.onBoard}
+              image={p.images?.url}
+              onImage={setViewing}
+            />
           ) : (
             <p className="note-preview-empty">还没有笔记，点「编辑」开始写。</p>
           )}
         </div>
       )}
-      <div className="note-count">{p.note.length} 字</div>
+      <div className="note-count">{adding ? '正在存图片…' : `${p.note.length} 字`}</div>
+      {viewing ? <ImageViewer src={viewing} onClose={() => setViewing('')} /> : null}
     </div>
   );
 }

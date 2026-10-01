@@ -424,6 +424,23 @@
   font-size: 10px;
   line-height: 16px;
 }
+/* The same picker outside the composer: a pill in the whiteboard and settings, a small chip
+   in the selection card and the source edit panel. */
+.assistant-model.model-pick,
+.assistant-model.model-pick-mini {
+  flex-shrink: 1;
+  max-width: 260px;
+}
+.assistant-model.model-pick {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 4px 8px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.assistant-model.model-pick-mini {
+  max-width: 190px;
+}
 .model-menu {
   position: fixed;
   z-index: 200;
@@ -680,6 +697,13 @@
   max-height: 220px;
   overflow: auto;
   line-height: 1.7;
+}
+.chat-draft {
+  margin: 6px 0 0;
+}
+.chat-draft div {
+  max-height: 280px;
+  color: var(--text-3);
 }
 .chat-waiting {
   display: flex;
@@ -1257,7 +1281,7 @@
 .ai-source-head strong {
   font-weight: 600;
 }
-.ai-source-head span {
+.ai-source-head > span {
   flex: 1;
   color: var(--muted);
   font-size: 11px;
@@ -1382,6 +1406,8 @@
   min-height: 0;
 }
 .ai-provider-list {
+  display: flex;
+  flex-direction: column;
   width: 200px;
   flex-shrink: 0;
   border-right: 1px solid var(--line);
@@ -1391,6 +1417,7 @@
 }
 .ai-provider-list > button {
   position: relative;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -1436,6 +1463,49 @@
   color: var(--accent);
   font-size: 12px;
   margin-top: 6px;
+}
+.ai-provider-list .ai-profile-link {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+  /* Kept at the bottom of the list, apart from the services. */
+  margin-top: auto;
+}
+.ai-provider-list .ai-profile-link + .ai-profile-link {
+  margin-top: 0;
+}
+.ai-provider-list .ai-profile-link:disabled {
+  opacity: 0.5;
+}
+.ai-uses {
+  flex: 1;
+  overflow: auto;
+  padding: 18px 24px;
+}
+.ai-use-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line-soft);
+}
+.ai-use-row > div {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.ai-use-row strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.ai-use-row > div > span {
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--muted);
 }
 .ai-settings-main {
   flex: 1;
@@ -1523,7 +1593,8 @@
   color: var(--text-2);
 }
 .ai-provider-form input,
-.ai-provider-form select {
+.ai-provider-form select,
+.ai-provider-form textarea {
   width: 100%;
   border: 1px solid var(--line-strong);
   border-radius: 6px;
@@ -1532,8 +1603,14 @@
   background: var(--surface);
   outline: none;
 }
+.ai-provider-form textarea {
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.7;
+}
 .ai-provider-form input:focus,
-.ai-provider-form select:focus {
+.ai-provider-form select:focus,
+.ai-provider-form textarea:focus {
   border-color: var(--accent-line-strong);
 }
 .ai-link {
@@ -1886,6 +1963,30 @@
   background: #fff;
   box-shadow: 0 18px 60px #0006;
 }
+.image-viewer.tall {
+  place-items: start center;
+  overflow: auto;
+}
+.image-viewer.tall img {
+  max-height: none;
+  max-width: min(100%, 1100px);
+}
+.ai-markdown .md-math {
+  margin: 8px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.ai-markdown .md-math .katex-display {
+  margin: 0;
+}
+.ai-markdown .md-image {
+  display: block;
+  max-width: 100%;
+  margin: 8px 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: zoom-in;
+}
 .region-capture {
   position: fixed;
   inset: 0;
@@ -1927,5 +2028,169 @@
   background: #121c24d1;
   color: #fff;
   font-size: 12px;
+  white-space: nowrap;
   pointer-events: none;
+}
+
+/* The project's boards in the file sidebar, under the files. */
+.board-shelf {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin: 6px -4px 0;
+  padding: 6px 4px 0;
+  border-top: 1px solid var(--line);
+}
+.board-shelf.open {
+  max-height: 42%;
+}
+.board-shelf-resizer {
+  position: absolute;
+  top: -5px;
+  left: 0;
+  right: 0;
+  height: 9px;
+  cursor: row-resize;
+  touch-action: none;
+  z-index: 2;
+}
+.board-shelf-resizer::after {
+  content: '';
+  position: absolute;
+  inset: 3px 0;
+  background: transparent;
+  transition: background 0.12s;
+}
+.board-shelf-resizer:hover::after,
+.board-shelf-resizer:focus-visible::after,
+.board-shelf-resizer.dragging::after {
+  background: var(--accent);
+}
+.board-shelf-resizer:focus-visible {
+  outline: none;
+}
+.sidebar-resize-shield.rows {
+  cursor: row-resize;
+}
+.board-shelf-head {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding-right: 3px;
+}
+.board-shelf-head .icon-button {
+  width: 24px;
+  height: 25px;
+}
+.board-shelf-toggle {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  height: 100%;
+  padding: 0 7px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--text-2);
+  text-align: left;
+}
+.board-shelf-toggle:hover {
+  background: var(--hover);
+}
+.board-shelf-icon {
+  color: var(--ai);
+}
+.board-shelf-toggle em {
+  font-style: normal;
+  font-weight: 500;
+  font-size: 10.5px;
+  color: var(--faint);
+}
+.board-shelf-items {
+  overflow: auto;
+  min-height: 0;
+  padding-bottom: 4px;
+}
+.board-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 2px 0;
+  border-radius: 5px;
+}
+.board-row:hover {
+  background: var(--hover);
+}
+.board-row[data-current] {
+  background: var(--ai-soft);
+}
+.board-row[data-current]:before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--ai);
+}
+.board-row-open {
+  flex: 1;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 6px 4px 6px 27px;
+  text-align: left;
+  background: transparent !important;
+}
+.board-row-open strong,
+.board-row-open span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.board-row-open strong {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.board-row-open span {
+  font-size: 10px;
+  color: var(--faint);
+}
+.board-row[data-here] .board-row-open span {
+  color: var(--ai-text);
+}
+.board-row > .icon-button {
+  opacity: 0;
+  width: 21px;
+  height: 27px;
+  margin-right: 3px;
+}
+.board-row:hover > .icon-button,
+.board-row:focus-within > .icon-button,
+.board-row[data-menu-open] > .icon-button {
+  opacity: 1;
+}
+.board-row[data-menu-open] {
+  background: var(--hover);
+}
+.board-shelf-empty {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 4px 8px 10px 27px;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--faint);
+}
+.board-shelf-empty.error {
+  color: var(--danger);
+}
+.board-link {
+  color: var(--ai-text);
 }

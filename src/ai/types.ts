@@ -8,7 +8,7 @@ export type AiPreset = {
   models: string[];
   context: number;
   thinking: string;
-  // Reasoning levels offered in the chat box; the first is used for quick tasks.
+  // Reasoning levels to pick from; empty means the service has none to pick.
   efforts: string[];
   keyUrl?: string;
   noKey?: boolean;
@@ -32,10 +32,17 @@ export type AiPrefs = {
   consented?: string[];
   disabledRoots?: string[];
   language?: 'auto' | 'zh' | 'en';
+  // The reader in their own words, for pitching 精读笔记 at the right depth.
+  profile?: string;
 };
+// The parts of the app that ask the AI. Chat uses the active service; the others can each
+// have their own service, model and reasoning level, and follow chat when they don't.
+export type AiUse = 'chat' | 'explain' | 'translate' | 'board' | 'edit';
+export type AiUseChoice = { provider: string; model: string; effort: string };
 export type AiConfig = {
   providers: AiProvider[];
   active: string;
+  uses: Partial<Record<AiUse, AiUseChoice>>;
   prefs: AiPrefs;
   presets: AiPreset[];
 };
@@ -126,6 +133,8 @@ export type ChatMessage = {
   // Pictures sent with a question (pasted, dropped, or a region of the page), as data: URLs.
   images?: string[];
   reasoning?: string;
+  // What a long piece (a 精读笔记 page) has written so far, shown while it works; not saved.
+  draft?: string;
   status?: 'streaming' | 'done' | 'error' | 'stopped';
   error?: string;
   model?: string;
@@ -137,6 +146,8 @@ export type ChatMessage = {
   cites?: Record<string, boolean>;
   // Agent replies interleave text with tool steps.
   parts?: MessagePart[];
+  // Web searches a reply about the document ran, shown above it.
+  searches?: AgentStep[];
   // What the reply can be turned into, e.g. appended to the document note.
   canSaveNote?: boolean;
   // The document whose note this reply was appended to.

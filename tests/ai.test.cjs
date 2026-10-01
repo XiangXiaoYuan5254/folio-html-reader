@@ -101,7 +101,6 @@ test('OpenAI-compatible streaming: text, reasoning, tool calls and usage', async
         system: '系统',
         messages: [{ role: 'user', content: '问题' }],
         tools: [{ name: 'search', description: '', parameters: { type: 'object' } }],
-        fast: true,
       },
     });
     assert.equal(result.text, '你好，世界');
@@ -118,8 +117,8 @@ test('OpenAI-compatible streaming: text, reasoning, tool calls and usage', async
     assert.equal(sent.body.model, 'mock-model');
     assert.equal(sent.body.stream, true);
     assert.deepEqual(sent.body.messages[0], { role: 'system', content: '系统' });
-    // Quick tasks switch DeepSeek's thinking off.
-    assert.deepEqual(sent.body.thinking, { type: 'disabled' });
+    // 自动 sends no level: the service decides.
+    assert.equal(sent.body.thinking, undefined);
     assert.equal(sent.body.tools[0].function.name, 'search');
   } finally {
     await server.close();
@@ -198,28 +197,23 @@ test('message conversion keeps tool turns and DeepSeek reasoning', () => {
 
 test('reasoning levels follow each service', () => {
   const p = (preset, effort = '') => ({ preset, effort });
-  // Quick tasks use the fastest level; the rest use the level picked in the chat box.
-  assert.deepEqual(providers.effortParams(p('deepseek'), true), { thinking: { type: 'disabled' } });
-  assert.deepEqual(providers.effortParams(p('deepseek'), false), {});
-  assert.deepEqual(providers.effortParams(p('deepseek', 'high'), false), {
-    thinking: { type: 'enabled' },
-    reasoning_effort: 'high',
-  });
-  assert.deepEqual(providers.effortParams(p('deepseek', 'high'), true), {
+  // Every request uses the level picked, never a lower one; 自动 leaves it to the service.
+  assert.deepEqual(providers.effortParams(p('deepseek')), {});
+  assert.deepEqual(providers.effortParams(p('deepseek', 'off')), {
     thinking: { type: 'disabled' },
   });
-  assert.deepEqual(providers.effortParams(p('zhipu', 'on'), false), {
+  assert.deepEqual(providers.effortParams(p('deepseek', 'high')), {
     thinking: { type: 'enabled' },
-  });
-  assert.deepEqual(providers.effortParams(p('qwen'), true), { enable_thinking: false });
-  assert.deepEqual(providers.effortParams(p('qwen', 'on'), false), { enable_thinking: true });
-  assert.deepEqual(providers.effortParams(p('openai'), true), { reasoning_effort: 'low' });
-  assert.deepEqual(providers.effortParams(p('openai', 'high'), false), {
     reasoning_effort: 'high',
   });
+  assert.deepEqual(providers.effortParams(p('zhipu', 'on')), { thinking: { type: 'enabled' } });
+  assert.deepEqual(providers.effortParams(p('qwen')), {});
+  assert.deepEqual(providers.effortParams(p('qwen', 'on')), { enable_thinking: true });
+  assert.deepEqual(providers.effortParams(p('openai')), {});
+  assert.deepEqual(providers.effortParams(p('openai', 'high')), { reasoning_effort: 'high' });
   // A level the service doesn't have is ignored.
-  assert.deepEqual(providers.effortParams(p('openai', 'max'), false), {});
-  assert.deepEqual(providers.effortParams(p('moonshot'), true), {});
+  assert.deepEqual(providers.effortParams(p('openai', 'max')), {});
+  assert.deepEqual(providers.effortParams(p('moonshot', 'high')), {});
 });
 
 test('<think> tags from local models become reasoning', () => {
@@ -590,7 +584,7 @@ test(
         ['gpt-a', 'gpt-b'],
       );
       const deltas = [];
-      const provider = { kind: 'codex', model: 'gpt-a', thinking: 'auto' };
+      const provider = { kind: 'codex', model: 'gpt-a', thinking: 'auto', effort: 'high' };
       const answer = await codex.streamCodex({
         provider,
         version: '1.0',
@@ -598,7 +592,6 @@ test(
         request: {
           system: '阅读助手说明',
           messages: [{ role: 'user', content: '你好' }],
-          fast: true,
         },
       });
       assert.equal(answer.text, '你好，世界');
@@ -645,7 +638,8 @@ test(
       assert.equal(start.params.sandbox, 'read-only');
       assert.equal(start.params.approvalPolicy, 'never');
       assert.equal(start.params.ephemeral, true);
-      assert.equal(lines.find((m) => m.method === 'turn/start').params.effort, 'low');
+      // The level picked, as picked.
+      assert.equal(lines.find((m) => m.method === 'turn/start').params.effort, 'high');
       const toolStart = lines.filter((m) => m.method === 'thread/start')[1];
       assert.equal(toolStart.params.dynamicTools[0].name, 'read_document');
       const reply = lines.find((m) => m.id === 9001);

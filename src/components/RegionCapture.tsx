@@ -13,7 +13,9 @@ const frames = (n: number) =>
 // Drag a rectangle anywhere in the window to take a picture of it: a figure, a formula,
 // a scanned page. The overlay hides itself before the shot, so it isn't in the picture.
 export function RegionCapture(p: {
-  onCapture: (png: string) => void;
+  hint?: string;
+  // The picture, and the box it was taken of in window coordinates.
+  onCapture: (png: string, box: { left: number; top: number; right: number; bottom: number }) => void;
   onError: (message: string) => void;
   onCancel: () => void;
 }) {
@@ -44,7 +46,12 @@ export function RegionCapture(p: {
     await frames(2);
     await new Promise((resolve) => setTimeout(resolve, 60));
     try {
-      p.onCapture(await invoke<string>('capture-region', r));
+      p.onCapture(await invoke<string>('capture-region', r), {
+        left: r.x,
+        top: r.y,
+        right: r.x + r.width,
+        bottom: r.y + r.height,
+      });
     } catch (e) {
       p.onError(errorText(e));
     }
@@ -90,7 +97,9 @@ export function RegionCapture(p: {
           </span>
         </div>
       ) : null}
-      {!start ? <div className="region-capture-hint">拖动框选要问 AI 的区域 · Esc 取消</div> : null}
+      {!start ? (
+        <div className="region-capture-hint">{p.hint || '拖动框选要问 AI 的区域 · Esc 取消'}</div>
+      ) : null}
     </div>,
     document.body,
   );

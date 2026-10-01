@@ -181,5 +181,7 @@ export default defineConfig({
       },
     },
   ],
+  // Fonts stay files: the app's content policy doesn't load fonts from data: URLs.
+  build: { assetsInlineLimit: (file) => (/\.(woff2?|ttf)$/.test(file) ? false : undefined) },
   server: { host: '127.0.0.1', port: 5173, strictPort: true },
 });

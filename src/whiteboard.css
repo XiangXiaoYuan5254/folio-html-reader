@@ -1,0 +1,943 @@
+/* The whiteboard teacher. Board colors come from the --board-* tokens in themes.css:
+   a whiteboard in light themes, a blackboard in dark ones. */
+
+.whiteboard-backdrop {
+  z-index: 95;
+}
+.whiteboard {
+  --board-font: 'Hannotate SC', 'HanziPen SC', 'Kaiti SC', 'STKaiti', 'KaiTi', '楷体', cursive;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(1200px, calc(100vw - 40px));
+  height: calc(100vh - 40px);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 15px 65px rgb(var(--shadow-rgb) / calc(0.188 * var(--shadow-k)));
+  overflow: hidden;
+  outline: none;
+}
+.whiteboard-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px 8px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.whiteboard-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.whiteboard-head h2 > svg {
+  color: var(--ai);
+}
+.whiteboard-note {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 5px 10px;
+  border-radius: 7px;
+  font-size: 12px;
+  color: var(--ai-text);
+  background: var(--ai-soft);
+}
+.whiteboard-note:hover:not(:disabled) {
+  background: var(--ai-soft-2);
+}
+.whiteboard-note:disabled {
+  opacity: 0.5;
+}
+.whiteboard-quote {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-4);
+}
+
+.whiteboard-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: var(--board-bg);
+}
+.whiteboard-viewport {
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.wb-canvas {
+  position: relative;
+  width: 960px;
+  margin: 0 auto;
+  padding: 36px 0 180px;
+  box-sizing: border-box;
+  background-image: radial-gradient(var(--board-grid) 1.2px, transparent 1.4px);
+  background-size: 26px 26px;
+  font-family: var(--board-font);
+  color: var(--board-ink);
+  cursor: crosshair;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+.wb-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 960px;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.wb-under {
+  z-index: 0;
+}
+.wb-over {
+  z-index: 2;
+}
+.wb-main {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  width: 640px;
+  margin-left: 64px;
+}
+
+.wb-block {
+  margin: 0;
+  max-width: 100%;
+}
+.wb-title {
+  margin-top: 8px;
+  font-size: 31px;
+  font-weight: 400;
+  line-height: 1.35;
+}
+.wb-text {
+  font-size: 24px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+.wb-code {
+  padding: 10px 20px 10px 4px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--board-ink) 12%, transparent);
+  background: color-mix(in srgb, var(--board-ink) 4%, transparent);
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 16px;
+  line-height: 1.7;
+  white-space: pre;
+  max-width: none;
+}
+.wb-code-no {
+  display: inline-block;
+  width: 2.2em;
+  margin-right: 14px;
+  text-align: right;
+  font-size: 0.85em;
+  color: var(--board-muted);
+}
+.wb-tok-keyword {
+  color: var(--board-blue);
+}
+.wb-tok-string {
+  color: var(--board-green);
+}
+.wb-tok-number {
+  color: var(--board-orange);
+}
+.wb-tok-comment {
+  color: var(--board-muted);
+  font-style: italic;
+}
+.wb-quote {
+  padding: 4px 0 4px 16px;
+  border-left: 3px solid var(--board-muted);
+  font-family: 'Songti SC', 'STSong', 'SimSun', serif;
+  font-size: 18px;
+  line-height: 1.75;
+  color: var(--board-ink-2);
+}
+.wb-math {
+  padding-left: 22px;
+  font-size: 23px;
+  /* Backwards only: once written, nothing of it is clipped. */
+  animation: wb-wipe var(--dur) linear backwards;
+}
+.wb-math .katex-display {
+  margin: 4px 0;
+  text-align: left;
+}
+.wb-math .katex-display > .katex {
+  text-align: left;
+}
+.wb-inline-math .katex {
+  font-size: 1.02em;
+}
+.wb-flow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 4px;
+  padding: 6px 0;
+}
+.wb-flow-box {
+  padding: 7px 14px;
+  border: 2.5px solid currentColor;
+  border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
+  font-size: 20px;
+  line-height: 1.4;
+  animation: wb-ink 260ms ease-out both;
+  animation-delay: var(--d, 0ms);
+}
+.wb-flow-arrow {
+  width: 44px;
+  height: 20px;
+  overflow: visible;
+}
+.wb-asked {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  align-self: stretch;
+  margin: 22px 0 2px;
+  font-size: 16px;
+  color: var(--board-user);
+  animation: wb-ink 300ms ease-out both;
+}
+.wb-asked::before,
+.wb-asked::after {
+  content: '';
+  flex: 1;
+  border-top: 2px dashed currentColor;
+  opacity: 0.35;
+}
+.wb-asked span {
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wb-picture {
+  margin: 0 0 6px;
+  animation: wb-ink 400ms ease-out both;
+}
+.wb-picture img {
+  display: block;
+  max-width: 640px;
+  max-height: 420px;
+  border-radius: 6px;
+  box-shadow:
+    0 0 0 1px var(--board-grid),
+    0 6px 20px rgb(0 0 0 / 0.12);
+  -webkit-user-drag: none;
+}
+.wb-figure {
+  display: block;
+  margin: 4px 0;
+  overflow: visible;
+}
+.wb-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+.wb-fig-draw {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1 1;
+  stroke-dashoffset: 1;
+  fill-opacity: 0;
+  animation:
+    wb-draw var(--dur, 400ms) cubic-bezier(0.45, 0.05, 0.35, 1) forwards,
+    wb-fill 300ms ease-out forwards;
+  animation-delay: var(--delay, 0ms), calc(var(--delay, 0ms) + var(--dur, 400ms));
+}
+@keyframes wb-fill {
+  to {
+    fill-opacity: var(--fo, 1);
+  }
+}
+.wb-fig-fade,
+.wb-fig-text {
+  opacity: 0;
+  animation: wb-fade var(--dur, 300ms) ease-out forwards;
+  animation-delay: var(--delay, 0ms);
+}
+@keyframes wb-fade {
+  to {
+    opacity: var(--op, 1);
+  }
+}
+.wb-fig-text {
+  font-family: var(--board-font);
+  stroke: none;
+}
+.wb-area {
+  position: absolute;
+  pointer-events: none;
+}
+.wb-note {
+  position: absolute;
+  left: 736px;
+  z-index: 1;
+  width: 204px;
+  font-size: 18px;
+  line-height: 1.45;
+}
+
+/* Writing appears a character at a time; strokes draw along their length. */
+.wb-atom {
+  animation: wb-ink 160ms ease-out both;
+  animation-delay: var(--d, 0ms);
+}
+@keyframes wb-ink {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes wb-wipe {
+  from {
+    clip-path: inset(-20% 100% -20% 0);
+  }
+  to {
+    clip-path: inset(-20% -2% -20% 0);
+  }
+}
+.wb-stroke {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1 1;
+  stroke-dashoffset: 1;
+  animation: wb-draw var(--dur, 600ms) cubic-bezier(0.45, 0.05, 0.35, 1) forwards;
+  animation-delay: var(--delay, 0ms);
+}
+@keyframes wb-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.wb-arrow-head {
+  animation-delay: calc(var(--dur, 600ms) * 0.85);
+  animation-duration: 180ms;
+}
+.wb-leader {
+  stroke-width: 2;
+  opacity: 0.8;
+}
+.wb-marker {
+  stroke-linecap: butt;
+  opacity: var(--board-marker-opacity);
+}
+.wb-pointer {
+  opacity: calc(var(--board-marker-opacity) * 1.3);
+}
+.wb-arrow-label {
+  font-family: var(--board-font);
+  font-size: 17px;
+  fill: currentColor;
+  paint-order: stroke;
+  stroke: var(--board-bg);
+  stroke-width: 5px;
+  stroke-linejoin: round;
+  animation: wb-ink 300ms ease-out both;
+  animation-delay: var(--dur, 600ms);
+}
+.wb-user {
+  fill: none;
+  stroke: var(--board-user);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.wb-user[data-sent] {
+  opacity: 0.45;
+}
+.whiteboard[data-paused] .wb-canvas *,
+.whiteboard[data-paused] .wb-caption * {
+  animation-play-state: paused !important;
+}
+/* The teacher's pencil, held like a pointer (tip up-left, body down-right, away from what is
+   already written): its tip is where it is writing (BoardPen.tsx). */
+.wb-pen {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 3;
+  pointer-events: none;
+  will-change: transform;
+  transition: opacity 450ms ease;
+}
+.wb-pen svg {
+  display: block;
+  margin: -7.5px 0 0 -7.5px;
+  filter: drop-shadow(2px 5px 3px rgb(0 0 0 / 0.22));
+}
+.wb-pen[data-state='hidden'],
+.wb-pen[data-off] {
+  opacity: 0;
+}
+.wb-pen[data-state='away'] {
+  opacity: 0.4;
+}
+@media (prefers-reduced-motion: reduce) {
+  .wb-pen {
+    display: none;
+  }
+  .wb-atom,
+  .wb-stroke,
+  .wb-math,
+  .wb-flow-box,
+  .wb-fig-draw,
+  .wb-fig-fade,
+  .wb-fig-text {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+  }
+}
+
+.wb-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-family: var(--board-font);
+  font-size: 22px;
+  color: var(--board-muted);
+  pointer-events: none;
+}
+.wb-paused {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: var(--raised);
+  border: 1px solid var(--ai-line);
+  box-shadow: 0 4px 16px rgb(var(--shadow-rgb) / calc(0.1 * var(--shadow-k)));
+  font-size: 12px;
+  color: var(--ai-text);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.whiteboard-foot {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  padding: 10px 14px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+.wb-caption {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 46px;
+}
+.wb-avatar {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--ai-soft);
+  color: var(--ai);
+}
+.wb-caption-body {
+  flex: 1;
+  min-width: 0;
+  padding-top: 4px;
+}
+.wb-caption-body p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+}
+.wb-caption-text {
+  color: var(--text-strong);
+}
+.wb-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-4);
+}
+.wb-status-time {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+.wb-status + .wb-caption-text {
+  margin-top: 2px;
+}
+.wb-error {
+  color: var(--danger);
+}
+.wb-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.wb-speed {
+  min-width: 36px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+.wb-speed:hover {
+  background: var(--hover);
+}
+.wb-retry {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: 4px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--ai-text);
+  background: var(--ai-soft);
+}
+.wb-retry:hover {
+  background: var(--ai-soft-2);
+}
+.wb-ask {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.wb-ask input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+}
+.wb-ask input:focus {
+  border-color: var(--ai-line-strong);
+}
+.wb-send {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--ai-fill);
+  color: var(--on-ai);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.wb-send:hover:not(:disabled) {
+  background: var(--ai-fill-hover);
+}
+.wb-send:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.wb-pic {
+  position: relative;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+}
+.wb-pic img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+}
+.wb-pic button {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-2);
+  color: var(--surface);
+}
+.wb-marks {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 3px 3px 10px;
+  border-radius: 999px;
+  background: var(--ai-soft);
+  color: var(--ai-text);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.wb-marks button {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: inherit;
+}
+.wb-marks button:hover {
+  background: var(--ai-soft-2);
+}
+.wb-log {
+  position: absolute;
+  right: 14px;
+  bottom: calc(100% + 8px);
+  z-index: 3;
+  width: min(380px, calc(100% - 28px));
+  max-height: 50vh;
+  overflow: auto;
+  padding: 12px 14px 4px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 10px 40px rgb(var(--shadow-rgb) / calc(0.16 * var(--shadow-k)));
+}
+.wb-log p {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text);
+}
+.wb-log b {
+  margin-right: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-4);
+}
+.wb-log p[data-who='student'] {
+  color: var(--ai-text);
+}
+
+/* How the teacher talks: the button in the controls, and its panel above the footer. */
+.wb-voice-button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 4px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.wb-voice-button:hover,
+.wb-voice-button[aria-expanded='true'] {
+  background: var(--hover);
+}
+.wb-voice-button:not([data-mode='off']) {
+  border-color: var(--ai-line);
+  background: var(--ai-soft);
+  color: var(--ai-text);
+}
+.wb-voice-button:not([data-mode='off']):hover {
+  background: var(--ai-soft-2);
+}
+.wb-voice-panel {
+  position: absolute;
+  right: 14px;
+  bottom: calc(100% + 8px);
+  z-index: 4;
+  width: min(320px, calc(100% - 28px));
+  padding: 12px 10px 10px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 10px 40px rgb(var(--shadow-rgb) / calc(0.16 * var(--shadow-k)));
+}
+.wb-voice-panel h4 {
+  margin: 0 6px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-4);
+}
+.wb-voice-mode {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 8px;
+  border-radius: 7px;
+  text-align: left;
+  color: var(--text-3);
+}
+.wb-voice-mode:hover:not(:disabled) {
+  background: var(--hover);
+}
+.wb-voice-mode[aria-checked='true'] {
+  color: var(--ai-text);
+}
+.wb-voice-mode:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.wb-voice-mode > span {
+  flex: 1;
+  display: grid;
+  gap: 1px;
+}
+.wb-voice-mode b {
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text-strong);
+}
+.wb-voice-mode small {
+  font-size: 11.5px;
+  color: var(--text-4);
+}
+.wb-voice-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 8px 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--text-3);
+}
+.wb-voice-pick select {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+}
+.wb-voice-style {
+  display: flex;
+  gap: 2px;
+  margin: 8px 8px 0;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--hover);
+}
+.wb-voice-style button {
+  flex: 1;
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.wb-voice-style button[aria-checked='true'] {
+  background: var(--raised);
+  color: var(--ai-text);
+  box-shadow: 0 1px 2px rgb(var(--shadow-rgb) / calc(0.12 * var(--shadow-k)));
+}
+.wb-voice-note {
+  margin: 8px 8px 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-4);
+}
+
+/* Listening, in a voice conversation. */
+.wb-listen {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+}
+.wb-mic {
+  position: relative;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--ai-soft);
+  color: var(--ai);
+}
+.wb-mic > svg {
+  position: relative;
+}
+.wb-mic[aria-pressed='false'],
+.wb-listen[data-status='off'] .wb-mic {
+  background: var(--fill);
+  color: var(--text-4);
+}
+/* A ring that swells with how loud the microphone hears the student. */
+.wb-mic-level {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--ai-soft-2);
+  transform: scale(calc(1 + var(--level, 0) * 0.45));
+  opacity: 0;
+  transition:
+    transform 90ms linear,
+    opacity 200ms;
+}
+.wb-listen[data-talking] .wb-mic-level {
+  opacity: 1;
+}
+.wb-heard {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  color: var(--ai-text);
+}
+.wb-heard b {
+  margin-right: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-4);
+}
+.wb-heard-note {
+  font-size: 12.5px;
+  color: var(--text-4);
+}
+
+.board-list-backdrop {
+  z-index: 97;
+}
+.board-list {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, calc(100vw - 40px));
+  max-height: min(640px, calc(100vh - 80px));
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 15px 65px rgb(var(--shadow-rgb) / calc(0.188 * var(--shadow-k)));
+  overflow: hidden;
+}
+.board-list-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 10px 10px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.board-list-head h2 {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.board-list-head h2 > svg {
+  color: var(--ai);
+}
+.board-list-new {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 7px;
+  font-size: 12px;
+  color: var(--ai-text);
+  background: var(--ai-soft);
+}
+.board-list-new:hover {
+  background: var(--ai-soft-2);
+}
+.board-list-items {
+  overflow: auto;
+  padding: 8px;
+}
+.board-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 8px;
+}
+.board-item:hover,
+.board-item[data-current] {
+  background: var(--hover);
+}
+.board-item-open {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 9px 12px;
+  text-align: left;
+}
+.board-item-open strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text-strong);
+}
+.board-item-open span {
+  font-size: 11.5px;
+  color: var(--text-4);
+}
+.board-item-delete {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  min-width: 30px;
+  height: 30px;
+  margin-right: 6px;
+  padding: 0 8px;
+  border-radius: 7px;
+  font-size: 12px;
+  color: var(--text-4);
+}
+.board-item-delete:hover {
+  background: var(--fill);
+  color: var(--danger);
+}
+.board-item-delete.confirm {
+  color: var(--on-accent);
+  background: var(--danger);
+}
+.board-list-empty,
+.board-list-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 18px 12px;
+  font-size: 12.5px;
+  color: var(--text-4);
+}
+.board-list-error {
+  color: var(--danger);
+}

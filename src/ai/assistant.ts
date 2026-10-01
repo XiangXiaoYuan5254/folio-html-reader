@@ -6,6 +6,7 @@ import type {
   AgentStep,
   AiConfig,
   AiProvider,
+  AiUse,
   ChatHistory,
   ChatMessage,
   ChatThread,
@@ -17,12 +18,12 @@ import type {
   WireMessage,
 } from './types';
 import {
-  activeProvider,
   chat,
   errorText,
   isAbort,
   loadAiConfig,
   parseJson,
+  providerFor,
   providerReady,
   savePrefs,
 } from './client';
@@ -58,9 +59,11 @@ import { agentTools, prepareTool, writeTools } from './agent-tools';
 import {
   cleanCompanion,
   companionChunkPrompt,
+  companionContinue,
   companionPage,
   companionPrompt,
   companionSystem,
+  joinContinuation,
 } from './companion';
 import { citations, citeKey, plainCites, plainText } from './plain';
 export { citations, citeKey, plainCites, plainText } from './plain';
@@ -262,7 +265,7 @@ export class Assistant {
       .slice(0, 60)
       .map((t) => ({
         ...t,
-        messages: t.messages.map(({ status, ...m }) => ({
+        messages: t.messages.map(({ status, draft, ...m }) => ({
           ...m,
           status: status === 'streaming' ? ('stopped' as const) : status,
         })),
@@ -389,9 +392,9 @@ export class Assistant {
     }, true);
   }
   // Settings, consent and per-project switch, checked before anything is sent.
-  async provider(): Promise<{ provider: AiProvider; config: AiConfig }> {
+  async provider(use: AiUse = 'chat'): Promise<{ provider: AiProvider; config: AiConfig }> {
     const config = await loadAiConfig();
-    const provider = activeProvider(config);
+    const provider = providerFor(config, use);
     if (!config || !providerReady(provider, config)) {
       this.host.openSettings();
       throw Error('请先在 AI 设置中添加服务、填写 API Key 并选择模型');
@@ -461,7 +464,8 @@ export class Assistant {
       messages.push(
         userTurn(selection ? selectionPrompt(selection, asked) : asked, images, vision),
       );
-      return { system, messages };
+      // Questions about the document may need the web too, which the model decides.
+      return { system, messages, web: true };
     });
   }
   private async readingSystem(
@@ -499,8 +503,8 @@ export class Assistant {
     build: (
       provider: AiProvider,
       config: AiConfig,
-    ) => Promise<{ system: string; messages: WireMessage[] } | string>,
-    options: { canSaveNote?: boolean; fast?: boolean } = {},
+    ) => Promise<{ system: string; messages: WireMessage[]; web?: boolean } | string>,
+    options: { canSaveNote?: boolean } = {},
   ) {
     const patch = (fn: (m: ChatMessage) => ChatMessage) =>
       this.patchMessage(ctx.scope, threadId, answerId, fn);
@@ -512,14 +516,28 @@ export class Assistant {
         return;
       }
       if (signal.aborted) throw new DOMException('已停止', 'AbortError');
-      const result = await chat(
-        { ...request, fast: options.fast },
-        {
-          signal,
-          onText: (d) => patch((m) => ({ ...m, text: m.text + d })),
-          onReasoning: (d) => patch((m) => ({ ...m, reasoning: (m.reasoning || '') + d })),
-        },
-      );
+      const result = await chat(request, {
+        signal,
+        onText: (d) => patch((m) => ({ ...m, text: m.text + d })),
+        onReasoning: (d) => patch((m) => ({ ...m, reasoning: (m.reasoning || '') + d })),
+        // Each search it ran, shown above the answer as a step.
+        onSearch: ({ id, title, done }) =>
+          patch((m) => {
+            const step = {
+              id: `web-${id}`,
+              tool: 'web_search',
+              title,
+              status: done ? 'done' : 'running',
+            } as const;
+            const searches = m.searches || [];
+            return {
+              ...m,
+              searches: searches.some((s) => s.id === step.id)
+                ? searches.map((s) => (s.id === step.id ? step : s))
+                : [...searches, step],
+            };
+          }),
+      });
       patch((m) => ({
         ...m,
         text: result.text || m.text,
@@ -665,8 +683,9 @@ export class Assistant {
     const controller = new AbortController();
     this.cardController = controller;
     this.patchCard(id, (c) => ({ ...c, text: '', error: undefined, status: 'streaming' }));
+    const use = card.mode === 'translate' ? 'translate' : 'explain';
     try {
-      await this.provider();
+      await this.provider(use);
       let task: { system: string; prompt: string; target?: string };
       if (card.mode === 'translate') task = translateTask(card.selection);
       else {
@@ -678,7 +697,11 @@ export class Assistant {
       }
       this.patchCard(id, (c) => ({ ...c, target: task.target }));
       const result = await chat(
-        { system: task.system, messages: [{ role: 'user', content: task.prompt }], fast: true },
+        {
+          system: task.system,
+          messages: [{ role: 'user', content: task.prompt }],
+          use,
+        },
         {
           signal: controller.signal,
           onText: (d) => this.patchCard(id, (c) => ({ ...c, text: c.text + d })),
@@ -798,7 +821,6 @@ export class Assistant {
             {
               system: withDocuments(system, [documentBlock(doc, chunk.text, 1, false)]),
               messages: [{ role: 'user', content: chunkSummaryPrompt(chunk.label) }],
-              fast: true,
             },
             { signal },
           );
@@ -840,10 +862,14 @@ export class Assistant {
         };
     };
     try {
-      const { provider } = await this.provider();
+      const { provider, config } = await this.provider();
       const doc = await this.host.docText(source);
       if (!doc.text.trim() && !doc.pages?.some((p) => p.trim()))
         throw Error('这篇文档没有可读取的文字（可能是扫描版 PDF），无法制作精读笔记');
+      // The model's thinking and what it is writing, open to look at while it works.
+      const onReasoning = (d: string) =>
+        patch((m) => ({ ...m, reasoning: (m.reasoning || '') + d }));
+      const onDraft = (d: string) => patch((m) => ({ ...m, draft: (m.draft || '') + d }));
       const budget = documentBudget(provider, 0.5);
       const whole = documentContext(doc, budget);
       let material = documentBlock(doc, whole.text, 1, false);
@@ -856,19 +882,19 @@ export class Assistant {
           patch((m) => ({
             ...m,
             text: `正在通读第 ${i + 1}/${chunks.length} 部分（${chunk.label}）…`,
+            draft: '',
           }));
           const r = await chat(
             {
-              system: '你是细心的学术阅读助手，为稍后写精读笔记整理材料。用简体中文。',
+              system: '你是细心的阅读助手，为稍后写精读笔记整理材料。用简体中文。',
               messages: [
                 {
                   role: 'user',
                   content: `${documentBlock(doc, chunk.text, 1, false)}\n\n${companionChunkPrompt(chunk.label)}`,
                 },
               ],
-              fast: true,
             },
-            { signal },
+            { signal, onText: onDraft, onReasoning },
           );
           track(r);
           notes.push(`【${chunk.label}】\n${r.text}`);
@@ -876,33 +902,63 @@ export class Assistant {
         material = `${documentBlock(doc, chunks[0]?.text || '', 1, true)}\n\n各部分要点（按顺序）：\n\n${notes.join('\n\n')}`;
       }
       if (signal.aborted) throw new DOMException('已停止', 'AbortError');
-      patch((m) => ({ ...m, text: '正在写精读笔记…' }));
+      patch((m) => ({ ...m, text: '正在构思精读笔记…', draft: '' }));
+      // A page cut off at the service's output limit is continued where it stopped, so a
+      // long document still gets its whole notes page.
+      const ask: WireMessage = {
+        role: 'user',
+        content: `${material}\n\n${companionPrompt(whole.partial)}`,
+      };
+      let reply = '';
+      let cut = false;
       let written = 0;
-      const result = await chat(
-        {
-          system: companionSystem(),
-          messages: [{ role: 'user', content: `${material}\n\n${companionPrompt(whole.partial)}` }],
-          maxTokens: 32_000,
-        },
-        {
-          signal,
-          onText: (d) => {
-            written += d.length;
-            patch((m) => ({
-              ...m,
-              text: `正在写精读笔记…（已写 ${written.toLocaleString()} 字）`,
-            }));
+      let thought = 0;
+      for (let round = 0; round < 8; round++) {
+        if (signal.aborted) throw new DOMException('已停止', 'AbortError');
+        const result = await chat(
+          {
+            system: companionSystem(config.prefs.profile),
+            messages: round
+              ? [
+                  ask,
+                  { role: 'assistant', content: reply },
+                  { role: 'user', content: companionContinue },
+                ]
+              : [ask],
+            maxTokens: 32_000,
           },
-        },
-      );
-      track(result);
+          {
+            signal,
+            onReasoning: (d) => {
+              thought += d.length;
+              onReasoning(d);
+              if (!written)
+                patch((m) => ({
+                  ...m,
+                  text: `正在构思精读笔记…（已想 ${thought.toLocaleString()} 字，可展开“思考过程”查看）`,
+                }));
+            },
+            onText: (d) => {
+              written += d.length;
+              onDraft(d);
+              patch((m) => ({
+                ...m,
+                text: `正在写精读笔记…（已写 ${written.toLocaleString()} 字${round ? `，第 ${round + 1} 段` : ''}）`,
+              }));
+            },
+          },
+        );
+        track(result);
+        reply = round ? joinContinuation(reply, result.text) : result.text;
+        cut = result.stopReason === 'max_tokens';
+        if (!cut) break;
+      }
       const pdf = doc.kind === 'pdf' ? fileName(source) : undefined;
-      const cleaned = cleanCompanion(result.text, pdf);
-      const cut = result.stopReason === 'max_tokens';
+      const cleaned = cleanCompanion(reply, pdf);
       if (cleaned.sections < 3)
         throw Error(
           cut
-            ? '笔记太长，被模型的输出上限截断了。可以在 AI 设置里调大“单次最多输出”，或换用输出更长的模型再试。'
+            ? '笔记太长，续写多次仍没有写完。可以换用输出更长的模型再试。'
             : '模型没有写出完整的笔记，请再试一次。',
         );
       const page = companionPage({
@@ -923,11 +979,11 @@ export class Assistant {
         `已生成精读笔记 **${fileName(target)}**，保存在原文旁边，并在右栏打开。`,
         pdf ? '笔记里的页码可以点击，PDF 会跳到对应的页。' : '',
         '它是普通的 HTML 文档，可以像其他文档一样批注、修改源码。',
-        cut ? '\n内容较长，结尾可能被截断了；可以在 AI 设置里调大“单次最多输出”后重新生成。' : '',
+        cut ? '\n内容很长，续写多次后结尾仍可能不完整。' : '',
       ]
         .filter(Boolean)
         .join('');
-      patch((m) => ({ ...m, text, status: 'done', model, usage, quota }));
+      patch((m) => ({ ...m, text, draft: undefined, status: 'done', model, usage, quota }));
       this.host.notify(`已生成精读笔记：${fileName(target)}`);
     } catch (e) {
       if (isAbort(e)) patch((m) => ({ ...m, status: 'stopped' }));
@@ -980,8 +1036,6 @@ export class Assistant {
             system: withDocuments(system, [documentBlock(doc, r.text, 1, false)]),
             messages: [{ role: 'user', content: r.prompt }],
             json: true,
-            // Picking sentences needs no long reasoning; it keeps this quick.
-            fast: true,
           },
           { signal },
         );
@@ -1121,9 +1175,28 @@ export class Assistant {
         this.trimWire(wire, provider);
         let partIndex = -1;
         const result = await chat(
-          { system, messages: wire, tools: agentTools },
+          { system, messages: wire, tools: agentTools, web: true },
           {
             signal,
+            // A search the model ran on its own: a step that is done when the search is.
+            onSearch: ({ id, title, done }) => {
+              const stepId = `${threadId}:web-${id}`;
+              const status = done ? 'done' : 'running';
+              // What it writes after the search goes below it.
+              if (!done) partIndex = -1;
+              setParts((parts) =>
+                parts.some((p) => p.type === 'step' && p.step.id === stepId)
+                  ? parts.map((p) =>
+                      p.type === 'step' && p.step.id === stepId
+                        ? { ...p, step: { ...p.step, title, status } }
+                        : p,
+                    )
+                  : [
+                      ...parts,
+                      { type: 'step', step: { id: stepId, tool: 'web_search', title, status } },
+                    ],
+              );
+            },
             onText: (d) =>
               setParts((parts) => {
                 if (partIndex === -1 || parts[partIndex]?.type !== 'text') {

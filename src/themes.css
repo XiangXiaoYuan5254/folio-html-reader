@@ -14,6 +14,19 @@
   --on-ai: #fff;
   --code-bg: var(--surface);
   --dot-ring: transparent;
+  /* The whiteboard teacher's board: a whiteboard here, a blackboard in dark themes. */
+  --board-bg: #fcfcfa;
+  --board-grid: #e2e7ea;
+  --board-ink: #1f2a37;
+  --board-ink-2: #3b4856;
+  --board-muted: #9aa5ae;
+  --board-red: #e0393e;
+  --board-blue: #2b6bd6;
+  --board-green: #17915f;
+  --board-orange: #e07b12;
+  --board-yellow: #ffd23f;
+  --board-user: #8b5cf6;
+  --board-marker-opacity: 0.45;
 }
 
 :root,
@@ -476,6 +489,18 @@
 /* 夜读：深蓝灰夜间界面，青绿微光。 */
 [data-theme='night'] {
   color-scheme: dark;
+  --board-bg: #1e2a26;
+  --board-grid: #2c3b36;
+  --board-ink: #eef1e8;
+  --board-ink-2: #cdd5cb;
+  --board-muted: #7d8b85;
+  --board-red: #ff8f87;
+  --board-blue: #8fb8ff;
+  --board-green: #86e0ad;
+  --board-orange: #ffc078;
+  --board-yellow: #ffe066;
+  --board-user: #c9a8ff;
+  --board-marker-opacity: 0.3;
 
   --bg: #14181e;
   --surface: #1b2027;
@@ -591,6 +616,18 @@
 /* 墨金：墨色底，鎏金按钮，宋体标题。 */
 [data-theme='ink'] {
   color-scheme: dark;
+  --board-bg: #1e2a26;
+  --board-grid: #2c3b36;
+  --board-ink: #eef1e8;
+  --board-ink-2: #cdd5cb;
+  --board-muted: #7d8b85;
+  --board-red: #ff8f87;
+  --board-blue: #8fb8ff;
+  --board-green: #86e0ad;
+  --board-orange: #ffc078;
+  --board-yellow: #ffe066;
+  --board-user: #c9a8ff;
+  --board-marker-opacity: 0.3;
   --font-display:
     'Songti SC', STSong, 'Source Han Serif SC', 'Noto Serif CJK SC', 'Noto Serif SC', SimSun, serif;
 
@@ -983,6 +1020,18 @@
 /* 终端：黑底荧光绿，等宽字，扫描线与微光，琥珀色给 AI。 */
 [data-theme='terminal'] {
   color-scheme: dark;
+  --board-bg: #1e2a26;
+  --board-grid: #2c3b36;
+  --board-ink: #eef1e8;
+  --board-ink-2: #cdd5cb;
+  --board-muted: #7d8b85;
+  --board-red: #ff8f87;
+  --board-blue: #8fb8ff;
+  --board-green: #86e0ad;
+  --board-orange: #ffc078;
+  --board-yellow: #ffe066;
+  --board-user: #c9a8ff;
+  --board-marker-opacity: 0.3;
   --font-sans:
     'SF Mono', 'JetBrains Mono', Menlo, Consolas, 'PingFang SC', 'Microsoft YaHei', monospace;
   --scanlines: repeating-linear-gradient(0deg, #0000004d 0 1px, transparent 1px 3px);
@@ -1121,6 +1170,18 @@
 /* 极光：深夜底上的极光渐变，半透明毛玻璃面板悬浮其上。 */
 [data-theme='aurora'] {
   color-scheme: dark;
+  --board-bg: #1e2a26;
+  --board-grid: #2c3b36;
+  --board-ink: #eef1e8;
+  --board-ink-2: #cdd5cb;
+  --board-muted: #7d8b85;
+  --board-red: #ff8f87;
+  --board-blue: #8fb8ff;
+  --board-green: #86e0ad;
+  --board-orange: #ffc078;
+  --board-yellow: #ffe066;
+  --board-user: #c9a8ff;
+  --board-marker-opacity: 0.3;
   --aurora:
     radial-gradient(55% 45% at 8% 0%, #7c5cff8c, transparent 70%),
     radial-gradient(45% 55% at 96% 6%, #00c2ff66, transparent 70%),

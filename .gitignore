@@ -23,3 +23,6 @@ docs/上线与商业化.md
 
 # 官网安装包：部署到自己的服务器，不入库
 website/downloads/
+
+# 语音 helper 的编译产物（scripts/build-speech.mjs）
+build/native/

@@ -16,8 +16,8 @@
 //   effort   -> { reasoning_effort }                               (OpenAI, Gemini)
 //   claude / codex -> the service's own effort setting
 //   none     -> not controllable
-// `efforts` are the levels offered in the chat box; the first is used for quick tasks
-// (explain, translate, highlights). An empty choice leaves it to the service.
+// `efforts` are the levels offered to pick from; every request uses the level picked, and
+// an empty choice leaves it to the service.
 // `echo` providers require reasoning_content back on assistant turns once tools are used.
 const presets = [
   {
@@ -119,7 +119,7 @@ const presets = [
   // A ChatGPT plan through the Codex app server on this computer; no API key.
   {
     id: 'codex',
-    name: 'ChatGPT（通过 Codex）',
+    name: 'Codex',
     kind: 'codex',
     baseUrl: '',
     model: '',
@@ -386,16 +386,14 @@ function toOpenAIMessages(system, messages, { echo, tools }) {
   return out;
 }
 const hasImages = (messages) => messages.some((m) => m.images?.length);
-// The level a request uses: quick tasks take the fastest one, others the user's choice.
-function effortFor(provider, fast) {
-  const preset = presetFor(provider.preset);
-  const levels = preset.efforts || [];
-  if (fast && levels.length) return levels[0];
+// The level a request uses: the one picked, if the service has it.
+function effortFor(provider) {
+  const levels = presetFor(provider.preset).efforts || [];
   return levels.includes(provider.effort) ? provider.effort : '';
 }
-function effortParams(provider, fast) {
+function effortParams(provider) {
   const preset = presetFor(provider.preset);
-  const effort = effortFor(provider, fast);
+  const effort = effortFor(provider);
   if (!effort) return {};
   if (preset.thinking === 'type') {
     if (effort === 'off') return { thinking: { type: 'disabled' } };
@@ -438,7 +436,7 @@ async function streamOpenAI({ provider, key, request, signal, onDelta, fetch }) 
     ...(provider.maxOutput || request.maxTokens
       ? { max_tokens: provider.maxOutput || request.maxTokens }
       : {}),
-    ...effortParams(provider, request.fast),
+    ...effortParams(provider),
   };
   const headers = { 'Content-Type': 'application/json', Accept: 'text/event-stream' };
   if (key) headers.Authorization = `Bearer ${key}`;
@@ -616,7 +614,7 @@ function anthropicError(e, provider) {
 async function streamAnthropic({ provider, key, request, signal, onDelta, fetch }) {
   const client = anthropicClient(provider, key, fetch);
   const model = provider.model;
-  const effort = effortFor(provider, request.fast);
+  const effort = effortFor(provider);
   const params = {
     model,
     max_tokens: provider.maxOutput || Math.min(64_000, Math.max(32_000, request.maxTokens || 0)),

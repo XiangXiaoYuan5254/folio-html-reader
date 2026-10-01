@@ -13,6 +13,7 @@ import { cardLabels } from '../ai/assistant';
 import type { SelectionCard } from '../ai/assistant';
 import { Markdown } from '../ai/Markdown';
 import { invoke } from '../api';
+import { ModelMenu } from './ModelMenu';
 
 // Floats above the selection toolbar with the answer about the selected text.
 export function AiSelectionCard(p: {
@@ -22,6 +23,7 @@ export function AiSelectionCard(p: {
   onClose: () => void;
   onSave: () => void;
   onContinue: () => void;
+  onOpenSettings: () => void;
 }) {
   const { card } = p;
   const [question, setQuestion] = useState('');
@@ -50,6 +52,11 @@ export function AiSelectionCard(p: {
         <span className="ai-card-quote" title={card.selection}>
           {card.selection}
         </span>
+        <ModelMenu
+          use={card.mode === 'translate' ? 'translate' : 'explain'}
+          className="model-pick-mini"
+          onOpenSettings={p.onOpenSettings}
+        />
         <button className="icon-button" aria-label="关闭 AI 卡片" onClick={p.onClose}>
           <X size={15} />
         </button>

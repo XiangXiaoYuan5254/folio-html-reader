@@ -256,6 +256,8 @@ export function useDocuments(onError: (s: string) => void) {
     if (active === id) setActive(next.at(-1)?.id || '');
   }
   function clear() {
+    // A save that failed in the previous project says nothing about the next one.
+    failed.current = null;
     commit([]);
     viewed.current = [];
     setActive('');

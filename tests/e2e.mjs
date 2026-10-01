@@ -353,7 +353,7 @@ try {
   await page.getByRole('button', { name: '创建', exact: true }).click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
   // The file menu closes on a click anywhere else, including inside the reader, or Escape.
-  const treeMenu = page.locator('.tree-menu');
+  const treeMenu = page.locator('.popup-menu');
   const treeRow = page.locator('.tree-row[data-file-path="00_批注测试.html"]');
   await treeRow.click({ button: 'right' });
   await treeMenu.waitFor();
@@ -365,12 +365,12 @@ try {
   await treeMenu.waitFor({ state: 'detached' });
   console.log('PASS: file menu closes on an outside click or Escape');
   await page.getByLabel('00_批注测试.html 的操作', { exact: true }).click();
-  await page.getByRole('button', { name: '重命名', exact: true }).click();
+  await page.getByRole('menuitem', { name: '重命名', exact: true }).click();
   await page.getByRole('dialog').getByRole('textbox').fill('我的批注.html');
   await page.getByRole('button', { name: '确定', exact: true }).click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
   await page.getByLabel('我的批注.html 的操作', { exact: true }).click();
-  await page.getByRole('button', { name: '移动到…', exact: true }).click();
+  await page.getByRole('menuitem', { name: '移动到…', exact: true }).click();
   await page.getByRole('dialog').getByRole('textbox').fill('阅读归档/我的批注.html');
   await page.getByRole('button', { name: '确定', exact: true }).click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });

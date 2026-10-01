@@ -211,6 +211,44 @@ import { findQuote } from '../ai/quote-match';
       );
     return { title: document.title, text: readableText(document.body) };
   }
+  // What a box framed on the page (for the whiteboard) covers: the text inside it, the text
+  // in view around it, and in a PDF the page it is on. The box is in viewport coordinates.
+  function regionText(box: { left: number; top: number; right: number; bottom: number }) {
+    const meets = (r: DOMRect, b: typeof box) =>
+      r.width + r.height > 0 &&
+      r.right > b.left &&
+      r.left < b.right &&
+      r.bottom > b.top &&
+      r.top < b.bottom;
+    const view = { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
+    const inside: string[] = [];
+    const visible: string[] = [];
+    let seen = 0;
+    const range = document.createRange();
+    for (const { node } of textIndex().nodes) {
+      const data = node.data.replace(/\s+/g, ' ').trim();
+      if (!data) continue;
+      range.selectNodeContents(node);
+      const rects = [...range.getClientRects()];
+      if (!rects.some((r) => meets(r, view))) continue;
+      if (seen < 8_000) visible.push(data);
+      seen += data.length;
+      if (rects.some((r) => meets(r, box))) inside.push(data);
+    }
+    const x = (box.left + box.right) / 2;
+    const y = (box.top + box.bottom) / 2;
+    const page = isPdf()
+      ? Number(
+          (document.elementFromPoint(x, y)?.closest('[data-pdf-page]') as HTMLElement | null)
+            ?.dataset.pdfPage,
+        ) || undefined
+      : undefined;
+    return {
+      inside: inside.join(' ').slice(0, 4_000),
+      visible: visible.join(' ').slice(0, 8_000),
+      page,
+    };
+  }
   // Anchors for quotes a model chose, in the same form a manual highlight saves.
   async function aiAnchors(quotes: string[]) {
     await whenTextReady();
@@ -1216,6 +1254,7 @@ import { findQuote } from '../ai/quote-match';
     if (m.type === 'ai-text') reply(aiText());
     if (m.type === 'ai-anchors') reply(aiAnchors(Array.isArray(m.quotes) ? m.quotes : []));
     if (m.type === 'ai-flash') reply(flashQuote(String(m.quote || '')));
+    if (m.type === 'ai-region') reply(Promise.resolve().then(() => regionText(m.box)));
     if (m.type === 'clear-selection') {
       window.getSelection()?.removeAllRanges();
       selection = null;

@@ -21,7 +21,7 @@ const evidence = process.env.FOLIO_QA_DIR || path.join(os.tmpdir(), 'folio-ai-li
 await fs.mkdir(project, { recursive: true });
 await fs.mkdir(userData, { recursive: true });
 await fs.mkdir(evidence, { recursive: true });
-// FOLIO_AI_LIVE=codex sets up “ChatGPT（通过 Codex）” through the settings dialog instead of
+// FOLIO_AI_LIVE=codex sets up “Codex” through the settings dialog instead of
 // copying the saved settings. FOLIO_AI_LIVE_STEPS limits the run, e.g. "ask,highlights".
 const codexMode = process.env.FOLIO_AI_LIVE === 'codex';
 const steps = new Set(
@@ -150,7 +150,7 @@ try {
   if (codexMode) {
     await panel().getByRole('button', { name: '配置 AI 服务', exact: true }).click();
     const settings = page.getByRole('dialog', { name: 'AI 设置' });
-    await settings.getByRole('button', { name: /ChatGPT（通过 Codex）/ }).click();
+    await settings.getByRole('button', { name: /^Codex/ }).click();
     await settings.getByText(/已通过这台电脑上的 Codex 登录 ChatGPT/).waitFor({ timeout: 30000 });
     await waitFor(
       async () => !!(await settings.getByLabel('模型', { exact: true }).inputValue()),
@@ -158,7 +158,7 @@ try {
       30000,
     );
     console.log(
-      `Service: ChatGPT（通过 Codex） · ${await settings.getByLabel('模型', { exact: true }).inputValue()}`,
+      `Service: Codex · ${await settings.getByLabel('模型', { exact: true }).inputValue()}`,
     );
     let started = Date.now();
     await settings.getByRole('button', { name: '测试连接' }).click();

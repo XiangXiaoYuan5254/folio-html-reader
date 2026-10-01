@@ -8,6 +8,7 @@ import { applyReply } from '../ai/edits';
 import { sourceEditPrompt, sourceEditSystem } from '../ai/prompts';
 import { Markdown } from '../ai/Markdown';
 import { DiffView } from './DiffView';
+import { ModelMenu } from './ModelMenu';
 
 type Proposal = {
   base: string;
@@ -30,6 +31,7 @@ export function AiSourceEdit(p: {
   editorSelection: () => string;
   onPreview: (source: string | null) => void;
   onApply: (source: string) => void;
+  onOpenSettings: () => void;
   onClose: () => void;
 }) {
   const [request, setRequest] = useState('');
@@ -61,7 +63,7 @@ export function AiSourceEdit(p: {
     const c = new AbortController();
     controller.current = c;
     try {
-      const { provider } = await p.store.provider();
+      const { provider } = await p.store.provider('edit');
       const tokens = estimateTokens(base);
       if (tokens > documentBudget(provider, 0.6))
         throw Error(
@@ -72,6 +74,7 @@ export function AiSourceEdit(p: {
       const result = await chat(
         {
           system: sourceEditSystem(),
+          use: 'edit',
           messages: [
             {
               role: 'user',
@@ -134,6 +137,7 @@ export function AiSourceEdit(p: {
         <WandSparkles size={14} />
         <strong>AI 修改</strong>
         <span>描述想怎么改，确认改动后再写入源码</span>
+        <ModelMenu use="edit" className="model-pick-mini" onOpenSettings={p.onOpenSettings} />
         <button className="icon-button" aria-label="关闭 AI 修改" onClick={p.onClose}>
           <X size={15} />
         </button>

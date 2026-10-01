@@ -10,6 +10,7 @@ const {
   shell,
   clipboard,
   safeStorage,
+  systemPreferences,
 } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
@@ -20,6 +21,7 @@ const { renderPDFDocument, pdfAssetPath } = require('./pdf.cjs');
 const { projectFor, filesFromArgv } = require('./open-file.cjs');
 const { createUpdates } = require('./updater.cjs');
 const { createAi } = require('./ai.cjs');
+const { createSpeech } = require('./speech.cjs');
 const isMac = process.platform === 'darwin';
 const workspace = new Workspace();
 let win;
@@ -31,6 +33,13 @@ let focusWindowState = null;
 let appearance = null;
 const previews = new Map();
 let ai;
+const speech = createSpeech({
+  app,
+  systemPreferences,
+  send: (event) => {
+    if (win && !win.isDestroyed()) win.webContents.send('folio:event', event);
+  },
+});
 if (process.env.FOLIO_USER_DATA) app.setPath('userData', process.env.FOLIO_USER_DATA);
 app.setName('页间');
 // Matches the Start menu shortcut the Windows installer creates, for taskbar grouping.
@@ -153,16 +162,27 @@ async function initialWorkspace() {
   });
   return openWorkspace(sample);
 }
+const isUiUrl = (url) =>
+  process.env.FOLIO_DEV_URL
+    ? url.startsWith(process.env.FOLIO_DEV_URL + '/') || url === process.env.FOLIO_DEV_URL
+    : url.startsWith('app://ui/');
 function uiSender(event) {
   if (event.sender !== win?.webContents || event.senderFrame !== win.webContents.mainFrame)
     throw Error('不允许的请求来源');
-  const url = event.senderFrame.url;
+  if (!isUiUrl(event.senderFrame.url)) throw Error('不允许的应用页面');
+}
+// The whiteboard's voice conversation in a ChatGPT voice hears the student through the
+// window's own microphone. Only the app's page may ask, and only for sound.
+// FOLIO_SPEECH_INPUT (tests) plays a recording in instead of using the microphone.
+async function microphoneAccess() {
+  if (process.platform !== 'darwin' || process.env.FOLIO_SPEECH_INPUT) return true;
+  const status = systemPreferences.getMediaAccessStatus('microphone');
   if (
-    process.env.FOLIO_DEV_URL
-      ? !url.startsWith(process.env.FOLIO_DEV_URL + '/') && url !== process.env.FOLIO_DEV_URL
-      : !url.startsWith('app://ui/')
+    status === 'granted' ||
+    (status === 'not-determined' && (await systemPreferences.askForMediaAccess('microphone')))
   )
-    throw Error('不允许的应用页面');
+    return true;
+  throw Error('没有麦克风权限：请在「系统设置 › 隐私与安全性 › 麦克风」里允许「页间」');
 }
 function menu() {
   Menu.setApplicationMenu(
@@ -265,6 +285,7 @@ function menu() {
 app.on('before-quit', () => {
   quitting = true;
   ai?.shutdown();
+  speech.stop();
 });
 // On Windows keys are encrypted with the user's login (DPAPI). macOS keeps them in the app's
 // data folder, readable only by this user: with an ad-hoc signed app the Keychain would ask
@@ -321,6 +342,12 @@ app
             headers: { 'Content-Type': mime(file), 'Access-Control-Allow-Origin': '*' },
           });
         }
+        if (url.host === 'note-image') {
+          const file = workspace.noteImagePath(parts.join('/'));
+          return new Response(await fs.readFile(file), {
+            headers: { 'Content-Type': mime(file) },
+          });
+        }
         if (url.host === 'asset') {
           const file = await workspace.asset(parts.join('/'));
           return new Response(await fs.readFile(file), {
@@ -372,8 +399,23 @@ app
         });
       }
     });
-    session.defaultSession.setPermissionRequestHandler((_, __, cb) => cb(false));
-    session.defaultSession.setPermissionCheckHandler(() => false);
+    session.defaultSession.setPermissionRequestHandler((contents, permission, cb, details) =>
+      cb(
+        contents === win?.webContents &&
+          permission === 'media' &&
+          !!details.isMainFrame &&
+          isUiUrl(details.requestingUrl || '') &&
+          !!details.mediaTypes?.length &&
+          details.mediaTypes.every((t) => t === 'audio'),
+      ),
+    );
+    session.defaultSession.setPermissionCheckHandler(
+      (contents, permission, _, details) =>
+        contents === win?.webContents &&
+        permission === 'media' &&
+        details.mediaType === 'audio' &&
+        isUiUrl(details.requestingUrl || ''),
+    );
     ipcMain.handle('folio:invoke', async (event, action, payload, token) => {
       uiSender(event);
       if (
@@ -394,6 +436,7 @@ app
           'ai-save-provider',
           'ai-remove-provider',
           'ai-set-active',
+          'ai-set-use',
           'ai-prefs',
           'ai-models',
           'ai-test',
@@ -401,7 +444,13 @@ app
           'ai-cancel',
           'ai-codex-status',
           'ai-codex-login',
+          'codex-voice',
+          'microphone',
           'appearance',
+          'speech-voices',
+          'speech',
+          'speech-listen',
+          'speech-stop',
         ].includes(action) &&
         token !== workspace.token
       )
@@ -558,6 +607,8 @@ app
           return ai.removeProvider(payload);
         case 'ai-set-active':
           return ai.setActive(payload);
+        case 'ai-set-use':
+          return ai.setUse(payload);
         case 'ai-prefs':
           return ai.setPrefs(payload);
         case 'ai-models':
@@ -576,6 +627,24 @@ app
           return ai.codexStatus();
         case 'ai-codex-login':
           return ai.codexLogin();
+        case 'microphone':
+          return microphoneAccess();
+        case 'codex-voice': {
+          const sender = event.sender;
+          return ai.codexVoice(payload, (e) => {
+            if (!sender.isDestroyed()) sender.send('folio:event', e);
+          });
+        }
+        // The whiteboard teacher's voice; empty where the helper isn't there.
+        case 'speech-voices':
+          return { helper: speech.available(), voices: await speech.voices() };
+        case 'speech':
+          return speech.command(payload);
+        case 'speech-listen':
+          return speech.listen(payload);
+        case 'speech-stop':
+          speech.stop();
+          return true;
         case 'appearance': {
           const colors = appearanceColors(payload);
           if (!colors) throw Error('颜色无效');
@@ -594,6 +663,18 @@ app
           return workspace.aiHistory(payload);
         case 'ai-save-history':
           return workspace.saveAiHistory(payload);
+        case 'boards':
+          return workspace.boards();
+        case 'board':
+          return workspace.board(payload);
+        case 'save-board':
+          return workspace.saveBoard(payload);
+        case 'delete-board':
+          return workspace.deleteBoard(payload);
+        case 'save-note-image':
+          return workspace.saveNoteImage(payload);
+        case 'delete-note-image':
+          return workspace.deleteNoteImage(payload);
         default:
           throw Error('未知操作');
       }

@@ -18,6 +18,7 @@ import {
   Lightbulb,
   MessageCircleQuestion,
   Palette,
+  Presentation,
 } from 'lucide-react';
 import { invoke, subscribe, useWorkspace, isDesktop, documentUrl } from './api';
 import { isMac, shortcut, trashName } from './platform';
@@ -62,11 +63,20 @@ import { AssistantPanel } from './components/AssistantPanel';
 import type { AssistantMode } from './components/AssistantPanel';
 import { AiSettings } from './components/AiSettings';
 import { AiSelectionCard } from './components/AiSelectionCard';
+import { Tutor, boardNote, withBoardNote } from './ai/board';
+import type { BoardEntry, SavedBoard } from './ai/board';
+import type { Where } from './ai/context';
+import { fileName } from './ai/context';
+import { errorText } from './ai/client';
+import { BoardList, BoardShelf } from './components/BoardList';
+import { prepareImage } from './ai/images';
+import { RegionCapture } from './components/RegionCapture';
 import { AiSourceEdit } from './components/AiSourceEdit';
 import { SelectionToolbar } from './components/SelectionToolbar';
 import { ThemePicker } from './components/ThemePicker';
 import type { ScreenBox } from './components/SelectionToolbar';
 const SourceEditor = lazy(() => import('./components/SourceEditor'));
+const Whiteboard = lazy(() => import('./components/Whiteboard'));
 import type { SourceEditorHandle } from './components/SourceEditor';
 const toolHints: Record<Tool, string> = {
   select: '选中文字开始批注',
@@ -300,6 +310,25 @@ export default function App() {
       ),
   );
   const aiCard = useAssistantCard(assistant);
+  // The whiteboard teacher explaining a selection.
+  const [lesson, setLesson] = useState<{ tutor: Tutor; selection: string } | null>(null);
+  // Framing a formula or figure on the page for the whiteboard.
+  const [boardCapture, setBoardCapture] = useState(false);
+  const [boardList, setBoardList] = useState(false);
+  // Bumped whenever a board is saved, for the list in the sidebar.
+  const [boardsVersion, setBoardsVersion] = useState(0);
+  // The sidebar asking the open board to keep itself in the note.
+  const [noteAsk, setNoteAsk] = useState<{ id: string; n: number } | null>(null);
+  // For saving the open board before the project changes or the window closes.
+  const lessonRef = useRef(lesson);
+  lessonRef.current = lesson;
+  async function closeLesson() {
+    const open = lessonRef.current;
+    if (!open) return;
+    await open.tutor.saveNow().catch(() => {});
+    open.tutor.dispose(false);
+    setLesson(null);
+  }
   const [appVersion, setAppVersion] = useState('');
   const [update, setUpdate] = useState<UpdateState>({ status: 'idle' });
   // “稍后” hides the card; the title bar keeps a button to bring it back.
@@ -576,6 +605,9 @@ export default function App() {
       window.removeEventListener('blur', blur);
     };
   }, []);
+  // Saves everything still waiting before closing documents, the project or the app. Whatever
+  // could not be saved is confirmed rather than blocking: when the project folder was deleted
+  // or moved, nothing can be saved, and the reader must still be able to leave.
   function guardDirty(
     docs: OpenDocument[],
     action: () => Promise<unknown>,
@@ -584,17 +616,27 @@ export default function App() {
     run(async () => {
       // With auto-save, in-flight saves finish first; only edits that could not be saved need confirming.
       if (autosave) await model.saveAll(docs.map((d) => d.id));
+      await assistant.flush();
+      await lessonRef.current?.tutor.saveNow().catch(() => {});
+      const unsaved = await model.flush().then(
+        () => '',
+        (e) => errorText(e),
+      );
       const ids = new Set(docs.map((d) => d.id));
       const dirty = model.docsRef.current.filter((d) => ids.has(d.id) && d.draft !== d.source);
-      if (dirty.length)
-        setDialog({
-          title,
-          message: `${dirty.map((d) => d.path.split('/').at(-1)).join('、')} ${autosave ? '未能保存' : '尚未保存'}。继续会放弃源码修改；批注和笔记已单独保存。`,
-          danger: true,
-          confirmLabel: '放弃修改并继续',
-          onConfirm: action,
-        });
-      else await action();
+      if (!dirty.length && !unsaved) return action();
+      const edits = dirty.length
+        ? `${dirty.map((d) => d.path.split('/').at(-1)).join('、')} ${autosave ? '未能保存' : '尚未保存'}。`
+        : '';
+      setDialog({
+        title: unsaved ? '有修改未能保存' : title,
+        message: unsaved
+          ? `批注和笔记未能保存：${unsaved}。${edits}继续会放弃这些修改。`
+          : `${edits}继续会放弃源码修改；批注和笔记已单独保存。`,
+        danger: true,
+        confirmLabel: '放弃修改并继续',
+        onConfirm: action,
+      });
     });
   }
   async function refresh() {
@@ -635,10 +677,7 @@ export default function App() {
   function requestCloseDocument(id: string) {
     const closing = model.docsRef.current.find((d) => d.id === id);
     if (closing)
-      guardDirty([closing], async () => {
-        await model.flush();
-        closeDocument(id);
-      });
+      guardDirty([closing], async () => closeDocument(id));
   }
   async function dropIntoReading(path: string, side: PaneSide) {
     if (!doc || !readableFiles(workspace?.tree || []).includes(path)) return;
@@ -666,6 +705,7 @@ export default function App() {
   }
   async function loadWorkspace(w: WorkspaceInfo) {
     sessionReady.current = false;
+    await closeLesson();
     await assistant.flush();
     model.clear();
     assistant.reset();
@@ -692,7 +732,6 @@ export default function App() {
   function chooseNewProject() {
     setProjectPicker(null);
     guardDirty(model.docs, async () => {
-      await model.flush();
       const w = await invoke<WorkspaceInfo | null>('choose-folder');
       if (w) await loadWorkspace(w);
     });
@@ -713,7 +752,6 @@ export default function App() {
     };
     if (root === currentRoot) return openAll();
     guardDirty(model.docs, async () => {
-      await model.flush();
       await loadWorkspace(await invoke<WorkspaceInfo>('open-recent-workspace', { root }));
       await openAll();
     });
@@ -731,7 +769,6 @@ export default function App() {
       return;
     }
     guardDirty(model.docs, async () => {
-      await model.flush();
       const projects = await invoke<RecentProject[]>('recent-workspaces');
       setProjectPicker(projects);
     });
@@ -779,12 +816,7 @@ export default function App() {
     save,
     folder: openFolder,
     find: startFind,
-    close: () =>
-      guardDirty(model.docs, async () => {
-        await model.flush();
-        await assistant.flush();
-        await invoke('close');
-      }),
+    close: () => guardDirty(model.docs, () => invoke('close')),
     refresh: () => run(refresh),
     openFiles: () => run(() => openRequestedFiles(workspace?.root)),
     checkUpdates,
@@ -808,12 +840,7 @@ export default function App() {
     }
   }
   // Saves like closing the window does, then quits; the new version opens by itself.
-  const restartToUpdate = () =>
-    guardDirty(model.docs, async () => {
-      await model.flush();
-      await assistant.flush();
-      await invoke('update-restart');
-    });
+  const restartToUpdate = () => guardDirty(model.docs, () => invoke('update-restart'));
   function fileAction(action: FileAction, path: string) {
     if (action === 'reveal') {
       run(() => invoke('reveal', { path }));
@@ -921,6 +948,121 @@ export default function App() {
   function openAiCard(cardMode: 'explain' | 'translate' | 'ask') {
     if (!doc || !selection) return;
     assistant.openCard(cardMode, { docId: doc.id, path: doc.path, anchor: selection });
+  }
+  // The selected text, a picture of a framed region of the page, or a blank board for any
+  // question.
+  function openWhiteboard(
+    from: { picture?: string; blank?: boolean; path?: string; where?: Where } = {},
+  ) {
+    const path = from.blank ? undefined : from.path || doc?.path;
+    const text = from.picture || from.blank ? '' : selection?.exact || '';
+    if (!from.picture && !from.blank && !text) return;
+    lessonRef.current?.tutor.dispose();
+    const tutor = new Tutor({
+      selection: text,
+      picture: from.picture,
+      where: from.where,
+      source: path,
+      save: saveBoard,
+      docText: () => (path ? assistant.text(path) : Promise.reject(Error('没有打开的文档'))),
+      ready: () => assistant.provider('board'),
+    });
+    setLesson({ tutor, selection: text || (from.picture ? '框选的区域' : '空白白板') });
+    void tutor.start();
+  }
+  // The document and spot a framed box is over: the reader under its middle says which
+  // page it is on and what text is there.
+  async function framedSpot(box: { left: number; top: number; right: number; bottom: number }) {
+    for (const [id, reader] of readers.current) {
+      const inside = reader.inFrame(box);
+      const path = model.docsRef.current.find((d) => d.id === id)?.path;
+      if (!inside || !path) continue;
+      const where = await reader
+        .request<Where>('ai-region', { box: inside }, 5_000)
+        .catch(() => undefined);
+      return { path, where };
+    }
+    return null;
+  }
+  async function saveBoard(entry: BoardEntry, data: SavedBoard) {
+    try {
+      await invoke('save-board', { entry, data });
+      setBoardsVersion((v) => v + 1);
+    } catch (e) {
+      notify(
+        '白板保存失败：' +
+          (e as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''),
+        true,
+      );
+    }
+  }
+  async function openBoard(id: string) {
+    const entry = (await invoke<BoardEntry[]>('boards').catch(() => [])).find((b) => b.id === id);
+    if (!entry) return notify('这块白板已经删掉了', true);
+    await openSavedBoard(entry);
+  }
+  function boardDeleted(id: string) {
+    setBoardsVersion((v) => v + 1);
+    if (lessonRef.current?.tutor.id !== id) return;
+    lessonRef.current.tutor.dispose(false);
+    setLesson(null);
+  }
+  // Keeps a board in its document's note (a blank board in the open document's), with a
+  // picture of it, replacing what was kept from it before.
+  async function boardToNote(
+    entry: BoardEntry,
+    board: SavedBoard['state'],
+    picture: string | null,
+  ) {
+    const path = entry.source || doc?.path;
+    if (!path) return notify('先打开要存入笔记的文档', true);
+    try {
+      const image = picture
+        ? await invoke<string>('save-note-image', { data: picture, prefix: 'board' })
+        : '';
+      const { data } = await hostImpl.current.documentData(path);
+      const section = boardNote({ ...entry, updatedAt: Date.now() }, board, image);
+      const { note, replaced } = withBoardNote(data.note, entry.id, section);
+      await hostImpl.current.setNote(path, note);
+      // The picture from the last time this board was kept here is no longer shown.
+      for (const [, name] of replaced.matchAll(/note-image:(board-[\w.-]+)/g))
+        if (!note.includes(name)) void invoke('delete-note-image', { name }).catch(() => {});
+      if (path === doc?.path) {
+        setRight(true);
+        setTab('note');
+        setNoteReveal(true);
+      }
+      notify(`已存入「${fileName(path)}」的笔记`);
+    } catch (e) {
+      notify('存入笔记失败：' + (e as Error).message, true);
+    }
+  }
+  // The sidebar keeps a board in the note by opening it, so a picture can be taken.
+  async function boardToNoteFromList(entry: BoardEntry) {
+    if (!entry.source && !doc?.path) return notify('先打开要存入笔记的文档', true);
+    if (await openSavedBoard(entry)) setNoteAsk((a) => ({ id: entry.id, n: (a?.n || 0) + 1 }));
+  }
+  async function openSavedBoard(entry: BoardEntry) {
+    setBoardList(false);
+    if (lessonRef.current?.tutor.id === entry.id) return true;
+    const board = await invoke<SavedBoard | null>('board', { id: entry.id }).catch(() => null);
+    if (!board) {
+      notify('这块白板读取不了', true);
+      return false;
+    }
+    lessonRef.current?.tutor.dispose();
+    const tutor = new Tutor({
+      selection: board.selection,
+      picture: board.picture,
+      source: entry.source,
+      save: saveBoard,
+      restore: { entry, board },
+      docText: () =>
+        entry.source ? assistant.text(entry.source) : Promise.reject(Error('没有打开的文档')),
+      ready: () => assistant.provider('board'),
+    });
+    setLesson({ tutor, selection: entry.title });
+    return true;
   }
   function openAssistant() {
     setRight(true);
@@ -1352,6 +1494,19 @@ export default function App() {
           }}
           onImportError={(message) => notify(message, true)}
           onRefresh={() => run(refresh)}
+          boards={
+            isDesktop ? (
+              <BoardShelf
+                version={boardsVersion}
+                current={lesson?.tutor.id}
+                active={doc?.path}
+                onOpen={(entry) => void openSavedBoard(entry)}
+                onBlank={() => openWhiteboard({ blank: true })}
+                onNote={(entry) => void boardToNoteFromList(entry)}
+                onDeleted={boardDeleted}
+              />
+            ) : null
+          }
           status={
             <ReadingStatus
               format={doc?.kind === 'pdf' ? 'PDF' : 'HTML'}
@@ -1438,6 +1593,11 @@ export default function App() {
               aiEditing={aiSourceOpen}
               onAiEdit={isDesktop ? () => setAiSourceOpen((v) => !v) : undefined}
               assistantOpen={right && tab === 'assistant'}
+              onWhiteboard={
+                isDesktop
+                  ? () => (selection && mode === 'read' ? openWhiteboard() : setBoardCapture(true))
+                  : undefined
+              }
               onAssistant={
                 isDesktop
                   ? () => (right && tab === 'assistant' ? setRight(false) : openAssistant())
@@ -1522,6 +1682,7 @@ export default function App() {
                             : '已应用 AI 修改，保存后写入文件',
                         );
                       }}
+                      onOpenSettings={() => setAiSettingsOpen(true)}
                       onClose={() => setAiSourceOpen(false)}
                     />
                   ) : null}
@@ -1711,6 +1872,14 @@ export default function App() {
                               <MessageCircleQuestion size={15} />
                               提问
                             </button>
+                            <button
+                              className="selection-ai"
+                              onClick={() => openWhiteboard()}
+                              title="页老师在白板上边写边讲这段内容，可以随时圈出来打断提问"
+                            >
+                              <Presentation size={15} />
+                              白板
+                            </button>
                           </>
                         ) : null}
                         <IconButton label="取消文字选择" onClick={clearSelection}>
@@ -1724,6 +1893,7 @@ export default function App() {
                         onAsk={(q) => assistant.askCard(q)}
                         onStop={() => assistant.stopCard()}
                         onClose={() => assistant.closeCard()}
+                        onOpenSettings={() => setAiSettingsOpen(true)}
                         onSave={() =>
                           run(async () => {
                             await assistant.saveCard(color);
@@ -1817,6 +1987,17 @@ export default function App() {
           onTab={setTab}
           noteReveal={noteReveal}
           onNoteRevealed={() => setNoteReveal(false)}
+          onBoard={(id) => void openBoard(id)}
+          noteImages={
+            isDesktop && workspace
+              ? {
+                  url: (name) =>
+                    `folio://note-image/${workspace.token}/${encodeURIComponent(name)}`,
+                  save: (data) => invoke<string>('save-note-image', { data }),
+                }
+              : undefined
+          }
+          onError={(message) => notify(message, true)}
           outline={outline}
           order={order}
           selected={selected}
@@ -1903,6 +2084,52 @@ export default function App() {
           onRestore={restoreBackup}
           onClose={() => setHistoryOpen(false)}
         />
+      ) : null}
+      {boardCapture ? (
+        <RegionCapture
+          hint="拖动框选要讲解的公式、图表或段落 · Esc 取消"
+          onCancel={() => setBoardCapture(false)}
+          onError={(message) => {
+            setBoardCapture(false);
+            notify(message, true);
+          }}
+          onCapture={(png, box) => {
+            setBoardCapture(false);
+            void Promise.all([prepareImage(png), framedSpot(box)]).then(([picture, spot]) =>
+              openWhiteboard({ picture, path: spot?.path, where: spot?.where }),
+            );
+          }}
+        />
+      ) : null}
+      {boardList ? (
+        <BoardList
+          current={lesson?.tutor.id}
+          onOpen={(entry) => void openSavedBoard(entry)}
+          onBlank={() => {
+            setBoardList(false);
+            openWhiteboard({ blank: true });
+          }}
+          onClose={() => setBoardList(false)}
+          onDeleted={boardDeleted}
+        />
+      ) : null}
+      {lesson ? (
+        <Suspense fallback={null}>
+          <Whiteboard
+            tutor={lesson.tutor}
+            selection={lesson.selection}
+            onNotify={notify}
+            onHistory={() => setBoardList(true)}
+            onOpenSettings={() => setAiSettingsOpen(true)}
+            noteTarget={lesson.tutor.source || doc?.path}
+            onNote={(picture) => boardToNote(lesson.tutor.entry(), lesson.tutor.get(), picture)}
+            noteAsk={noteAsk}
+            onClose={() => {
+              lesson.tutor.dispose();
+              setLesson(null);
+            }}
+          />
+        </Suspense>
       ) : null}
       {aiSettingsOpen ? (
         <AiSettings

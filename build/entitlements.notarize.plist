@@ -16,5 +16,9 @@
     <!-- Electron 运行时会申请可执行内存，hardened runtime 下需要放行。 -->
     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
     <true/>
+
+    <!-- 白板语音对话要用麦克风；hardened runtime 下缺这条会被系统静默拒绝。 -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
   </dict>
 </plist>

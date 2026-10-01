@@ -143,6 +143,90 @@ export function surrounding(doc: DocText, selection: string, chars = 2_400) {
     (start + chars < flat.length ? '…' : '')
   );
 }
+// Where on the page something was framed or selected, as the reader reports it.
+export type Where = { page?: number; inside?: string; visible?: string };
+const cut = (text: string, tokens: number, fromEnd = false) => {
+  const have = estimateTokens(text);
+  if (have <= tokens) return text;
+  const n = Math.floor((text.length * tokens) / have);
+  return fromEnd ? '…' + text.slice(-n) : text.slice(0, n) + '…';
+};
+// The document for explaining one spot in it: the whole thing when it is short; otherwise
+// its opening (what it is about, where terms are introduced) and the text around the spot,
+// which is where the symbols in a formula or figure are usually defined.
+export function spotContext(doc: DocText, where: Where, budget = 6_000) {
+  const body = docBody(doc);
+  if (estimateTokens(body) <= budget) return { opening: '', around: body };
+  const opening = cut(body, Math.floor(budget * 0.2));
+  const room = budget - estimateTokens(opening);
+  const pages = doc.pages;
+  if (pages && where.page && pages[where.page - 1] !== undefined) {
+    // The page itself, then the end of the one before and the start of the one after.
+    const p = where.page;
+    const own = cut(`[第 ${p} 页]\n${pages[p - 1]}`, Math.floor(room * 0.6));
+    const left = room - estimateTokens(own);
+    const before = p > 1 ? cut(`[第 ${p - 1} 页]\n${pages[p - 2]}`, left * 0.6, true) : '';
+    const after =
+      p < pages.length ? cut(`[第 ${p + 1} 页]\n${pages[p]}`, left - estimateTokens(before)) : '';
+    return {
+      opening: p > 2 ? opening : '',
+      around: [before, own, after].filter(Boolean).join('\n\n'),
+    };
+  }
+  const flat = body.replace(/\s+/g, ' ');
+  const find = (text = '') => {
+    const probe = text.replace(/\s+/g, ' ').trim().slice(0, 40);
+    return probe.length >= 6 ? flat.indexOf(probe) : -1;
+  };
+  const at = [where.inside, where.visible].map(find).find((i) => i !== -1) ?? -1;
+  if (at === -1)
+    return { opening, around: where.visible ? cut(where.visible, room) : '' };
+  // Characters for the room, centered a little ahead of the spot: definitions come before.
+  const chars = Math.floor((flat.length * room) / estimateTokens(flat));
+  const start = Math.max(0, at - Math.floor(chars * 0.6));
+  const around =
+    (start > 0 ? '…' : '') +
+    flat.slice(start, start + chars) +
+    (start + chars < flat.length ? '…' : '');
+  return { opening: start > opening.length ? opening : '', around };
+}
+// Short passages that best match a question, leaving out ones already in `sent`. Words
+// count by how rare they are in the document: ones it lacks (a Chinese question about an
+// English paper) or has everywhere tell nothing, so a question sharing no rare word with the
+// document finds nothing.
+export function related(doc: DocText, question: string, budget: number, sent = '') {
+  const q = terms(question);
+  if (!q.size) return [];
+  const chunks = chunkDocument(doc, 700).map((c) => ({ c, text: c.text.toLowerCase() }));
+  const weight = new Map<string, number>();
+  for (const t of q) {
+    const df = chunks.filter((x) => x.text.includes(t)).length;
+    if (df && df <= Math.max(1, chunks.length / 3)) weight.set(t, Math.log(chunks.length / df) + 0.5);
+  }
+  if (!weight.size) return [];
+  const seen = sent.replace(/\s+/g, ' ');
+  const ranked = chunks
+    .map(({ c, text }) => {
+      let s = 0;
+      for (const [t, w] of weight) if (text.includes(t)) s += w;
+      return { c, s };
+    })
+    .filter(({ c, s }) => {
+      if (!s) return false;
+      const flat = c.text.replace(/\s+/g, ' ');
+      return !seen.includes(flat.slice(Math.min(20, flat.length >> 2)).slice(0, 60));
+    })
+    .sort((a, b) => b.s - a.s)
+    .slice(0, 3);
+  const out: Chunk[] = [];
+  let used = 0;
+  for (const { c } of ranked) {
+    if (used + c.tokens > budget) continue;
+    out.push(c);
+    used += c.tokens;
+  }
+  return out.sort((a, b) => a.order - b.order);
+}
 export function mostlyChinese(text: string) {
   const letters = text.match(/[㐀-鿿A-Za-z]/g) || [];
   const cjk = text.match(/[㐀-鿿]/g) || [];

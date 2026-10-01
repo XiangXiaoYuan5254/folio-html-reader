@@ -6,6 +6,8 @@ const { presets, presetFor, streamChat, listModels, AiError } = require('./ai-pr
 const codex = require('./ai-codex.cjs');
 
 const efforts = ['', 'off', 'on', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+// Parts of the app that can have their own model; chat is the active service itself.
+const uses = ['explain', 'translate', 'board', 'edit'];
 const clean = (value, max = 300) => (typeof value === 'string' ? value.trim().slice(0, max) : '');
 function number(value, min, max) {
   const n = Math.round(Number(value));
@@ -24,7 +26,10 @@ function createAi({ file, protect, unprotect, fetch, atomicWrite, version = '', 
     } catch {}
     cache ||= { version: 1, providers: [], active: '', prefs: {} };
     cache.providers = Array.isArray(cache.providers) ? cache.providers : [];
+    // Codex was once named “ChatGPT（通过 Codex）”; keep saved services in step with it.
+    for (const p of cache.providers) if (p?.name === 'ChatGPT（通过 Codex）') p.name = 'Codex';
     cache.prefs = cache.prefs && typeof cache.prefs === 'object' ? cache.prefs : {};
+    cache.uses = cache.uses && typeof cache.uses === 'object' ? cache.uses : {};
     return cache;
   }
   async function write(next) {
@@ -44,11 +49,19 @@ function createAi({ file, protect, unprotect, fetch, atomicWrite, version = '', 
     const { key, ...rest } = p;
     return { ...rest, hasKey: !!key };
   }
+  // A part's own choice, while its service is still there.
+  function choiceFor(c, use) {
+    const choice = uses.includes(use) ? c.uses[use] : null;
+    return choice && c.providers.some((p) => p.id === choice.provider) ? choice : null;
+  }
   async function config() {
     const c = await read();
     return {
       providers: c.providers.map(view),
       active: c.providers.some((p) => p.id === c.active) ? c.active : c.providers[0]?.id || '',
+      uses: Object.fromEntries(
+        uses.filter((use) => choiceFor(c, use)).map((use) => [use, c.uses[use]]),
+      ),
       prefs: c.prefs,
       presets,
     };
@@ -98,7 +111,14 @@ function createAi({ file, protect, unprotect, fetch, atomicWrite, version = '', 
   async function removeProvider({ id }) {
     const c = await read();
     const providers = c.providers.filter((p) => p.id !== id);
-    await write({ ...c, providers, active: c.active === id ? providers[0]?.id || '' : c.active });
+    // Parts that used it go back to following chat.
+    const kept = Object.fromEntries(Object.entries(c.uses).filter(([, u]) => u?.provider !== id));
+    await write({
+      ...c,
+      providers,
+      uses: kept,
+      active: c.active === id ? providers[0]?.id || '' : c.active,
+    });
     return config();
   }
   async function setActive({ id, model }) {
@@ -109,6 +129,25 @@ function createAi({ file, protect, unprotect, fetch, atomicWrite, version = '', 
         ? c.providers.map((p) => (p.id === id ? { ...p, model: clean(model, 200) } : p))
         : c.providers;
     await write({ ...c, providers, active: id });
+    return config();
+  }
+  // Gives one part of the app its own service, model and level, or (`follow`) lets it use
+  // chat's again.
+  async function setUse({ use, provider, model, effort, follow }) {
+    const c = await read();
+    if (!uses.includes(use)) throw new AiError('无效的功能');
+    const next = { ...c.uses };
+    if (follow) delete next[use];
+    else {
+      const stored = c.providers.find((p) => p.id === provider);
+      if (!stored) throw new AiError('找不到这个 AI 服务');
+      next[use] = {
+        provider: stored.id,
+        model: clean(model, 200) || stored.model,
+        effort: efforts.includes(effort) ? effort : '',
+      };
+    }
+    await write({ ...c, uses: next });
     return config();
   }
   // Small per-user preferences: consent to send documents, projects with AI turned off.
@@ -122,6 +161,7 @@ function createAi({ file, protect, unprotect, fetch, atomicWrite, version = '', 
         ...new Set(patch.disabledRoots.map((s) => clean(s, 4096)).filter(Boolean)),
       ].slice(0, 200);
     if (['auto', 'zh', 'en'].includes(patch?.language)) prefs.language = patch.language;
+    if (typeof patch?.profile === 'string') prefs.profile = clean(patch.profile, 2000);
     await write({ ...c, prefs });
     return config();
   }
@@ -171,7 +211,6 @@ function createAi({ file, protect, unprotect, fetch, atomicWrite, version = '', 
         signal: controller.signal,
         onDelta: () => {},
         request: {
-          fast: true,
           messages: [{ role: 'user', content: '这是连接测试，请只回复“OK”。' }],
         },
       });
@@ -200,13 +239,24 @@ function createAi({ file, protect, unprotect, fetch, atomicWrite, version = '', 
   async function chat(payload, emit) {
     const requestId = clean(payload?.requestId, 80);
     if (!requestId) throw new AiError('无效的请求');
-    const { provider, key } = await resolve({ id: payload.providerId });
+    // The part of the app asking picks the service; without a choice of its own, chat's.
+    const choice = choiceFor(await read(), payload.use);
+    const resolved = await resolve({ id: choice?.provider });
+    const { key } = resolved;
+    const provider = choice
+      ? {
+          ...resolved.provider,
+          model: choice.model || resolved.provider.model,
+          effort: choice.effort,
+        }
+      : resolved.provider;
     const request = {
       system: typeof payload.system === 'string' ? payload.system : '',
       messages: Array.isArray(payload.messages) ? payload.messages.map(withValidImages) : [],
       tools: Array.isArray(payload.tools) ? payload.tools : undefined,
-      fast: !!payload.fast,
       json: !!payload.json,
+      // Web search, which only Codex has; asked for by chat.
+      web: !!payload.web,
       maxTokens: number(payload.maxTokens, 1_000, 200_000),
     };
     const controller = new AbortController();
@@ -240,11 +290,13 @@ function createAi({ file, protect, unprotect, fetch, atomicWrite, version = '', 
   }
   const codexStatus = () => codex.status(version);
   const codexLogin = () => codex.login(version, openUrl);
+  const codexVoice = (payload, emit) => codex.voice(version, payload, emit);
   return {
     config,
     saveProvider,
     removeProvider,
     setActive,
+    setUse,
     setPrefs,
     models,
     test,
@@ -254,6 +306,7 @@ function createAi({ file, protect, unprotect, fetch, atomicWrite, version = '', 
     shutdown,
     codexStatus,
     codexLogin,
+    codexVoice,
   };
 }
 module.exports = { createAi };

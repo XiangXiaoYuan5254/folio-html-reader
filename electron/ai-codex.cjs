@@ -5,7 +5,7 @@
 //
 // Codex's own tools (shell, web search, plugins, MCP servers) are switched off; the model
 // only answers, or calls the tools Folio passes in (the project agent's tools), which the
-// server hands back as `item/tool/call` requests.
+// server hands back as `item/tool/call` requests. Chat alone turns web search back on.
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -403,6 +403,17 @@ class Thread {
         this.reasoning += m.params.delta || '';
         w?.onDelta({ reasoning: m.params.delta || '' });
         break;
+      // A web search the model chose to run (chat only): shown as a step, by its query.
+      case 'item/started':
+      case 'item/completed': {
+        const item = m.params?.item;
+        if (item?.type !== 'webSearch') break;
+        const a = item.action || {};
+        const what = a.type === 'openPage' ? a.url : item.query || a.query || a.queries?.[0];
+        const title = `${a.type === 'openPage' ? '打开网页' : '联网搜索'}${what ? `：${what}` : ''}`;
+        w?.onDelta({ search: { id: item.id, title, done: m.method === 'item/completed' } });
+        break;
+      }
       case 'item/tool/call': {
         const p = m.params || {};
         this.calls.push({
@@ -496,7 +507,12 @@ async function streamCodex({ provider, request, signal, onDelta, version }) {
       request.system ||
       '你是「页间」阅读器里的助手。回答用户关于文档的问题。用简体中文，使用 Markdown。',
     developerInstructions:
-      '你在一个阅读器应用里运行，不能执行命令，也不能读写文件。只根据对话中提供的内容和可用的工具工作。',
+      '你在一个阅读器应用里运行，不能执行命令，也不能读写文件。只根据对话中提供的内容和可用的工具工作。' +
+      (request.web
+        ? '\n\n你可以联网搜索，但只在需要时才搜：问题涉及最新的信息（新闻、版本、价格、近期发生的事），或者要核实你没把握的具体事实（数字、日期、出处）。关于文档本身的问题，直接根据文档回答，不要搜索。用了搜索结果时，注明来源。'
+        : ''),
+    // Codex's own web search, for chat only; everything else stays offline.
+    ...(request.web ? { config: { web_search: 'live' } } : {}),
     ...(request.tools?.length
       ? {
           dynamicTools: request.tools.map((t) => ({
@@ -514,12 +530,10 @@ async function streamCodex({ provider, request, signal, onDelta, version }) {
   const thread = new Thread(s, threadId);
   s.threads.set(threadId, thread);
   const pending = thread.next(onDelta, signal, idleMs);
-  // Quick tasks use the lowest level; otherwise the level picked for this model, if any.
-  const effort = request.fast
-    ? 'low'
-    : /^(minimal|low|medium|high|xhigh|max)$/.test(provider.effort || '')
-      ? provider.effort
-      : '';
+  // The level picked for this model, if any; otherwise Codex's own default.
+  const effort = /^(minimal|low|medium|high|xhigh|max)$/.test(provider.effort || '')
+    ? provider.effort
+    : '';
   try {
     const turn = await s.call('turn/start', {
       threadId,
@@ -534,9 +548,119 @@ async function streamCodex({ provider, request, signal, onDelta, version }) {
   return pending;
 }
 
+// The whiteboard teacher in one of ChatGPT's voices: a Codex realtime session, which a
+// ChatGPT login can open only over WebRTC. The window holds the connection, plays the voice
+// and gives it the microphone; this starts the session with the window's offer and passes
+// on what the voice is to say or know. Its notifications reach the window through `emit`
+// as { type: 'codex-voice', id, event }.
+//
+// What the teacher teaches comes from the board's model. When the voice asks Codex to look
+// into a question itself (a delegation, which runs a Codex turn on the session's thread),
+// that turn is stopped at once and the window is told: the answer comes from the board.
+const voices = new Map();
+const clip = (v, max) => String(v ?? '').slice(0, max);
+async function voice(version, payload, emit) {
+  const s = await getServer(version);
+  const id = clip(payload?.id, 100);
+  switch (payload?.type) {
+    case 'voices': {
+      const result = await s.call('thread/realtime/listVoices', {}, 15_000);
+      // The voices a session over WebRTC accepts.
+      return result?.voices?.v1 || [];
+    }
+    case 'start': {
+      const started = await s.call('thread/start', {
+        cwd: s.cwd,
+        ephemeral: true,
+        sandbox: 'read-only',
+        approvalPolicy: 'never',
+        serviceName: 'folio',
+      });
+      const threadId = started?.thread?.id;
+      if (!threadId) throw new CodexError('Codex 没有创建语音会话');
+      let answer;
+      const sdp = new Promise((resolve, reject) => (answer = { resolve, reject }));
+      const listener = (m) => {
+        if (m.params?.threadId !== threadId) return;
+        if (m.method === 'turn/started') {
+          s.call('turn/interrupt', { threadId, turnId: m.params.turn?.id }, 10_000).catch(() => {});
+          emit({ type: 'codex-voice', id: threadId, event: { type: 'delegated' } });
+          return;
+        }
+        if (!m.method?.startsWith('thread/realtime/')) return;
+        const kind = m.method.slice('thread/realtime/'.length);
+        if (kind === 'sdp') return answer.resolve(m.params.sdp);
+        if (kind === 'error' || kind === 'closed') {
+          const message = m.params.message || m.params.reason || '';
+          answer.reject(new CodexError(friendly(message || '语音会话没有打开')));
+          emit({ type: 'codex-voice', id: threadId, event: { type: kind, message } });
+          if (kind === 'closed') {
+            s.listeners.delete(listener);
+            voices.delete(threadId);
+          }
+        }
+      };
+      s.listeners.add(listener);
+      voices.set(threadId, () => s.listeners.delete(listener));
+      const timer = setTimeout(
+        () => answer.reject(new CodexError('Codex 语音会话没有响应')),
+        20_000,
+      );
+      // What was said before, when a session takes over from one that ended.
+      const history = (Array.isArray(payload.history) ? payload.history : [])
+        .filter((h) => ['user', 'assistant', 'developer'].includes(h?.role) && h.text)
+        .slice(-40)
+        .map((h) => ({ role: h.role, text: clip(h.text, 600) }));
+      try {
+        await s.call('thread/realtime/start', {
+          threadId,
+          outputModality: 'audio',
+          version: 'v3',
+          voice: clip(payload.voice || 'cove', 40),
+          transport: { type: 'webrtc', sdp: clip(payload.sdp, 20_000) },
+          includeStartupContext: false,
+          prompt: clip(payload.prompt, 4000),
+          ...(history.length ? { initialItems: history } : {}),
+        });
+        return { id: threadId, sdp: await sdp };
+      } catch (e) {
+        voices.get(threadId)?.();
+        voices.delete(threadId);
+        throw e;
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    // Text to read out word for word.
+    case 'say':
+      await s.call('thread/realtime/appendSpeech', {
+        threadId: id,
+        text: clip(payload.text, 2000),
+      });
+      return true;
+    // What the voice should know, from the board: talking points, what was drawn, what the
+    // student did. Not said to the student as it is.
+    case 'tell':
+      await s.call('thread/realtime/appendText', {
+        threadId: id,
+        role: 'developer',
+        text: clip(payload.text, 4000),
+      });
+      return true;
+    case 'stop':
+      voices.get(id)?.();
+      voices.delete(id);
+      await s.call('thread/realtime/stop', { threadId: id }, 10_000).catch(() => {});
+      return true;
+    default:
+      throw new CodexError('未知的语音操作');
+  }
+}
+
 function stop() {
   server?.child?.kill();
   server = null;
+  voices.clear();
 }
 
 module.exports = {
@@ -545,6 +669,7 @@ module.exports = {
   login,
   listModels,
   streamCodex,
+  voice,
   stop,
   CodexError,
   transcript,

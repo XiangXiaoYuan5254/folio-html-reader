@@ -15,6 +15,7 @@ import {
   StickyNote,
   SlidersHorizontal,
   Type,
+  Presentation,
   Sparkles,
   Maximize,
   Minimize,
@@ -96,6 +97,8 @@ export function Toolbar(p: {
   onAiEdit?: () => void;
   assistantOpen?: boolean;
   onAssistant?: () => void;
+  // Explains the selected text, or a framed region of the page, on the whiteboard.
+  onWhiteboard?: () => void;
   inspecting: boolean;
   autosave: boolean;
   onAutosave: () => void;
@@ -397,6 +400,17 @@ export function Toolbar(p: {
       <IconButton label="查找文内文字" onClick={p.onFind} disabled={p.disabled}>
         <Search size={17} />
       </IconButton>
+      {p.onWhiteboard ? (
+        <IconButton
+          className="focus-hide"
+          label="白板讲解"
+          help="选中文字，或点这里框选公式、图片，页老师在白板上边写边讲"
+          disabled={p.disabled}
+          onClick={p.onWhiteboard}
+        >
+          <Presentation size={17} />
+        </IconButton>
+      ) : null}
       {p.onAssistant ? (
         <button
           type="button"

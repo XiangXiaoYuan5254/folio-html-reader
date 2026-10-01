@@ -1,23 +1,23 @@
 {
   "name": "folio-html-reader",
   "productName": "页间",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "本地 HTML / PDF 阅读、批注与项目管理",
   "type": "module",
   "main": "electron/main.cjs",
   "author": "XiangXiaoYuan5254",
   "license": "MIT",
   "scripts": {
-    "dev": "node scripts/dev.mjs",
+    "dev": "node scripts/build-speech.mjs && node scripts/dev.mjs",
     "dev:web": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
     "start": "electron .",
     "test": "node --test tests/*.test.cjs",
     "test:e2e": "npm run build && node tests/e2e.mjs && node tests/annotations.e2e.mjs && node tests/reading-interactions.e2e.mjs && node tests/zoom.e2e.mjs && node tests/pdf.e2e.mjs && node tests/tabs.e2e.mjs && node tests/text-width.e2e.mjs && node tests/source.e2e.mjs && node tests/open-file.e2e.mjs && node tests/ai.e2e.mjs",
     "test:annotations": "npm run build && node tests/annotations.e2e.mjs",
-    "pack": "npm run build && electron-builder --mac dir",
+    "pack": "npm run build && node scripts/build-speech.mjs && electron-builder --mac dir",
     "format": "prettier --write src electron scripts tests vite.config.ts",
-    "dist:mac": "npm run build && electron-builder --mac dmg zip --arm64 --publish never && node scripts/checksums.mjs mac",
+    "dist:mac": "npm run build && node scripts/build-speech.mjs && electron-builder --mac dmg zip --arm64 --publish never && node scripts/checksums.mjs mac",
     "dist:win": "npm run build && electron-builder --win nsis --x64 --publish never && node scripts/checksums.mjs win",
     "test:reading": "npm run build && node tests/reading-interactions.e2e.mjs",
     "test:zoom": "npm run build && node tests/zoom.e2e.mjs",
@@ -44,6 +44,7 @@
     "@lezer/highlight": "^1.2.5",
     "codemirror": "^6.0.2",
     "electron-updater": "6.8.9",
+    "katex": "^0.16.47",
     "lucide-react": "^0.468.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
@@ -96,6 +97,18 @@
       "icon": "assets/icon.icns",
       "notarize": false,
       "minimumSystemVersion": "12.0",
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extraResources": [
+        {
+          "from": "build/native/folio-speech",
+          "to": "folio-speech"
+        }
+      ],
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "白板语音对话时，页间用麦克风听你说话：用这台电脑的声音讲课时只在本机识别，用 ChatGPT 的声音讲课时会发给 ChatGPT。",
+        "NSSpeechRecognitionUsageDescription": "白板语音对话时，页间把你说的话转成文字交给老师。"
+      },
       "artifactName": "Folio-${version}-mac-${arch}.${ext}",
       "fileAssociations": [
         {
