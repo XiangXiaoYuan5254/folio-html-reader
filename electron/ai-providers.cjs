@@ -211,10 +211,12 @@ const presets = [
 const presetFor = (id) => presets.find((p) => p.id === id) || presets.at(-1);
 
 class AiError extends Error {
-  constructor(message, { status = 0, retry = false } = {}) {
+  // `noImages`: the service turned pictures away, so the model doesn't take them.
+  constructor(message, { status = 0, retry = false, noImages = false } = {}) {
     super(message);
     this.status = status;
     this.retry = retry;
+    this.noImages = noImages;
   }
 }
 function detail(body) {
@@ -459,12 +461,13 @@ async function streamOpenAI({ provider, key, request, signal, onDelta, fetch }) 
     const text = await response.text().catch(() => '');
     if (
       hasImages(request.messages) &&
-      [400, 415, 422].includes(response.status) &&
+      // OpenRouter answers 404 when none of a model's hosts takes images.
+      [400, 404, 415, 422].includes(response.status) &&
       /image|vision|multimodal|modal|picture/i.test(text)
     )
       throw new AiError(
-        `${provider.model} 好像不能看图，请换一个能看图的模型，或去掉图片再问（${provider.name}：${detail(text)}）`,
-        { status: response.status },
+        `${provider.model} 不能看图，请换一个能看图的模型，或去掉图片再问（${provider.name}：${detail(text)}）`,
+        { status: response.status, noImages: true },
       );
     // Some services reject the JSON response format or a large output limit; retry without.
     if (request.json && response.status === 400 && /response_format|json/i.test(text))
@@ -710,6 +713,44 @@ async function streamChat({ provider, key, request, signal, onDelta, fetch }) {
   }
 }
 
+// Whether a listed model takes images, where the list says so: OpenRouter's
+// architecture.input_modalities, Kimi's supports_image_in.
+function listedImages(m) {
+  const modalities = m?.architecture?.input_modalities || m?.input_modalities;
+  if (Array.isArray(modalities)) return modalities.includes('image');
+  if (typeof m?.supports_image_in === 'boolean') return m.supports_image_in;
+  return undefined;
+}
+// Ollama and LM Studio tell from their own APIs, beside the OpenAI-compatible /v1.
+async function localImages(provider, ids, fetch, signal) {
+  const root = String(provider.baseUrl || '').replace(/\/v1\/?$/, '');
+  const found = new Map();
+  if (provider.preset === 'ollama')
+    await Promise.all(
+      ids.map(async (id) => {
+        try {
+          const response = await fetch(endpoint(root, '/api/show'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: id }),
+            signal,
+          });
+          const caps = response.ok ? (await response.json())?.capabilities : null;
+          if (Array.isArray(caps)) found.set(id, caps.includes('vision'));
+        } catch {}
+      }),
+    );
+  if (provider.preset === 'lmstudio')
+    try {
+      const response = await fetch(endpoint(root, '/api/v0/models'), { signal });
+      const list = response.ok ? (await response.json())?.data : null;
+      for (const m of Array.isArray(list) ? list : [])
+        if (m?.id && (m.type === 'vlm' || m.type === 'llm')) found.set(m.id, m.type === 'vlm');
+    } catch {}
+  return found;
+}
+
+// The service's models, each with whether it takes images when the service says.
 async function listModels({ provider, key, fetch, signal }) {
   if (provider.kind === 'anthropic') {
     const client = anthropicClient(provider, key, fetch);
@@ -719,7 +760,7 @@ async function listModels({ provider, key, fetch, signal }) {
     } catch (e) {
       throw anthropicError(e, provider);
     }
-    return ids;
+    return ids.map((id) => ({ id }));
   }
   let response;
   try {
@@ -739,9 +780,18 @@ async function listModels({ provider, key, fetch, signal }) {
     throw new AiError('模型列表格式无法识别，请手动填写模型名称');
   }
   const list = Array.isArray(value) ? value : value.data || value.models || [];
-  return [...new Set(list.map((m) => (typeof m === 'string' ? m : m.id || m.name)).filter(Boolean))]
-    .map(String)
-    .sort((a, b) => a.localeCompare(b));
+  const models = new Map();
+  for (const m of list) {
+    const id = String((typeof m === 'string' ? m : m?.id || m?.name) || '');
+    if (id && !models.has(id)) models.set(id, listedImages(m));
+  }
+  const local = await localImages(provider, [...models.keys()], fetch, signal);
+  return [...models]
+    .map(([id, images]) => {
+      const sees = local.has(id) ? local.get(id) : images;
+      return typeof sees === 'boolean' ? { id, images: sees } : { id };
+    })
+    .sort((a, b) => a.id.localeCompare(b.id));
 }
 
 module.exports = {

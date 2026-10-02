@@ -177,6 +177,14 @@ kbd {
   font-size: 1.15em;
   stroke-width: 2;
 }
+.icon-fill {
+  fill: currentColor;
+}
+.btn-sub {
+  font-weight: 500;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
 .btn-sm {
   font-size: 14px;
   padding: 9px 14px;
@@ -670,6 +678,111 @@ kbd {
   color: var(--ink-3);
 }
 
+/* ---------- Video ---------- */
+.film {
+  padding: 0 0 128px;
+}
+.film-stage {
+  position: relative;
+  max-width: 1120px;
+}
+.film-frame {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: #f8f1e2;
+  border-radius: 22px;
+  box-shadow: var(--shadow-lg);
+}
+.film-frame video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.film-play {
+  display: none;
+}
+.js .film-play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  padding: clamp(14px, 3.4%, 36px);
+  font: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.film-frame.is-playing .film-play {
+  display: none;
+}
+.film-play-icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  flex: none;
+  color: #fdfbf5;
+  font-size: 22px;
+  background: linear-gradient(180deg, var(--green-500), var(--green-800));
+  border-radius: 50%;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 10px 24px -8px rgba(21, 59, 51, 0.6);
+  transition: transform 0.25s var(--ease);
+}
+.film-play-icon .icon {
+  margin-left: 3px;
+}
+.film-play-text {
+  display: grid;
+  margin-left: -10px;
+  padding: 10px 22px 10px 24px;
+  line-height: 1.4;
+  background: rgba(255, 253, 248, 0.94);
+  border: 1px solid var(--line-2);
+  border-left: 0;
+  border-radius: 0 99px 99px 0;
+  box-shadow: var(--shadow-sm);
+}
+.film-play-text b {
+  font-size: 16px;
+  color: var(--ink);
+}
+.film-play-text span {
+  font-size: 13px;
+  color: var(--ink-3);
+}
+.film-play:hover .film-play-icon {
+  transform: scale(1.08);
+}
+.film-play:focus-visible {
+  outline-offset: -6px;
+  border-radius: 22px;
+}
+.film-note {
+  position: absolute;
+  right: 18px;
+  top: -44px;
+  font: 400 24px/1.4 var(--hand);
+  color: var(--coral);
+  letter-spacing: 0.04em;
+  transform: rotate(4deg);
+}
+.film-note::after {
+  /* 指向视频的小箭头 */
+  content: '';
+  position: absolute;
+  right: -30px;
+  top: 22px;
+  width: 30px;
+  height: 30px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3E%3Cg fill='none' stroke='%23c1462f' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4c12 0 20 8 21 21'/%3E%3Cpath d='M18 19.5l6 6 5-7'/%3E%3C/g%3E%3C/svg%3E")
+    no-repeat center / contain;
+}
+
 /* ---------- Section scaffolding ---------- */
 .section {
   padding: 140px 0;
@@ -998,9 +1111,94 @@ kbd {
   background: var(--violet);
   border-color: transparent;
 }
-.agent-step:nth-child(n + 3) {
+.agent-step:not(.done) {
   border-color: rgba(185, 173, 255, 0.22);
   background: rgba(106, 90, 224, 0.08);
+}
+
+/* 找论文：横跨整行，左边说明，右边对话 */
+.ai-wide {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  align-items: center;
+}
+.ai-wide .ai-copy {
+  padding: 40px 16px 40px 40px;
+}
+.ai-wide .agent {
+  margin: 36px 36px 36px 0;
+}
+.tag-new {
+  margin-left: 2px;
+  padding: 2px 9px;
+  white-space: nowrap;
+  font: 600 12px/1.5 var(--sans);
+  letter-spacing: 0.02em;
+  color: #fff;
+  background: linear-gradient(120deg, var(--green-600), var(--violet));
+  border-radius: 99px;
+}
+.dark .checks {
+  margin-top: 22px;
+  gap: 10px;
+}
+.dark .checks li {
+  font-size: 14.5px;
+  color: var(--night-ink-2);
+}
+.dark .checks li::before {
+  background-color: rgba(127, 208, 184, 0.14);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237fd0b8' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+}
+.agent-ask {
+  justify-self: end;
+  max-width: 88%;
+  margin-bottom: 4px;
+  padding: 10px 15px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--night-ink);
+  background: rgba(106, 90, 224, 0.24);
+  border-radius: 14px 14px 4px 14px;
+}
+.papers {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 0 26px;
+  padding: 6px;
+  list-style: none;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--night-line);
+  border-radius: 12px;
+}
+.papers li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 12px;
+  padding: 7px 10px;
+  line-height: 1.5;
+}
+.papers b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--night-ink);
+}
+.papers span {
+  font-size: 12px;
+  color: var(--night-ink-3);
+}
+.papers em {
+  grid-area: 1 / 2 / 3;
+  align-self: center;
+  padding: 1px 8px;
+  font: 600 11.5px/1.6 var(--sans);
+  color: #7fd0b8;
+  border: 1px solid rgba(127, 208, 184, 0.35);
+  border-radius: 6px;
 }
 
 /* ---------- Whiteboard ---------- */
@@ -2058,6 +2256,15 @@ details summary::-webkit-details-marker {
   .ai-grid > * {
     grid-column: 1 / -1;
   }
+  .ai-wide {
+    grid-template-columns: 1fr;
+  }
+  .ai-wide .ai-copy {
+    padding: 34px 36px 8px;
+  }
+  .ai-wide .agent {
+    margin: 20px 36px 36px;
+  }
   .shot-tall img {
     max-width: 520px;
     margin-inline: auto;
@@ -2175,8 +2382,38 @@ details summary::-webkit-details-marker {
   .shot-tall {
     margin-right: 24px;
   }
-  .agent {
+  .agent,
+  .ai-wide .agent {
     margin: 4px 20px 24px;
+  }
+  .ai-wide .ai-copy {
+    padding: 26px 24px 8px;
+  }
+  .papers {
+    margin-left: 0;
+  }
+  .film {
+    padding-bottom: 92px;
+  }
+  .film-frame {
+    border-radius: 12px;
+  }
+  .film-play-icon {
+    width: 44px;
+    height: 44px;
+    font-size: 18px;
+  }
+  .film-play-text {
+    /* 小屏只留圆形播放键，免得挡住画面；文字留给读屏 */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .film-note {
+    display: none;
   }
   .agent-step {
     flex-wrap: wrap;

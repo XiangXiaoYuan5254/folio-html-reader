@@ -2,7 +2,8 @@ import { useSyncExternalStore } from 'react';
 import { chat, errorText, isAbort } from './client';
 import { fileName, related, spotContext } from './context';
 import type { Where } from './context';
-import { seesImages } from './images';
+import { refusesImages } from './images';
+import { loadedModelOptions } from './levels';
 import { language, untrusted } from './prompts';
 import { axesShapes, boardColor, dotShapes, graphShapes, svgShapes } from './board-figure';
 import type { Axes, ShapeSpec } from './board-figure';
@@ -1281,7 +1282,7 @@ export class Tutor {
     try {
       const { provider, config } = await this.options.ready();
       if (run !== this.run) return;
-      const vision = seesImages(provider) !== false;
+      const vision = !refusesImages(provider, loadedModelOptions(provider.id));
       if (attach?.length && !vision)
         throw Error(
           `${provider.name} 的 ${provider.model} 看不到图片。请在 AI 设置里换一个能看图的模型${this.kind === 'picture' ? '，或者选中文字再用白板' : '，或者把题目打成文字'}。`,

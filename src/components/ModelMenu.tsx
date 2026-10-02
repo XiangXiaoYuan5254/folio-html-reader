@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, ImagePlus, LoaderCircle, Settings2 } from 'lucide-react';
+import { Check, ChevronDown, ImageOff, ImagePlus, LoaderCircle, Settings2 } from 'lucide-react';
 import { invoke } from '../api';
 import {
   activeProvider,
@@ -12,7 +12,7 @@ import {
   useInfo,
 } from '../ai/client';
 import { effortLabel, levelsFor, modelOptions } from '../ai/levels';
-import { seesImages } from '../ai/images';
+import { refusesImages, seesImages } from '../ai/images';
 import type { AiConfig, AiProvider, AiUse, ModelOption } from '../ai/types';
 
 const shortName = (p: AiProvider) => p.name.replace(/（.*?）|\(.*?\)/g, '').trim() || p.name;
@@ -259,7 +259,11 @@ export function ModelMenu({
                           onClick={() => void pickModel(shown, m.id)}
                         >
                           <span>{m.id}</span>
-                          {seesImages({ ...shown, model: m.id }, models) ? (
+                          {refusesImages({ ...shown, model: m.id }, models) ? (
+                            <ImageOff className="model-vision" size={12} aria-label="不能看图">
+                              <title>不能看图</title>
+                            </ImageOff>
+                          ) : seesImages({ ...shown, model: m.id }, models) ? (
                             <ImagePlus className="model-vision" size={12} aria-label="能看图">
                               <title>能看图</title>
                             </ImagePlus>

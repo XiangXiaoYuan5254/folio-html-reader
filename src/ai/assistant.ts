@@ -67,7 +67,8 @@ import {
 } from './companion';
 import { citations, citeKey, plainCites, plainText } from './plain';
 export { citations, citeKey, plainCites, plainText } from './plain';
-import { imageTokens, maxImages, seesImages } from './images';
+import { imageTokens, maxImages, refusesImages } from './images';
+import { loadedModelOptions } from './levels';
 import type { PreparedTool } from './agent-tools';
 
 export type Scope = string; // a document id, or 'project' for the agent
@@ -442,7 +443,7 @@ export class Assistant {
         config,
         question + ' ' + (selection || ''),
       );
-      const vision = seesImages(provider) !== false;
+      const vision = !refusesImages(provider, loadedModelOptions(provider.id));
       const messages: WireMessage[] = [];
       let budget = Math.max(4_000, provider.context * 0.15);
       for (const m of [...history].reverse()) {
@@ -1151,7 +1152,7 @@ export class Assistant {
         files,
         this.host.activePath(),
       );
-      const vision = seesImages(provider) !== false;
+      const vision = !refusesImages(provider, loadedModelOptions(provider.id));
       const wire: WireMessage[] = [];
       for (const m of history) {
         if (m.role === 'user') wire.push(userTurn(m.text || imageRequest, m.images, vision));

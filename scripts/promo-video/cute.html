@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>页间 Folio 宣传视频 · 手绘可爱版</title>
+    <link rel="stylesheet" href="cute.css" />
+  </head>
+  <body>
+    <div id="stage">
+      <div id="bg"></div>
+      <svg id="paper" viewBox="0 0 1920 1080" width="1920" height="1080">
+        <defs>
+          <pattern id="dots" width="36" height="36" patternUnits="userSpaceOnUse">
+            <circle cx="18" cy="18" r="2.2" fill="#e9dcc4" />
+          </pattern>
+          <radialGradient id="vignette" cx="50%" cy="50%" r="75%">
+            <stop offset="60%" stop-color="#000" stop-opacity="0" />
+            <stop offset="100%" stop-color="#6b4f2a" stop-opacity=".12" />
+          </radialGradient>
+          <filter id="boil" x="-10%" y="-10%" width="120%" height="120%">
+            <feTurbulence type="fractalNoise" baseFrequency="0.022" numOctaves="2" seed="1" />
+            <feDisplacementMap in="SourceGraphic" scale="4.5" xChannelSelector="R" yChannelSelector="G" />
+          </filter>
+          <linearGradient id="aurora" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#2b1d5c" />
+            <stop offset=".5" stop-color="#1e5c6b" />
+            <stop offset="1" stop-color="#5a2a6e" />
+          </linearGradient>
+        </defs>
+        <rect width="1920" height="1080" fill="url(#dots)" />
+      </svg>
+      <div id="scenes"></div>
+      <svg id="over" viewBox="0 0 1920 1080" width="1920" height="1080"></svg>
+      <svg id="vig" viewBox="0 0 1920 1080" width="1920" height="1080">
+        <rect width="1920" height="1080" fill="url(#vignette)" />
+      </svg>
+    </div>
+    <div id="scrub" hidden>
+      <button id="play">▶</button><input id="time" type="range" min="0" step="0.001" /><span
+        id="clock"
+      ></span>
+    </div>
+    <script type="module" src="cute.js"></script>
+  </body>
+</html>

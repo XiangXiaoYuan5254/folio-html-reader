@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>页间 Folio 宣传视频</title>
+    <link rel="stylesheet" href="video.css" />
+  </head>
+  <body>
+    <div id="stage">
+      <div id="bg">
+        <div class="bg-light"></div>
+        <div class="bg-dark"></div>
+        <div class="blob b1"></div>
+        <div class="blob b2"></div>
+        <div class="blob b3"></div>
+        <div class="grain"></div>
+      </div>
+      <div id="scenes"></div>
+      <div id="flash"></div>
+    </div>
+    <div id="scrub" hidden>
+      <button id="play">▶</button><input id="time" type="range" min="0" step="0.001" /><span
+        id="clock"
+      ></span>
+    </div>
+    <script type="module" src="video.js"></script>
+  </body>
+</html>

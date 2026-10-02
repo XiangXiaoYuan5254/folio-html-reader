@@ -27,6 +27,8 @@ export type AiProvider = {
   effort: string;
   keyHint: string;
   hasKey: boolean;
+  // Models known to take images or not, learned from sending them some.
+  vision?: Record<string, boolean>;
 };
 export type AiPrefs = {
   consented?: string[];

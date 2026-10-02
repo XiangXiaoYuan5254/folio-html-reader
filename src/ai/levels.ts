@@ -16,18 +16,30 @@ export const effortLabel = (effort: string) => labels[effort] ?? effort;
 
 // Model lists are fetched once per service and kept while the app runs.
 const cache = new Map<string, Promise<ModelOption[]>>();
+// The lists that have arrived, for code that can't wait for one.
+const loaded = new Map<string, ModelOption[]>();
 export function modelOptions(providerId: string, refresh = false) {
   let pending = cache.get(providerId);
   if (!pending || refresh) {
     pending = invoke<ModelOption[]>('ai-models', { id: providerId });
     cache.set(providerId, pending);
-    pending.catch(() => cache.delete(providerId));
+    pending.then(
+      (list) => cache.get(providerId) === pending && loaded.set(providerId, list),
+      () => cache.delete(providerId),
+    );
   }
   return pending;
 }
+export const loadedModelOptions = (providerId: string | undefined) =>
+  providerId ? loaded.get(providerId) : undefined;
 export function forgetModelOptions(providerId?: string) {
-  if (providerId) cache.delete(providerId);
-  else cache.clear();
+  if (providerId) {
+    cache.delete(providerId);
+    loaded.delete(providerId);
+  } else {
+    cache.clear();
+    loaded.clear();
+  }
 }
 // The levels to offer for a model: what it reports, else the service's list.
 export function levelsFor(

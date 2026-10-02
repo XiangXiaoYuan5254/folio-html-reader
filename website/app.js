@@ -3,15 +3,15 @@
 // ============================================================
 
 const RELEASE = {
-  version: '0.12.0',
+  version: '0.12.1',
   date: '2026.10.02',
 };
 
 // 各平台安装包的下载地址和大小。安装包放在 website/downloads/，随官网一起部署到自己的服务器。
 // url 留空时，对应的下载按钮显示为“即将开放下载”且不可点击，不会给访客死链。
 const DOWNLOADS = {
-  mac: { url: 'downloads/Folio-0.12.0-mac-arm64.dmg', size: '130 MB' },
-  win: { url: 'downloads/Folio-0.12.0-win-x64-setup.exe', size: '110 MB' },
+  mac: { url: 'downloads/Folio-0.12.1-mac-arm64.dmg', size: '130 MB' },
+  win: { url: 'downloads/Folio-0.12.1-win-x64-setup.exe', size: '110 MB' },
 };
 
 // 页脚的“意见反馈”邮箱。留空则不显示。
@@ -150,6 +150,27 @@ const heroImg = $('img', heroWindow);
 const ink = () => setTimeout(() => heroWindow.classList.add('is-inked'), 900);
 if (heroImg.complete) ink();
 else heroImg.addEventListener('load', ink, { once: true });
+
+// 宣传片：点了才加载、才出声；首屏的“看宣传片”滚过来直接播放，播完回到封面
+const film = $('[data-film]');
+const filmVideo = $('video', film);
+filmVideo.controls = false;
+function playFilm() {
+  film.classList.add('is-playing');
+  filmVideo.controls = true;
+  filmVideo.play();
+}
+$('[data-film-play]').addEventListener('click', playFilm);
+$('[data-film-open]').addEventListener('click', (e) => {
+  e.preventDefault();
+  film.scrollIntoView({ block: 'center' });
+  playFilm();
+});
+filmVideo.addEventListener('ended', () => {
+  film.classList.remove('is-playing');
+  filmVideo.controls = false;
+  filmVideo.load();
+});
 
 // 界面主题：点一下换截图，整块背景跟着变；没人操作时在视野里自动轮换
 const THEMES = {

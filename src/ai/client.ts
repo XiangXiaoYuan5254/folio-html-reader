@@ -107,6 +107,8 @@ export async function chat(request: ChatRequest, handlers: ChatHandlers = {}) {
   if (!isDesktop) throw Error('请在桌面版中使用 AI 功能');
   if (handlers.signal?.aborted) throw abortError();
   const requestId = crypto.randomUUID();
+  // Whether the model takes pictures is learned from sending some (electron/ai.cjs).
+  const pictures = request.messages.some((m) => m.images?.length);
   let streamed = '';
   const off = subscribe((e) => {
     if (e.type !== 'ai-delta' || e.requestId !== requestId) return;
@@ -126,12 +128,14 @@ export async function chat(request: ChatRequest, handlers: ChatHandlers = {}) {
       ...request,
     });
     if (result.stopped || handlers.signal?.aborted) throw abortError();
+    if (pictures) void loadAiConfig(true);
     // A reply that comes in one burst can get here before its last pieces do.
     if (result.text?.length > streamed.length && result.text.startsWith(streamed))
       handlers.onText?.(result.text.slice(streamed.length));
     return result;
   } catch (e) {
     if (isAbort(e)) throw e;
+    if (pictures) void loadAiConfig(true);
     throw Error(errorText(e));
   } finally {
     off();

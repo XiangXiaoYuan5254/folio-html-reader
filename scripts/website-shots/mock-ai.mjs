@@ -100,12 +100,14 @@ const SOURCE_EDIT = [
   '>>>>>>> REPLACE',
 ].join('\n');
 
-function stream(res, { reasoning = '', text = '' }, pace = 12) {
+// 宣传视频录屏时放慢普通回答的输出，看得见逐字出现；白板和精读笔记传了自己的节奏，不受影响。
+const pacing = { pace: 12, size: 24 };
+function stream(res, { reasoning = '', text = '' }, pace = pacing.pace, size = pacing.size) {
   res.writeHead(200, { 'Content-Type': 'text/event-stream' });
   const chunks = [];
   if (reasoning) chunks.push({ choices: [{ delta: { reasoning_content: reasoning } }] });
-  for (let i = 0; i < text.length; i += 24)
-    chunks.push({ choices: [{ delta: { content: text.slice(i, i + 24) } }] });
+  for (let i = 0; i < text.length; i += size)
+    chunks.push({ choices: [{ delta: { content: text.slice(i, i + size) } }] });
   chunks.push({
     choices: [{ delta: {}, finish_reason: 'stop' }],
     usage: { prompt_tokens: 3200, completion_tokens: 420 },
@@ -120,7 +122,8 @@ function stream(res, { reasoning = '', text = '' }, pace = 12) {
   next();
 }
 
-export async function startMockAi() {
+export async function startMockAi({ pace = 12, size = 24 } = {}) {
+  Object.assign(pacing, { pace, size });
   const server = http.createServer(async (req, res) => {
     let raw = '';
     for await (const chunk of req) raw += chunk;
@@ -136,8 +139,8 @@ export async function startMockAi() {
     if (system.includes('专业译者')) return stream(res, { text: TRANSLATE });
     if (system.includes('解释用户选中的文字')) return stream(res, { text: EXPLAIN });
     if (system.includes('HTML 编辑助手')) return stream(res, { text: SOURCE_EDIT });
-    if (system.includes('白板老师')) return stream(res, { text: LESSON }, 4);
-    if (system.includes('精读伴读笔记')) return stream(res, { text: COMPANION }, 4);
+    if (system.includes('白板老师')) return stream(res, { text: LESSON }, 4, 24);
+    if (system.includes('精读伴读笔记')) return stream(res, { text: COMPANION }, 4, 24);
     if (user.includes('"highlights"'))
       return stream(res, { text: JSON.stringify({ highlights: HIGHLIGHTS }) });
     return stream(res, { reasoning: REASONING, text: ANSWER });

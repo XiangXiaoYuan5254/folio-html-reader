@@ -43,7 +43,8 @@ import { ModelMenu } from './ModelMenu';
 import { IconButton } from './IconButton';
 import { RegionCapture } from './RegionCapture';
 import { ImageViewer } from './ImageViewer';
-import { isImageFile, maxImages, prepareImage, seesImages } from '../ai/images';
+import { isImageFile, maxImages, prepareImage, refusesImages } from '../ai/images';
+import { loadedModelOptions } from '../ai/levels';
 
 export type AssistantMode = 'doc' | 'project';
 const taskIcons: Record<Task, typeof FileText> = {
@@ -91,7 +92,6 @@ export function AssistantPanel(p: {
   const input = useRef<HTMLTextAreaElement>(null);
   const [threadsOpen, setThreadsOpen] = useState(false);
   const images = state.attachments[scope] || [];
-  const vision = seesImages(provider);
   const [capturing, setCapturing] = useState(false);
   const [viewing, setViewing] = useState('');
   const [dropping, setDropping] = useState(false);
@@ -110,7 +110,7 @@ export function AssistantPanel(p: {
     }
     input.current?.focus();
   }
-  const blocked = images.length > 0 && vision === false;
+  const blocked = images.length > 0 && refusesImages(provider, loadedModelOptions(provider?.id));
   useLayoutEffect(() => {
     const el = list.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;

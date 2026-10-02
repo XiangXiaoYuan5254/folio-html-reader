@@ -1,7 +1,7 @@
 {
   "name": "folio-html-reader",
   "productName": "页间",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "description": "本地 HTML / PDF 阅读、批注与项目管理",
   "type": "module",
   "main": "electron/main.cjs",
@@ -31,7 +31,9 @@
     "test:windows": "node tests/windows.e2e.mjs",
     "test:update": "npm run build && node tests/update.e2e.mjs",
     "website:shots": "npm run build && node scripts/website-shots/shoot.mjs",
-    "website:downloads": "node scripts/website-downloads.mjs"
+    "website:downloads": "node scripts/website-downloads.mjs",
+    "promo:capture": "npm run build && node scripts/promo-video/capture.mjs",
+    "promo:render": "node scripts/promo-video/render.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.129.0",

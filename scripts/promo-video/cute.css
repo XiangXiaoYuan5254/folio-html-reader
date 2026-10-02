@@ -1,0 +1,64 @@
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  background: #000;
+}
+#stage {
+  position: relative;
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+  background: #fff7e8;
+  perspective: 2400px;
+}
+#bg,
+#paper,
+#scenes,
+#over,
+#vig,
+.scene {
+  position: absolute;
+  inset: 0;
+}
+#paper,
+#over,
+#vig {
+  pointer-events: none;
+}
+.scene {
+  visibility: hidden;
+  transform-origin: 0 50%;
+  backface-visibility: hidden;
+  /* Its own layer from the start: a layer created mid-flip can be captured before it is painted. */
+  will-change: transform;
+}
+.scene > svg {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+text {
+  white-space: pre;
+}
+#scrub {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+  background: #111;
+  color: #ddd;
+  font: 13px sans-serif;
+}
+#scrub[hidden] {
+  display: none;
+}
+#scrub input {
+  flex: 1;
+}

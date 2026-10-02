@@ -26,3 +26,6 @@ website/downloads/
 
 # 语音 helper 的编译产物（scripts/build-speech.mjs）
 build/native/
+
+# 宣传视频的渲染结果（scripts/promo-video/render.mjs）
+scripts/promo-video/out/

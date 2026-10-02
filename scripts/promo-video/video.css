@@ -1,0 +1,275 @@
+:root {
+  --paper: #f6f3ec;
+  --card: #fffdf8;
+  --ink: #1b211e;
+  --ink-2: #4a524d;
+  --ink-3: #8a908b;
+  --teal: #2e7d6f;
+  --teal-deep: #24695f;
+  --teal-soft: #dcebe5;
+  --gold: #e2bb63;
+  --coral: #c1462f;
+  --violet: #6a5ae0;
+  --violet-soft: #b9adff;
+  --night: #0b1411;
+  --night-ink: #f3efe4;
+  --serif: 'Songti SC', 'STSong', serif;
+  --sans: -apple-system, 'PingFang SC', 'Helvetica Neue', sans-serif;
+  --latin: 'Iowan Old Style', Palatino, Georgia, serif;
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  background: #000;
+}
+body {
+  font-family: var(--sans);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+#stage {
+  position: relative;
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+  background: var(--paper);
+  perspective: 2200px;
+}
+#bg,
+#bg > div,
+#scenes,
+.scene,
+#flash {
+  position: absolute;
+  inset: 0;
+}
+.bg-light {
+  background:
+    radial-gradient(1200px 800px at 15% 10%, #e9f1ec 0%, transparent 60%),
+    radial-gradient(1000px 700px at 90% 95%, #f4ead2 0%, transparent 60%), var(--paper);
+}
+.bg-dark {
+  background:
+    radial-gradient(1100px 760px at 20% 15%, #12302a 0%, transparent 62%),
+    radial-gradient(1000px 800px at 85% 90%, #1d1840 0%, transparent 62%), var(--night);
+  opacity: 0;
+}
+#bg > .blob {
+  inset: auto;
+  border-radius: 50%;
+  filter: blur(90px);
+  will-change: transform;
+}
+.b1 {
+  width: 760px;
+  height: 760px;
+  background: #b8d9cd;
+  opacity: 0.55;
+}
+.b2 {
+  width: 680px;
+  height: 680px;
+  background: #f1dca6;
+  opacity: 0.5;
+}
+.b3 {
+  width: 620px;
+  height: 620px;
+  background: #cfc7ff;
+  opacity: 0.35;
+}
+.grain {
+  opacity: 0.05;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .9 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+#flash {
+  background: #fff;
+  opacity: 0;
+  pointer-events: none;
+}
+.scene {
+  visibility: hidden;
+  transform-style: preserve-3d;
+}
+.abs {
+  position: absolute;
+}
+
+/* ---------- 文字 ---------- */
+.ch {
+  display: inline-block;
+  white-space: pre;
+  will-change: transform, opacity, filter;
+}
+.headline {
+  font-family: var(--serif);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.25;
+  color: var(--ink);
+}
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font: 600 24px/1 var(--sans);
+  letter-spacing: 0.18em;
+  color: var(--teal);
+}
+.eyebrow::before {
+  content: '';
+  width: 36px;
+  height: 2px;
+  background: currentColor;
+}
+.sub {
+  font: 400 30px/1.6 var(--sans);
+  color: var(--ink-2);
+  letter-spacing: 0.02em;
+}
+.dark .headline {
+  color: var(--night-ink);
+}
+.dark .sub {
+  color: rgba(238, 233, 220, 0.72);
+}
+.dark .eyebrow {
+  color: #8fd6c6;
+}
+
+/* ---------- 屏幕卡片：窗口外框里播放录下的帧 ---------- */
+.screen {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: hidden;
+  background: #fff;
+  transform-origin: 50% 50%;
+  box-shadow:
+    0 0 0 1px rgba(22, 44, 38, 0.1),
+    0 2px 6px rgba(22, 44, 38, 0.06),
+    0 30px 60px -20px rgba(22, 52, 44, 0.32),
+    0 80px 140px -50px rgba(22, 52, 44, 0.4);
+  will-change: transform;
+}
+.dark .screen {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.14),
+    0 30px 80px -20px rgba(0, 0, 0, 0.6),
+    0 0 160px -30px rgba(106, 90, 224, 0.45);
+}
+.world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1600px;
+  height: 1000px;
+  transform-origin: 0 0;
+}
+.world > img {
+  position: absolute;
+  inset: 0;
+  width: 1600px;
+  height: 1000px;
+}
+.world > svg {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+
+/* ---------- 字幕条 ---------- */
+.caption {
+  position: absolute;
+  z-index: 20;
+  padding: 22px 30px 24px;
+  border-radius: 24px;
+  background: rgba(255, 253, 248, 0.86);
+  backdrop-filter: blur(22px) saturate(1.5);
+  box-shadow:
+    0 0 0 1px rgba(22, 44, 38, 0.08),
+    0 20px 50px -18px rgba(22, 52, 44, 0.35);
+}
+.caption .eyebrow {
+  font-size: 18px;
+  margin-bottom: 12px;
+}
+.caption .headline {
+  font-size: 40px;
+}
+.caption .sub {
+  font-size: 22px;
+  margin-top: 6px;
+}
+.dark .caption {
+  background: rgba(16, 24, 22, 0.78);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 20px 50px -18px rgba(0, 0, 0, 0.6);
+}
+
+/* ---------- 小标签 ---------- */
+.pill {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 24px 16px 18px;
+  border-radius: 999px;
+  background: rgba(255, 253, 248, 0.9);
+  backdrop-filter: blur(18px);
+  box-shadow:
+    0 0 0 1px rgba(22, 44, 38, 0.08),
+    0 18px 40px -16px rgba(22, 52, 44, 0.4);
+  font: 600 26px/1 var(--sans);
+  color: var(--ink);
+  white-space: nowrap;
+}
+.pill i {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--teal-soft);
+  color: var(--teal-deep);
+}
+.pill svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.pill small {
+  font-weight: 400;
+  color: var(--ink-3);
+  font-size: 22px;
+}
+
+/* ---------- 调试用的进度条（?preview） ---------- */
+#scrub {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+  background: #111;
+  color: #ddd;
+  font: 13px var(--sans);
+}
+#scrub input {
+  flex: 1;
+}
+#scrub[hidden] {
+  display: none;
+}

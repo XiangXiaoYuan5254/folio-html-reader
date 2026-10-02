@@ -90,6 +90,7 @@ function createAi({ file, protect, unprotect, fetch, atomicWrite, version = '', 
         : (previous?.effort ?? (previous?.thinking === 'off' ? preset.efforts?.[0] || '' : '')),
       keyHint: previous?.keyHint || '',
       key: previous?.key || '',
+      vision: previous?.vision || {},
     };
   }
   async function saveProvider(input) {
@@ -150,6 +151,14 @@ function createAi({ file, protect, unprotect, fetch, atomicWrite, version = '', 
     await write({ ...c, uses: next });
     return config();
   }
+  // Whether a model takes images, as learned from sending it some.
+  async function rememberVision(id, model, sees) {
+    const c = await read();
+    const stored = c.providers.find((p) => p.id === id);
+    if (!stored || !model || stored.vision?.[model] === sees) return;
+    const vision = { ...stored.vision, [model]: sees };
+    await write({ ...c, providers: c.providers.map((p) => (p.id === id ? { ...p, vision } : p)) });
+  }
   // Small per-user preferences: consent to send documents, projects with AI turned off.
   async function setPrefs(patch) {
     const c = await read();
@@ -187,8 +196,8 @@ function createAi({ file, protect, unprotect, fetch, atomicWrite, version = '', 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 20_000);
     try {
-      return (await listModels({ provider, key, fetch, signal: controller.signal })).map((id) => ({
-        id,
+      return (await listModels({ provider, key, fetch, signal: controller.signal })).map((m) => ({
+        ...m,
         efforts: levels,
         defaultEffort: '',
       }));
@@ -269,9 +278,14 @@ function createAi({ file, protect, unprotect, fetch, atomicWrite, version = '', 
         signal: controller.signal,
         onDelta: (delta) => emit({ type: 'ai-delta', requestId, ...delta }),
       });
+      // A model that answered pictures takes them; one that turned them away doesn't, and
+      // the next question holds pictures back and says why.
+      if (request.messages.some((m) => m.images?.length))
+        await rememberVision(provider.id, provider.model, true).catch(() => {});
       return { ...result, provider: provider.name, model: provider.model };
     } catch (e) {
       if (e.name === 'AbortError' || controller.signal.aborted) return { stopped: true };
+      if (e.noImages) await rememberVision(provider.id, provider.model, false).catch(() => {});
       throw e;
     } finally {
       running.delete(requestId);

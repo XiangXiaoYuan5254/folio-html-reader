@@ -727,7 +727,7 @@ test('pictures go to each service in its own format', async () => {
         onDelta: () => {},
         fetch,
       }),
-      /mock-model 好像不能看图/,
+      /mock-model 不能看图/,
     );
   } finally {
     await server.close();
@@ -744,6 +744,10 @@ test('which models can look at pictures', () => {
   assert.equal(seesImages(p('openai', 'openai', 'o3-mini')), false);
   assert.equal(seesImages(p('zhipu', 'openai', 'glm-4.5v')), true);
   assert.equal(seesImages(p('zhipu', 'openai', 'glm-4.6')), false);
+  assert.equal(seesImages(p('zhipu', 'openai', 'glm-5.3')), false);
+  assert.equal(seesImages(p('zhipu', 'openai', 'glm-5.3-flash')), true);
+  assert.equal(seesImages(p('zhipu', 'openai', 'glm-5.3-flashx')), true);
+  assert.equal(seesImages(p('zhipu', 'openai', 'glm-5v-turbo')), true);
   assert.equal(seesImages(p('ollama', 'openai', 'qwen2.5vl:7b')), true);
   assert.equal(seesImages(p('openrouter', 'openai', 'anthropic/claude-sonnet-4')), true);
   assert.equal(seesImages(p('anthropic', 'anthropic', 'claude-opus-5')), true);
@@ -753,4 +757,101 @@ test('which models can look at pictures', () => {
     seesImages(p('codex', 'codex', 'gpt-x'), [{ id: 'gpt-x', efforts: [], images: false }]),
     false,
   );
+});
+
+test('pictures are held back only from a model known not to take them', async () => {
+  const { seesImages, refusesImages } = load('src/ai/images.ts');
+  const listed = [{ id: 'glm-4.6', efforts: [], images: true }];
+  const zhipu = { preset: 'zhipu', kind: 'openai', model: 'glm-4.6' };
+  // A name's guess draws the menu's icon but never stops a picture.
+  assert.equal(refusesImages(zhipu), false);
+  assert.equal(seesImages(zhipu, listed), true);
+  assert.equal(refusesImages(zhipu, [{ ...listed[0], images: false }]), true);
+  // The reader's setting, or a refusal remembered there, beats the list.
+  const set = { ...zhipu, vision: { 'glm-4.6': false } };
+  assert.equal(seesImages(set, listed), false);
+  assert.equal(refusesImages(set, listed), true);
+  assert.equal(refusesImages({ ...zhipu, vision: { 'glm-4.6': true } }), false);
+
+  // Model lists that say which models take images.
+  const lists = {
+    '/v1/models': {
+      data: [
+        { id: 'a/text', architecture: { input_modalities: ['text'] } },
+        { id: 'b/eyes', architecture: { input_modalities: ['text', 'image'] } },
+        { id: 'kimi-k3', supports_image_in: true },
+        { id: 'plain' },
+      ],
+    },
+    '/api/v0/models': { data: [{ id: 'plain', type: 'vlm' }] },
+  };
+  const server = await mockServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    if (req.url === '/api/show')
+      return res.end(
+        JSON.stringify({
+          capabilities: req.body.model === 'kimi-k3' ? ['completion'] : ['completion', 'vision'],
+        }),
+      );
+    res.end(JSON.stringify(lists[req.url] || {}));
+  });
+  try {
+    const list = (preset) =>
+      providers.listModels({ provider: provider(server.url, { preset }), key: 'k', fetch });
+    assert.deepEqual(await list('openrouter'), [
+      { id: 'a/text', images: false },
+      { id: 'b/eyes', images: true },
+      { id: 'kimi-k3', images: true },
+      { id: 'plain' },
+    ]);
+    assert.deepEqual(
+      (await list('lmstudio')).find((m) => m.id === 'plain'),
+      { id: 'plain', images: true },
+    );
+    const ollama = await list('ollama');
+    assert.equal(ollama.find((m) => m.id === 'kimi-k3').images, false);
+    assert.equal(ollama.find((m) => m.id === 'plain').images, true);
+  } finally {
+    await server.close();
+  }
+
+  // Sending pictures teaches whether a model takes them.
+  let refuse = true;
+  const service = await mockServer((req, res) => {
+    if (!refuse) return sse(res, [{ choices: [{ delta: { content: '一张图' } }] }]);
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: { message: 'image input is not supported' } }));
+  });
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'folio-ai-'));
+  const ai = createAi({
+    file: path.join(dir, 'ai.json'),
+    fetch,
+    atomicWrite,
+    protect: (k) => 'txt:' + k,
+    unprotect: (v) => v.slice(4),
+  });
+  try {
+    const { provider: saved } = await ai.saveProvider({
+      preset: 'zhipu',
+      baseUrl: service.url,
+      model: 'glm-x',
+      key: 'k',
+    });
+    const png = 'data:image/png;base64,iVBORw0KGgo=';
+    const ask = () =>
+      ai.chat(
+        { requestId: 'r', messages: [{ role: 'user', content: '看', images: [png] }] },
+        () => {},
+      );
+    await assert.rejects(ask(), /glm-x 不能看图/);
+    assert.deepEqual((await ai.config()).providers[0].vision, { 'glm-x': false });
+    await ai.saveProvider({ id: saved.id, name: '改名' });
+    assert.deepEqual((await ai.config()).providers[0].vision, { 'glm-x': false });
+    refuse = false;
+    await ai.setActive({ id: saved.id, model: 'glm-y' });
+    await ask();
+    assert.deepEqual((await ai.config()).providers[0].vision, { 'glm-x': false, 'glm-y': true });
+  } finally {
+    await service.close();
+  }
 });
