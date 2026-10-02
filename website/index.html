@@ -3,19 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>页间 Folio · 本地 HTML 与 PDF 阅读器</title>
+    <title>页间 Folio · 有 AI 陪读的 HTML 与 PDF 阅读器</title>
     <meta
       name="description"
-      content="页间 Folio 是一款 Mac 与 Windows 上的本地阅读器：打开文件夹就能阅读 HTML 与 PDF，随手高亮、批注、手绘，还能直接编辑 HTML 源码并实时预览。文件留在你自己的电脑里。"
+      content="页间 Folio 是 Mac 与 Windows 上的本地阅读器：打开文件夹就能读 HTML 与 PDF，高亮、批注、手绘、改源码。AI 助手引用原文回答问题、划重点、写精读笔记，页老师还能在白板上边写边讲。文件留在你自己的电脑里。"
     />
-    <meta name="keywords" content="页间,Folio,HTML 阅读器,PDF 批注,本地阅读,高亮笔记,源码编辑,macOS,Windows" />
+    <meta
+      name="keywords"
+      content="页间,Folio,HTML 阅读器,PDF 批注,AI 阅读助手,白板讲解,精读笔记,论文阅读,本地阅读,macOS,Windows"
+    />
     <meta name="theme-color" content="#f6f3ec" />
     <meta name="color-scheme" content="light" />
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="页间 Folio · 读 HTML，像读一本书" />
+    <meta property="og:title" content="页间 Folio · 读得进，也读得懂" />
     <meta
       property="og:description"
-      content="本地阅读 HTML 与 PDF，高亮、批注、手绘，还能直接改源码。"
+      content="本地阅读 HTML 与 PDF，高亮、批注、改源码；AI 引用原文回答，页老师在白板上讲给你听。"
     />
     <!-- 上线后把分享图改成完整网址，例如 https://你的域名/assets/og.png -->
     <meta property="og:image" content="assets/og.png" />
@@ -41,13 +44,10 @@
         <symbol id="i-square" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" /></symbol>
         <symbol id="i-laser" viewBox="0 0 24 24"><path d="M9.9 15.5a2 2 0 0 0-1.4-1.4l-6.1-1.6a.5.5 0 0 1 0-1l6.1-1.6a2 2 0 0 0 1.4-1.4l1.6-6.1a.5.5 0 0 1 1 0l1.6 6.1a2 2 0 0 0 1.4 1.4l6.1 1.6a.5.5 0 0 1 0 1l-6.1 1.6a2 2 0 0 0-1.4 1.4l-1.6 6.1a.5.5 0 0 1-1 0z" /></symbol>
         <symbol id="i-eraser" viewBox="0 0 24 24"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21" /><path d="M22 21H7" /><path d="m5 11 9 9" /></symbol>
-        <symbol id="i-file-code" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /><path d="m10 13-2 2 2 2" /><path d="m14 17 2-2-2-2" /></symbol>
-        <symbol id="i-file-text" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /><path d="M16 13H8" /><path d="M16 17H8" /><path d="M10 9H8" /></symbol>
         <symbol id="i-code" viewBox="0 0 24 24"><path d="m18 16 4-4-4-4" /><path d="m6 8-4 4 4 4" /><path d="m14.5 4-5 16" /></symbol>
         <symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9l-.8-1.2A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" /></symbol>
         <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.7 9a1 1 0 0 1-.6 0C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.2-2.7a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1z" /><path d="m9 12 2 2 4-4" /></symbol>
         <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="5" /><path d="M20 21a8 8 0 0 0-16 0" /></symbol>
-        <symbol id="i-wifi-off" viewBox="0 0 24 24"><path d="M12 20h.01" /><path d="M8.5 16.4a5 5 0 0 1 7 0" /><path d="M5 12.9a10 10 0 0 1 5.2-2.7" /><path d="M19 12.9a10 10 0 0 0-2-1.5" /><path d="M2 8.8a15 15 0 0 1 4.2-2.6" /><path d="M22 8.8a15 15 0 0 0-11.3-3.8" /><path d="m2 2 20 20" /></symbol>
         <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m7 10 5 5 5-5" /><path d="M12 15V3" /></symbol>
         <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></symbol>
         <symbol id="i-arrow-down" viewBox="0 0 24 24"><path d="M12 5v14" /><path d="m19 12-7 7-7-7" /></symbol>
@@ -61,6 +61,34 @@
         <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" /><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" /></symbol>
         <symbol id="i-columns" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" /><path d="M12 3v18" /></symbol>
         <symbol id="i-book" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" /></symbol>
+        <symbol id="i-file-text" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /><path d="M16 13H8" /><path d="M16 17H8" /><path d="M10 9H8" /></symbol>
+        <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M9.94 14.06A2 2 0 0 0 8.5 12.6l-5.14-1.33a.5.5 0 0 1 0-.96L8.5 8.98a2 2 0 0 0 1.44-1.44l1.33-5.14a.5.5 0 0 1 .96 0l1.33 5.14a2 2 0 0 0 1.44 1.44l5.14 1.33a.5.5 0 0 1 0 .96l-5.14 1.33a2 2 0 0 0-1.44 1.44l-1.33 5.14a.5.5 0 0 1-.96 0z" /><path d="M20 3v4" /><path d="M22 5h-4" /></symbol>
+        <symbol id="i-board" viewBox="0 0 24 24"><path d="M2 3h20" /><path d="M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3" /><path d="m7 21 5-5 5 5" /></symbol>
+        <symbol id="i-languages" viewBox="0 0 24 24"><path d="m5 8 6 6" /><path d="m4 14 6-6 2-3" /><path d="M2 5h12" /><path d="M7 2h1" /><path d="m22 22-5-10-5 10" /><path d="M14 18h6" /></symbol>
+        <symbol id="i-quote" viewBox="0 0 24 24"><path d="M16 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z" /><path d="M5 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z" /></symbol>
+        <symbol id="i-notebook" viewBox="0 0 24 24"><path d="M13.4 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7.4" /><path d="M2 6h4" /><path d="M2 10h4" /><path d="M2 14h4" /><path d="M2 18h4" /><path d="M21.4 5.6a1 1 0 1 0-3-3l-5 5a2 2 0 0 0-.5.9l-.8 2.9a.5.5 0 0 0 .6.6l2.9-.8a2 2 0 0 0 .9-.5z" /></symbol>
+        <symbol id="i-wand" viewBox="0 0 24 24"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72" /><path d="m14 7 3 3" /><path d="M5 6v4" /><path d="M19 14v4" /><path d="M10 2v2" /><path d="M7 8H3" /><path d="M21 16h-4" /><path d="M11 3H9" /></symbol>
+        <symbol id="i-bot" viewBox="0 0 24 24"><path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M15 13v2" /><path d="M9 13v2" /></symbol>
+        <symbol id="i-palette" viewBox="0 0 24 24"><circle cx="13.5" cy="6.5" r="1" /><circle cx="17.5" cy="10.5" r="1" /><circle cx="8.5" cy="7.5" r="1" /><circle cx="6.5" cy="12.5" r="1" /><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.9 0 1.6-.7 1.6-1.7 0-.4-.2-.8-.4-1.1-.3-.3-.4-.7-.4-1.1a1.6 1.6 0 0 1 1.7-1.7h2c3 0 5.5-2.5 5.5-5.5C22 6 17.5 2 12 2z" /></symbol>
+        <symbol id="i-sun-moon" viewBox="0 0 24 24"><path d="M12 8a2.8 2.8 0 0 0 4 4 4 4 0 1 1-4-4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.9 4.9 1.4 1.4" /><path d="m17.7 17.7 1.4 1.4" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.3 17.7-1.4 1.4" /><path d="m19.1 4.9-1.4 1.4" /></symbol>
+        <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><path d="M12 19v3" /></symbol>
+        <symbol id="i-volume" viewBox="0 0 24 24"><path d="M11 4.7a.7.7 0 0 0-1.2-.5L6.4 7.6A1.4 1.4 0 0 1 5.4 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.4a1.4 1.4 0 0 1 1 .4l3.4 3.4a.7.7 0 0 0 1.2-.5z" /><path d="M16 9a5 5 0 0 1 0 6" /><path d="M19.4 5.6a9 9 0 0 1 0 12.8" /></symbol>
+        <symbol id="i-captions" viewBox="0 0 24 24"><rect width="18" height="14" x="3" y="5" rx="2" /><path d="M7 15h4" /><path d="M15 15h2" /><path d="M7 11h2" /><path d="M13 11h4" /></symbol>
+        <symbol id="i-key" viewBox="0 0 24 24"><path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4" /><path d="m21 2-9.6 9.6" /><circle cx="7.5" cy="15.5" r="5.5" /></symbol>
+        <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 1 1 0 9Z" /></symbol>
+        <symbol id="i-cpu" viewBox="0 0 24 24"><rect width="16" height="16" x="4" y="4" rx="2" /><rect width="6" height="6" x="9" y="9" rx="1" /><path d="M15 2v2" /><path d="M15 20v2" /><path d="M2 15h2" /><path d="M2 9h2" /><path d="M20 15h2" /><path d="M20 9h2" /><path d="M9 2v2" /><path d="M9 20v2" /></symbol>
+        <symbol id="i-chat" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" /></symbol>
+        <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M21 4h-7" /><path d="M10 4H3" /><path d="M21 12h-9" /><path d="M8 12H3" /><path d="M21 20h-5" /><path d="M12 20H3" /><path d="M14 2v4" /><path d="M8 10v4" /><path d="M16 18v4" /></symbol>
+        <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></symbol>
+        <symbol id="i-cap" viewBox="0 0 24 24"><path d="M21.4 10.9a1 1 0 0 0 0-1.8l-8.6-3.9a2 2 0 0 0-1.6 0L2.6 9.1a1 1 0 0 0 0 1.8l8.6 3.9a2 2 0 0 0 1.6 0z" /><path d="M22 10v6" /><path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5" /></symbol>
+        <symbol id="i-sigma" viewBox="0 0 24 24"><path d="M18 7V5a1 1 0 0 0-1-1H6.5a.5.5 0 0 0-.4.8l4.5 6a2 2 0 0 1 0 2.4l-4.5 6a.5.5 0 0 0 .4.8H17a1 1 0 0 0 1-1v-2" /></symbol>
+        <symbol id="i-graph" viewBox="0 0 24 24"><path d="M3 3v16a2 2 0 0 0 2 2h16" /><path d="M7 16c3-1 4-9 7-9s3 5 7 5" /></symbol>
+        <symbol id="i-cube" viewBox="0 0 24 24"><path d="M21 8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.7Z" /><path d="m3.3 7 8.7 5 8.7-5" /><path d="M12 22V12" /></symbol>
+        <symbol id="i-tree" viewBox="0 0 24 24"><rect x="16" y="16" width="6" height="6" rx="1" /><rect x="2" y="16" width="6" height="6" rx="1" /><rect x="9" y="2" width="6" height="6" rx="1" /><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3" /><path d="M12 12V8" /></symbol>
+        <symbol id="i-image" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" /></symbol>
+        <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.8 9.8 0 0 0-6.7 2.7L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l4 2" /></symbol>
+        <symbol id="i-lock" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></symbol>
+        <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></symbol>
       </defs>
     </svg>
 
@@ -73,11 +101,10 @@
           <span class="brand-cn">页间</span><span class="brand-en">Folio</span>
         </a></div>
         <nav class="nav-links" aria-label="页面导航">
-          <a href="#features">功能</a>
-          <a href="#annotate">批注</a>
-          <a href="#split">双栏</a>
-          <a href="#pdf">PDF</a>
-          <a href="#source">源码</a>
+          <a href="#ai">AI 陪读</a>
+          <a href="#board">白板讲解</a>
+          <a href="#themes">主题</a>
+          <a href="#reading">阅读批注</a>
           <a href="#faq">常见问题</a>
         </nav>
         <a class="btn btn-primary btn-sm" href="#download">
@@ -89,29 +116,31 @@
     <main id="main">
       <!-- ============ Hero ============ -->
       <section class="hero" id="top">
+        <div class="hero-glow" aria-hidden="true"></div>
         <div class="container hero-copy">
           <a class="pill" href="#changelog">
             <span class="pill-tag">新版 <span data-release="version">0.11.0</span></span>
-            白板讲解
+            AI 陪读 · 白板讲解 · 十套主题
             <svg class="icon" aria-hidden="true"><use href="#i-arrow-right" /></svg>
           </a>
           <h1 class="hero-title">
-            读 HTML，<br />像读<span class="mark">一本书</span>。
+            <span class="line">读得进，</span>
+            <span class="line">也<span class="mark">读得懂</span>。</span>
             <span class="hand-note" aria-hidden="true">
-              划重点、写想法，<br />都留在页边。
+              有 AI 陪读，<br />还有页老师。
               <svg viewBox="0 0 260 30" preserveAspectRatio="none"><path d="M4 20c40-9 92-13 150-10 34 2 66 6 102 1" /></svg>
             </span>
           </h1>
           <p class="hero-lead">
-            页间是一个本地 HTML 阅读器。打开文件夹就能读，随手高亮、批注、手绘，还能直接改源码、实时预览。PDF 也一样顺手。
+            页间是 Mac 和 Windows 上的本地阅读器。打开文件夹就能读 HTML 与 PDF，随手高亮、批注、手绘、改源码。现在还有 AI 陪你读：它引用原文回答问题，没读懂的地方，请页老师在白板上从头讲一遍。
           </p>
           <div class="hero-cta">
             <a class="btn btn-primary btn-lg" href="#download" data-download="mac" data-download-auto>
               <svg class="icon" aria-hidden="true"><use href="#i-download" /></svg>
               <span data-download-label>下载 macOS 版</span>
             </a>
-            <a class="btn btn-ghost btn-lg" href="#features">
-              看看它能做什么
+            <a class="btn btn-ghost btn-lg" href="#ai">
+              看看新功能
               <svg class="icon" aria-hidden="true"><use href="#i-arrow-down" /></svg>
             </a>
           </div>
@@ -124,16 +153,23 @@
           </p>
         </div>
 
-        <div class="container-wide hero-shot">
-          <div class="window">
+        <div class="container-wide hero-stage" data-hero-stage>
+          <div class="window hero-window">
             <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
             <img
               src="assets/hero.webp"
               width="2400"
               height="1500"
-              alt="页间主界面：左侧是项目文件夹，中间阅读一篇 HTML 笔记，标题旁画了星标，摘要里有黄色高亮和红笔圈注，正文有青色高亮和下划线，页边的便签用箭头指向高亮。"
+              alt="页间主界面：左侧是项目文件夹，中间阅读一篇 HTML 论文笔记，几句话被高亮和划线；右侧 AI 助手回答“Transformer 为什么比 RNN 训练得快”，回答里带着 1 到 4 号原文引用。"
               fetchpriority="high"
             />
+            <svg class="ink-layer" viewBox="0 0 1600 1000" aria-hidden="true">
+              <path class="ink" pathLength="1" d="M1497 344c-6-14-34-17-48-8-13 9-10 25 6 30 17 6 41 1 45-12 3-9-4-16-14-18" />
+              <path class="ink ink-dash" pathLength="1" d="M1468 371C1466 410 1462 446 1440 465C1412 488 1360 490 1300 491C1200 492 1100 488 1024 487" />
+              <path class="ink" pathLength="1" d="M1044 472l-21 15 21 15" />
+              <text class="ink-text" x="1252" y="548">回答里的编号，</text>
+              <text class="ink-text" x="1252" y="582">点一下就回到原文</text>
+            </svg>
           </div>
         </div>
       </section>
@@ -147,233 +183,369 @@
           </div>
           <div class="value">
             <svg class="icon" aria-hidden="true"><use href="#i-shield" /></svg>
-            <div><strong>原文一字不动</strong><span>批注另存，不改原文件</span></div>
+            <div><strong>原文一字不动</strong><span>批注另存在旁边</span></div>
           </div>
           <div class="value">
             <svg class="icon" aria-hidden="true"><use href="#i-user" /></svg>
             <div><strong>无需注册</strong><span>打开就能用，没有账号</span></div>
           </div>
           <div class="value">
-            <svg class="icon" aria-hidden="true"><use href="#i-wifi-off" /></svg>
-            <div><strong>离线可用</strong><span>断网也能读、能记</span></div>
+            <svg class="icon" aria-hidden="true"><use href="#i-key" /></svg>
+            <div><strong>AI 由你来选</strong><span>自带 Key，也能本机运行</span></div>
           </div>
         </div>
       </section>
 
-      <!-- ============ Features ============ -->
-      <section class="band" id="features">
+      <!-- ============ AI ============ -->
+      <section class="dark ai" id="ai">
+        <div class="ai-aurora" aria-hidden="true"></div>
         <div class="container">
           <div class="section-head center reveal">
-            <p class="eyebrow on-dark">一个窗口，一套流程</p>
-            <h2>打开、阅读、批注、编辑</h2>
-          </div>
-          <ol class="flow">
-            <li class="flow-item reveal">
-              <span class="flow-node"><svg class="icon" aria-hidden="true"><use href="#i-folder" /></svg></span>
-              <span class="flow-no">01</span>
-              <h3>打开</h3>
-              <p>选一个文件夹，HTML 和 PDF 按目录列好。不用导入，不用上传。</p>
-            </li>
-            <li class="flow-item reveal">
-              <span class="flow-node"><svg class="icon" aria-hidden="true"><use href="#i-book" /></svg></span>
-              <span class="flow-no">02</span>
-              <h3>阅读</h3>
-              <p>网页按原样排版，图片、样式、公式都在；PDF 连续滚动，书签、链接都能点。</p>
-            </li>
-            <li class="flow-item reveal">
-              <span class="flow-node"><svg class="icon" aria-hidden="true"><use href="#i-highlighter" /></svg></span>
-              <span class="flow-no">03</span>
-              <h3>批注</h3>
-              <p>高亮、便签、手绘、箭头，想法贴在它发生的地方，每条都能一键回到原处。</p>
-            </li>
-            <li class="flow-item reveal">
-              <span class="flow-node"><svg class="icon" aria-hidden="true"><use href="#i-code" /></svg></span>
-              <span class="flow-no">04</span>
-              <h3>编辑</h3>
-              <p>切到源码，左边改 HTML，右边实时预览，改完自动保存。</p>
-            </li>
-          </ol>
-        </div>
-      </section>
-
-      <!-- ============ Annotate ============ -->
-      <section class="section" id="annotate">
-        <div class="container split">
-          <div class="split-copy reveal">
-            <p class="eyebrow">批注</p>
-            <h2>想法，贴着原文生长</h2>
+            <p class="eyebrow"><svg class="icon" aria-hidden="true"><use href="#i-sparkles" /></svg>AI 陪读</p>
+            <h2><span class="nb">问它，</span><span class="nb">它会指给你看原文。</span></h2>
             <p class="lead">
-              选中一句就是高亮，点一下写下你的理解。便签贴在页边，箭头连起两段文字，画笔圈出重点。HTML 和 PDF 用同一套工具，所有标记都汇总在右侧批注栏，点一下就回到原处。
-            </p>
-            <ul class="tools" aria-label="批注工具">
-              <li><svg class="icon" aria-hidden="true"><use href="#i-highlighter" /></svg>高亮</li>
-              <li><svg class="icon" aria-hidden="true"><use href="#i-underline" /></svg>下划线</li>
-              <li><svg class="icon" aria-hidden="true"><use href="#i-note" /></svg>高亮笔记</li>
-              <li><svg class="icon" aria-hidden="true"><use href="#i-sticky" /></svg>便签</li>
-              <li><svg class="icon" aria-hidden="true"><use href="#i-type" /></svg>文本注释</li>
-              <li><svg class="icon" aria-hidden="true"><use href="#i-pen" /></svg>画笔</li>
-              <li><svg class="icon" aria-hidden="true"><use href="#i-arrow" /></svg>箭头</li>
-              <li><svg class="icon" aria-hidden="true"><use href="#i-square" /></svg>矩形</li>
-              <li><svg class="icon" aria-hidden="true"><use href="#i-laser" /></svg>激光笔</li>
-              <li><svg class="icon" aria-hidden="true"><use href="#i-eraser" /></svg>橡皮擦</li>
-            </ul>
-            <p class="fine">
-              <span class="swatches" aria-hidden="true"><i style="--c: #d49b00"></i><i style="--c: #d93b4b"></i><i style="--c: #087f72"></i><i style="--c: #2864d7"></i><i style="--c: #172033"></i></span>
-              五种常用色，也能自由取色。每一步都能 <kbd>⌘</kbd><kbd>Z</kbd> 撤销。
+              在读的地方直接问。回答里的每个编号都对应原文的一句话，点一下就跳过去；原文里找不到的引用会被划掉，提醒你那句可能是模型自己改写的。
             </p>
           </div>
-          <figure class="shot reveal">
-            <img
-              src="assets/annotate.webp"
-              width="2000"
-              height="1467"
-              loading="lazy"
-              decoding="async"
-              alt="批注：PDF 摘要里有黄色高亮和笔记标记、青色高亮、红笔圈注，标题旁画了星标，页边便签用箭头指向高亮；右侧批注栏列出每一条标记。"
-            />
-          </figure>
-        </div>
-      </section>
 
-      <!-- ============ Split reading ============ -->
-      <section class="section section-tint" id="split">
-        <div class="container">
-          <div class="section-head center reveal">
-            <p class="eyebrow">双栏阅读</p>
-            <h2>两篇文档，并排对照</h2>
-            <p class="lead">
-              从左侧把另一篇拖进阅读区，就组成双栏。HTML 与 PDF 任意搭配，比如一边是论文原文、一边是你的笔记；打开同步滚动，两篇一起往下走。
-            </p>
-            <ul class="chips">
-              <li><svg class="icon" aria-hidden="true"><use href="#i-columns" /></svg>拖进来就分栏</li>
-              <li><svg class="icon" aria-hidden="true"><use href="#i-link" /></svg>同步滚动</li>
-              <li><svg class="icon" aria-hidden="true"><use href="#i-zoom" /></svg>各自缩放、各自批注</li>
-              <li><svg class="icon" aria-hidden="true"><use href="#i-book" /></svg>重启后恢复布局</li>
-            </ul>
-          </div>
-        </div>
-        <div class="container-wide reveal">
-          <div class="window">
-            <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
-            <img
-              src="assets/split.webp"
-              width="2400"
-              height="1500"
-              loading="lazy"
-              decoding="async"
-              alt="双栏阅读：左栏是一篇 HTML 笔记的公式讲解，右栏是论文 PDF 第 4 页，同一个公式被红笔圈出并标注“核心公式”。"
-            />
-          </div>
-        </div>
-      </section>
-
-      <!-- ============ PDF ============ -->
-      <section class="section" id="pdf">
-        <div class="container split split-reverse">
-          <div class="split-copy reveal">
-            <p class="eyebrow">PDF</p>
-            <h2>PDF，也一样顺手</h2>
-            <p class="lead">点开 PDF 就读，不用导入。批注按页记录位置，缩放、换布局、重启之后都跟着原页走。</p>
-            <ul class="checks">
-              <li>连续滚动，适合宽度，输入页码直接跳转</li>
-              <li>书签目录、文内链接和引用都能点</li>
-              <li>有文字层的 PDF 可以选字、高亮、写笔记</li>
-              <li>在图表上画框、画箭头、写文字注释</li>
-              <li>原 PDF 保持不变，批注单独存放</li>
-            </ul>
-          </div>
-          <figure class="shot reveal">
-            <img
-              src="assets/pdf.webp"
-              width="1800"
-              height="1569"
-              loading="lazy"
-              decoding="async"
-              alt="PDF 批注：论文第 3 页的架构图上，编码器被蓝框圈出并标注“编码器 × 6”，解码器被红框圈出并标注“解码器多一层交叉注意力”，下方正文一句被青色高亮。"
-            />
-          </figure>
-        </div>
-      </section>
-
-      <!-- ============ Source ============ -->
-      <section class="section section-tint" id="source">
-        <div class="container split">
-          <div class="split-copy reveal">
-            <p class="eyebrow">源码</p>
-            <h2>读着读着，就能改</h2>
-            <p class="lead">发现错字、想调样式？切到源码，左边编辑，右边实时预览，改完自动写回文件，批注也不会丢。</p>
-            <ul class="checks">
-              <li>语法高亮、查找替换、撤销重做</li>
-              <li>自动保存，也可以切回 <kbd>⌘</kbd><kbd>S</kbd> 手动保存</li>
-              <li>定位元素：指向预览里的任何地方，源码自动跳过去</li>
-              <li>写回前保留历史版本，文件被外部改动时绝不覆盖</li>
-              <li>内容改了，高亮会按上下文重新找到原文</li>
-            </ul>
-          </div>
-          <figure class="shot reveal">
-            <img
-              src="assets/source.webp"
-              width="2000"
-              height="1334"
-              loading="lazy"
-              decoding="async"
-              alt="源码模式：左侧是 HTML 源码编辑器，右侧是实时预览，高亮仍然显示。"
-            />
-          </figure>
-        </div>
-      </section>
-
-      <!-- ============ Details ============ -->
-      <section class="section" id="details">
-        <div class="container">
-          <div class="section-head center reveal">
-            <p class="eyebrow">更多功能</p>
-            <h2>少点几下，多读几页</h2>
-          </div>
-          <div class="bento">
-            <article class="tile tile-hero reveal">
-              <div class="tile-copy">
-                <svg class="icon" aria-hidden="true"><use href="#i-focus" /></svg>
-                <h3>专注阅读</h3>
-                <p>按 <kbd>⌘</kbd><kbd>⇧</kbd><kbd>F</kbd> 进入全屏，只留下正文。鼠标移到顶部，工具随时出现。</p>
+          <div class="ai-grid">
+            <article class="ai-tile span-7 reveal">
+              <div class="ai-copy">
+                <h3><svg class="icon" aria-hidden="true"><use href="#i-highlighter" /></svg>AI 划重点</h3>
+                <p>一键标出核心观点、定义、数据和结论，按类型着色，每处附一句说明。不满意，按一次 <kbd>⌘</kbd><kbd>Z</kbd> 全部撤销。</p>
+                <ul class="kinds" aria-label="划重点的类型">
+                  <li style="--c: #d49b00">观点</li>
+                  <li style="--c: #087f72">定义</li>
+                  <li style="--c: #2864d7">数据</li>
+                  <li style="--c: #d93b4b">结论</li>
+                  <li style="--c: #7a5bd6">方法</li>
+                </ul>
               </div>
-              <div class="tile-media">
-                <img
-                  src="assets/focus.webp"
-                  width="1600"
-                  height="1088"
-                  loading="lazy"
-                  decoding="async"
-                  alt="专注阅读模式：全屏只显示 HTML 笔记的正文和公式，没有侧栏和工具栏。"
-                />
+              <figure class="ai-shot">
+                <img src="assets/ai-highlights.webp" width="2000" height="1167" loading="lazy" decoding="async" alt="AI 划重点：论文第 2 页上四句话被标成黄色、青色、蓝色和红色，右侧助手列出每处的类型和一句说明。" />
+              </figure>
+            </article>
+
+            <article class="ai-tile span-5 reveal">
+              <div class="ai-copy">
+                <h3><svg class="icon" aria-hidden="true"><use href="#i-languages" /></svg>划词：解释、翻译、提问</h3>
+                <p>选中一句，浮动工具条上就有。英文论文直接译成中文，结果可以存成高亮笔记，或者转到助手里接着追问。</p>
+              </div>
+              <figure class="ai-shot shot-tall">
+                <img src="assets/ai-translate.webp" width="1280" height="1300" loading="lazy" decoding="async" alt="划词翻译：选中论文里的一句英文，浮动工具条上有解释、翻译、提问、白板，下方卡片显示中文译文和“存为高亮笔记”按钮。" />
+              </figure>
+            </article>
+
+            <article class="ai-tile span-5 reveal">
+              <div class="ai-copy">
+                <h3><svg class="icon" aria-hidden="true"><use href="#i-quote" /></svg>问这篇文档</h3>
+                <p>回答带编号引用，点一下回到原文。选中一段再问，就只针对这一段；双栏阅读时两篇一起参考。回答能一键存进文档笔记。</p>
+              </div>
+              <figure class="ai-shot shot-tall shot-ask">
+                <img src="assets/ai-ask.webp" width="768" height="860" loading="lazy" decoding="async" alt="AI 助手的回答：分两点解释 Transformer 为什么训练更快，每句后面有 1 到 4 号原文引用。" />
+              </figure>
+            </article>
+
+            <article class="ai-tile span-7 reveal">
+              <div class="ai-copy">
+                <h3><svg class="icon" aria-hidden="true"><use href="#i-notebook" /></svg>精读笔记</h3>
+                <p>为一篇论文写一份伴读 HTML：阅读地图、前置概念、逐节导读、公式拆解、原文金句和思考题。它保存在原文旁边、并排打开，笔记里的页码一点，PDF 就翻过去。</p>
+              </div>
+              <figure class="ai-shot">
+                <img src="assets/ai-note.webp" width="2200" height="1387" loading="lazy" decoding="async" alt="精读笔记：左栏是论文 PDF 第 1 页，右栏是 AI 生成的精读笔记，开头是中文标题、一句话概括和“前置铺垫”。" />
+              </figure>
+            </article>
+
+            <article class="ai-tile span-6 reveal">
+              <div class="ai-copy">
+                <h3><svg class="icon" aria-hidden="true"><use href="#i-wand" /></svg>源码 AI 修改</h3>
+                <p>说一句想怎么改，先看改动对比和改完的预览，确认了才写进文件。改之前的版本照常自动备份。</p>
+              </div>
+              <figure class="ai-shot">
+                <img src="assets/ai-source.webp" width="2200" height="1129" loading="lazy" decoding="async" alt="源码 AI 修改：左侧是修改说明和改动对比，右侧实时预览里，“一句话总结”换成了带竖线的浅色渐变底。" />
+              </figure>
+            </article>
+
+            <article class="ai-tile span-6 reveal">
+              <div class="ai-copy">
+                <h3><svg class="icon" aria-hidden="true"><use href="#i-bot" /></svg>整个项目</h3>
+                <p>切到「整个项目」，AI 自己读、自己搜项目里的文档，帮你加高亮、写笔记、改或新建 HTML。每一步都先给你看，点「应用」才执行；它删不了文件，也碰不到项目以外的内容。</p>
+              </div>
+              <div class="agent" aria-hidden="true">
+                <div class="agent-step done"><svg class="icon"><use href="#i-file-text" /></svg>读取 <b>BERT 伴读笔记.html</b></div>
+                <div class="agent-step done"><svg class="icon"><use href="#i-search" /></svg>搜索 <b>“预训练目标”</b><span>3 处</span></div>
+                <div class="agent-step"><svg class="icon"><use href="#i-notebook" /></svg>写文档笔记：两篇的预训练任务对比<span class="agent-actions"><i>预览</i><i class="primary">应用</i></span></div>
+                <div class="agent-step"><svg class="icon"><use href="#i-highlighter" /></svg>添加 2 处高亮<span class="agent-actions"><i>跳过</i><i class="primary">应用</i></span></div>
               </div>
             </article>
-            <article class="tile reveal">
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ Whiteboard ============ -->
+      <section class="section board" id="board">
+        <div class="container">
+          <div class="section-head center reveal">
+            <p class="eyebrow"><svg class="icon" aria-hidden="true"><use href="#i-board" /></svg>白板讲解 · 新</p>
+            <h2><span class="nb">没读懂？</span><span class="nb">请页老师上白板。</span></h2>
+            <p class="lead">
+              选中一段文字，或者框选公式、图表，页老师边说边写边画：字幕是他说的话，板书、公式、示意图一笔一笔出现，圈着、指着讲给你听。
+            </p>
+          </div>
+        </div>
+        <div class="board-stage reveal">
+          <div class="board-frame">
+            <img src="assets/board.webp" width="2400" height="1920" loading="lazy" decoding="async" alt="白板讲解：页老师在白板上写出缩放点积注意力公式，用蓝圈和橙圈圈出分子和分母，画了两组柱状图对比缩放前后的 softmax 权重；学生用紫色笔圈出“softmax 不饱和”，在下方输入“softmax ‘饱和’是什么意思？”" />
+          </div>
+          <p class="callout c1" aria-hidden="true">公式拆开讲，<br />圈着重点说</p>
+          <p class="callout c2" aria-hidden="true">示意图<br />一笔一笔画</p>
+          <p class="callout c3" aria-hidden="true">圈出没懂的，<br />他换个说法重讲</p>
+        </div>
+        <div class="container">
+          <div class="modes">
+            <article class="mode reveal">
+              <span class="mode-icon"><svg class="icon" aria-hidden="true"><use href="#i-captions" /></svg></span>
+              <h3>静音讲解</h3>
+              <p>只看字幕和板书，安静地跟着读。空格暂停，1× / 1.5× / 2× 倍速，随时回看字幕记录。</p>
+            </article>
+            <article class="mode reveal">
+              <span class="mode-icon"><svg class="icon" aria-hidden="true"><use href="#i-volume" /></svg></span>
+              <h3>页老师出声</h3>
+              <p>用系统的中文语音边说边画，你打字提问。讲到一半想问，圈出来就行。</p>
+            </article>
+            <article class="mode reveal">
+              <span class="mode-icon"><svg class="icon" aria-hidden="true"><use href="#i-mic" /></svg></span>
+              <h3>语音对话 <small>macOS</small></h3>
+              <p>像打电话一样直接开口，他讲的时候你一说话就停下来听。用这台电脑的声音时只在本机识别，不上传录音。</p>
+            </article>
+          </div>
+          <ul class="chips board-chips reveal" aria-label="白板能写、能画的内容">
+            <li><svg class="icon" aria-hidden="true"><use href="#i-sigma" /></svg>公式与推导</li>
+            <li><svg class="icon" aria-hidden="true"><use href="#i-code" /></svg>带行号的代码，逐行讲</li>
+            <li><svg class="icon" aria-hidden="true"><use href="#i-tree" /></svg>数组、链表、树</li>
+            <li><svg class="icon" aria-hidden="true"><use href="#i-graph" /></svg>函数图像</li>
+            <li><svg class="icon" aria-hidden="true"><use href="#i-cube" /></svg>空间曲线与曲面</li>
+            <li><svg class="icon" aria-hidden="true"><use href="#i-image" /></svg>圈出图片的一部分</li>
+            <li><svg class="icon" aria-hidden="true"><use href="#i-history" /></svg>白板自动保存，接着问</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- ============ Models ============ -->
+      <section class="section section-tint models" id="models">
+        <div class="container">
+          <div class="section-head center reveal">
+            <p class="eyebrow">接入 AI</p>
+            <h2><span class="nb">用你自己的 AI，</span><span class="nb">用多少付多少。</span></h2>
+            <p class="lead">页间不卖会员，也不经手你的钱。在 AI 设置里填上从服务商官网申请的 API Key，就能用；也可以用 ChatGPT 账号，或者干脆在本机跑模型。</p>
+          </div>
+          <div class="model-grid">
+            <article class="model-card reveal">
+              <span class="model-icon"><svg class="icon" aria-hidden="true"><use href="#i-cloud" /></svg></span>
+              <h3>云端服务</h3>
+              <p>按用量付费给服务商。填好 Key 可以获取模型列表、测试连接，添加几个都行，在输入框下面随时切换。</p>
+              <ul class="providers">
+                <li>DeepSeek</li><li>通义千问</li><li>Kimi</li><li>智谱 GLM</li><li>豆包</li><li>硅基流动</li><li>Claude</li><li>OpenAI</li><li>Gemini</li><li>OpenRouter</li><li class="more">任何 OpenAI 兼容接口</li>
+              </ul>
+            </article>
+            <article class="model-card reveal">
+              <span class="model-icon"><svg class="icon" aria-hidden="true"><use href="#i-chat" /></svg></span>
+              <h3>ChatGPT 账号</h3>
+              <p>选 Codex，用 ChatGPT 套餐里的 Codex 额度，不需要 API Key，不另外付费。沿用这台电脑上 Codex 的登录，页间碰不到你的账号凭据。</p>
+              <ul class="providers"><li>Codex</li></ul>
+            </article>
+            <article class="model-card reveal">
+              <span class="model-icon"><svg class="icon" aria-hidden="true"><use href="#i-cpu" /></svg></span>
+              <h3>本机模型</h3>
+              <p>模型跑在你自己的电脑上，文档不会离开这台电脑，断网也能问。</p>
+              <ul class="providers"><li>Ollama</li><li>LM Studio</li></ul>
+            </article>
+          </div>
+          <div class="facts reveal">
+            <div class="fact">
+              <svg class="icon" aria-hidden="true"><use href="#i-sliders" /></svg>
+              <div><strong>每个功能各选模型</strong><span>解释、翻译、白板可以各用各的服务、模型和推理强度，选什么就用什么，不会被偷偷调低。</span></div>
+            </div>
+            <div class="fact">
+              <svg class="icon" aria-hidden="true"><use href="#i-lock" /></svg>
+              <div><strong>Key 只存在本机</strong><span>只发给对应的服务商。第一次用某个服务前，会先问你是否同意发送文档内容。</span></div>
+            </div>
+            <div class="fact">
+              <svg class="icon" aria-hidden="true"><use href="#i-shield" /></svg>
+              <div><strong>不用就不发</strong><span>没配置 AI 时，页间不上传任何内容；也可以为某个项目单独停用 AI。</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ Themes ============ -->
+      <section class="themes" id="themes" data-themes data-tone="dark">
+        <div class="themes-glow" aria-hidden="true"></div>
+        <div class="container">
+          <div class="section-head center reveal">
+            <p class="eyebrow"><svg class="icon" aria-hidden="true"><use href="#i-palette" /></svg>界面主题</p>
+            <h2><span class="nb">十套主题，</span><span class="nb">换一种心情读。</span></h2>
+            <p class="lead">六套只换配色，四套连形状和字体一起换。打开「跟随系统」，白天和夜里各用一套。主题只改界面，正文保持原样。</p>
+          </div>
+          <div class="theme-picker reveal" role="tablist" aria-label="选择主题预览">
+            <button type="button" role="tab" data-theme-id="default" data-tone="light" style="--a: #287b71; --b: #f7f8fa"><i></i><b>青岚</b><span>清爽青绿</span></button>
+            <button type="button" role="tab" data-theme-id="paper" data-tone="light" style="--a: #b23a2a; --b: #f2ece1"><i></i><b>宣纸</b><span>朱砂点染</span></button>
+            <button type="button" role="tab" data-theme-id="sky" data-tone="light" style="--a: #3a62d7; --b: #edf1f8"><i></i><b>晴空</b><span>通透天蓝</span></button>
+            <button type="button" role="tab" data-theme-id="blossom" data-tone="light" style="--a: #c44d77; --b: #f8eef0"><i></i><b>桃夭</b><span>柔和樱粉</span></button>
+            <button type="button" role="tab" data-theme-id="night" data-tone="dark" style="--a: #5ec2b1; --b: #14181e"><i></i><b>夜读</b><span>深蓝灰</span></button>
+            <button type="button" role="tab" data-theme-id="ink" data-tone="dark" style="--a: #d6ad62; --b: #12110f"><i></i><b>墨金</b><span>鎏金点缀</span></button>
+            <button type="button" role="tab" data-theme-id="brutal" data-tone="light" data-bold style="--a: #d6246e; --b: #ffd23f"><i></i><b>新粗野</b><span>硬投影撞色</span></button>
+            <button type="button" role="tab" data-theme-id="editorial" data-tone="light" data-bold style="--a: #c8102e; --b: #efebe2"><i></i><b>报刊</b><span>黑白朱红</span></button>
+            <button type="button" role="tab" data-theme-id="terminal" data-tone="dark" data-bold style="--a: #33ff66; --b: #050805"><i></i><b>终端</b><span>荧光扫描线</span></button>
+            <button type="button" role="tab" data-theme-id="aurora" data-tone="dark" data-bold style="--a: #9ab6ff; --b: #0b0b1a"><i></i><b>极光</b><span>毛玻璃浮层</span></button>
+          </div>
+        </div>
+        <div class="container-wide theme-stage reveal">
+          <div class="window theme-window" role="tabpanel" aria-live="polite">
+            <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+            <img src="assets/themes/night.webp" width="2000" height="1250" loading="lazy" decoding="async" alt="夜读主题下的页间：深蓝灰的夜间界面，青绿点缀。" data-theme-shot />
+          </div>
+          <p class="theme-note"><svg class="icon" aria-hidden="true"><use href="#i-sun-moon" /></svg><span data-theme-caption>夜读 · 深蓝灰的夜间界面，青绿点缀。</span></p>
+        </div>
+      </section>
+
+      <!-- ============ Reading ============ -->
+      <section class="section reading" id="reading">
+        <div class="container">
+          <div class="section-head center reveal">
+            <p class="eyebrow">阅读与批注</p>
+            <h2><span class="nb">读、划、写、改，</span><span class="nb">基本功都在。</span></h2>
+            <p class="lead">打开文件夹，HTML 和 PDF 按目录列好，不用导入也不用上传。网页按原样排版，图片、样式、公式都在；想法贴在它发生的地方。</p>
+          </div>
+
+          <div class="tabs reveal" role="tablist" aria-label="阅读功能">
+            <button type="button" role="tab" id="tab-annotate" aria-controls="panel-annotate" aria-selected="true" data-tab="annotate"><svg class="icon" aria-hidden="true"><use href="#i-highlighter" /></svg>批注</button>
+            <button type="button" role="tab" id="tab-split" aria-controls="panel-split" aria-selected="false" data-tab="split"><svg class="icon" aria-hidden="true"><use href="#i-columns" /></svg>双栏</button>
+            <button type="button" role="tab" id="tab-pdf" aria-controls="panel-pdf" aria-selected="false" data-tab="pdf"><svg class="icon" aria-hidden="true"><use href="#i-file-text" /></svg>PDF</button>
+            <button type="button" role="tab" id="tab-source" aria-controls="panel-source" aria-selected="false" data-tab="source"><svg class="icon" aria-hidden="true"><use href="#i-code" /></svg>源码</button>
+            <button type="button" role="tab" id="tab-focus" aria-controls="panel-focus" aria-selected="false" data-tab="focus"><svg class="icon" aria-hidden="true"><use href="#i-focus" /></svg>专注</button>
+          </div>
+
+          <div class="panels">
+            <div class="panel" role="tabpanel" id="panel-annotate" aria-labelledby="tab-annotate" data-panel="annotate">
+              <div class="panel-copy">
+                <h3>想法，贴着原文生长</h3>
+                <p>选中一句就是高亮，点一下写下你的理解。便签贴在页边，箭头连起两段文字，画笔圈出重点。HTML 和 PDF 用同一套工具，所有标记汇总在右侧批注栏，点一下就回到原处。</p>
+                <ul class="tools" aria-label="批注工具">
+                  <li><svg class="icon" aria-hidden="true"><use href="#i-highlighter" /></svg>高亮</li>
+                  <li><svg class="icon" aria-hidden="true"><use href="#i-underline" /></svg>下划线</li>
+                  <li><svg class="icon" aria-hidden="true"><use href="#i-note" /></svg>高亮笔记</li>
+                  <li><svg class="icon" aria-hidden="true"><use href="#i-sticky" /></svg>便签</li>
+                  <li><svg class="icon" aria-hidden="true"><use href="#i-type" /></svg>文本注释</li>
+                  <li><svg class="icon" aria-hidden="true"><use href="#i-pen" /></svg>画笔</li>
+                  <li><svg class="icon" aria-hidden="true"><use href="#i-arrow" /></svg>箭头</li>
+                  <li><svg class="icon" aria-hidden="true"><use href="#i-square" /></svg>矩形</li>
+                  <li><svg class="icon" aria-hidden="true"><use href="#i-laser" /></svg>激光笔</li>
+                  <li><svg class="icon" aria-hidden="true"><use href="#i-eraser" /></svg>橡皮擦</li>
+                </ul>
+                <p class="fine">
+                  <span class="swatches" aria-hidden="true"><i style="--c: #d49b00"></i><i style="--c: #d93b4b"></i><i style="--c: #087f72"></i><i style="--c: #2864d7"></i><i style="--c: #172033"></i></span>
+                  <span>五种常用色，也能自由取色。每一步都能 <span class="nb"><kbd>⌘</kbd><kbd>Z</kbd> 撤销。</span></span>
+                </p>
+              </div>
+              <figure class="panel-shot">
+                <img src="assets/reading.webp" width="2400" height="1500" loading="lazy" decoding="async" alt="批注：HTML 笔记的标题旁画了星标，摘要里有黄色高亮和红笔圈注，正文有青色高亮和下划线，页边的便签用箭头指向高亮。" />
+              </figure>
+            </div>
+
+            <div class="panel" role="tabpanel" id="panel-split" aria-labelledby="tab-split" data-panel="split" hidden>
+              <div class="panel-copy">
+                <h3>两篇文档，并排对照</h3>
+                <p>从左侧把另一篇拖进阅读区，就组成双栏。HTML 与 PDF 任意搭配，比如一边是论文原文、一边是你的笔记；打开同步滚动，两篇一起往下走。</p>
+                <ul class="checks">
+                  <li>拖进来就分栏，拖到哪边开在哪边</li>
+                  <li>同步滚动，也可以先各自定位</li>
+                  <li>各自缩放、各自批注</li>
+                  <li>重启后恢复两篇文档和布局</li>
+                </ul>
+              </div>
+              <figure class="panel-shot">
+                <img src="assets/split.webp" width="2400" height="1500" loading="lazy" decoding="async" alt="双栏阅读：左栏是一篇 HTML 笔记的公式讲解，右栏是论文 PDF 第 4 页，同一个公式被红笔圈出并标注“核心公式”。" />
+              </figure>
+            </div>
+
+            <div class="panel" role="tabpanel" id="panel-pdf" aria-labelledby="tab-pdf" data-panel="pdf" hidden>
+              <div class="panel-copy">
+                <h3>PDF，也一样顺手</h3>
+                <p>点开 PDF 就读，不用导入。批注按页记录位置，缩放、换布局、重启之后都跟着原页走。</p>
+                <ul class="checks">
+                  <li>连续滚动，适合宽度，输入页码直接跳转</li>
+                  <li>书签目录、文内链接和引用都能点</li>
+                  <li>有文字层的 PDF 可以选字、高亮、写笔记</li>
+                  <li>在图表上画框、画箭头、写文字注释</li>
+                  <li>原 PDF 保持不变，批注单独存放</li>
+                </ul>
+              </div>
+              <figure class="panel-shot">
+                <img src="assets/annotate.webp" width="2000" height="1467" loading="lazy" decoding="async" alt="PDF 批注：论文摘要里有黄色高亮和笔记标记、青色高亮、红笔圈注，标题旁画了星标，页边便签用箭头指向高亮；右侧批注栏列出每一条标记。" />
+              </figure>
+            </div>
+
+            <div class="panel" role="tabpanel" id="panel-source" aria-labelledby="tab-source" data-panel="source" hidden>
+              <div class="panel-copy">
+                <h3>读着读着，就能改</h3>
+                <p>发现错字、想调样式？切到源码，左边编辑，右边实时预览，改完自动写回文件，批注也不会丢。</p>
+                <ul class="checks">
+                  <li>语法高亮、查找替换、撤销重做</li>
+                  <li>自动保存，也可以切回 <kbd>⌘</kbd><kbd>S</kbd> 手动保存</li>
+                  <li>定位元素：指向预览里的任何地方，源码自动跳过去</li>
+                  <li>写回前保留历史版本，文件被外部改动时绝不覆盖</li>
+                  <li>内容改了，高亮会按上下文重新找到原文</li>
+                </ul>
+              </div>
+              <figure class="panel-shot">
+                <img src="assets/source.webp" width="2000" height="1334" loading="lazy" decoding="async" alt="源码模式：左侧是 HTML 源码编辑器，右侧是实时预览，高亮仍然显示。" />
+              </figure>
+            </div>
+
+            <div class="panel" role="tabpanel" id="panel-focus" aria-labelledby="tab-focus" data-panel="focus" hidden>
+              <div class="panel-copy">
+                <h3>只留下正文</h3>
+                <p>按 <kbd>⌘</kbd><kbd>⇧</kbd><kbd>F</kbd> 进入全屏，标签页、文件树和批注栏都收起来。鼠标移到顶部，工具随时出现；落笔之后，它自己再藏好。</p>
+                <ul class="checks">
+                  <li>双栏和批注原样保留</li>
+                  <li><kbd>Esc</kbd> 回到原来的布局</li>
+                  <li>页面宽度跟着窗口重新排版</li>
+                </ul>
+              </div>
+              <figure class="panel-shot">
+                <img src="assets/focus.webp" width="1600" height="1088" loading="lazy" decoding="async" alt="专注阅读模式：全屏只显示 HTML 笔记的正文和公式，没有侧栏和工具栏。" />
+              </figure>
+            </div>
+          </div>
+
+          <div class="details">
+            <article class="detail reveal">
               <svg class="icon" aria-hidden="true"><use href="#i-zoom" /></svg>
               <h3>顺手的缩放</h3>
               <p><kbd>⌘</kbd> + 滚轮或双指捏合，25% 到 400%，指针下的文字不跑位。</p>
             </article>
-            <article class="tile reveal">
+            <article class="detail reveal">
               <svg class="icon" aria-hidden="true"><use href="#i-swap" /></svg>
               <h3>两个工具来回切</h3>
               <p>按 <kbd>Tab</kbd> 在最近用过的两个工具间切换，比如高亮和便签。</p>
             </article>
-            <article class="tile reveal">
+            <article class="detail reveal">
               <svg class="icon" aria-hidden="true"><use href="#i-eraser" /></svg>
               <h3>按住 E 临时擦除</h3>
               <p>画错一笔，按住 <kbd>E</kbd> 擦掉，松开继续画。可以局部擦，也可以整笔擦。</p>
             </article>
-            <article class="tile reveal">
+            <article class="detail reveal">
               <svg class="icon" aria-hidden="true"><use href="#i-list" /></svg>
               <h3>自动目录</h3>
               <p>HTML 按标题生成目录，PDF 读取书签。长文一键跳转。</p>
             </article>
-            <article class="tile reveal">
+            <article class="detail reveal">
               <svg class="icon" aria-hidden="true"><use href="#i-export" /></svg>
               <h3>导出 Markdown</h3>
               <p>把高亮摘录和笔记导出成 Markdown，放进你自己的笔记系统。</p>
             </article>
-            <article class="tile reveal">
+            <article class="detail reveal">
               <svg class="icon" aria-hidden="true"><use href="#i-import" /></svg>
               <h3>从<span data-win-text="资源管理器">访达</span>拖进来</h3>
               <p>拖入文件或文件夹，也可以 <kbd>⌘</kbd><kbd>V</kbd> 粘贴。导入是复制，原文件保留。</p>
@@ -387,14 +559,15 @@
         <div class="container split">
           <div class="split-copy reveal">
             <p class="eyebrow">数据</p>
-            <h2>你的文件，始终是你的</h2>
+            <h2>你的文件，<br />始终是你的。</h2>
             <p class="lead">
-              页间不上传你的任何文档，只有你用 AI 助手时，相关的文字才会发给你自己选的服务商。批注、笔记和阅读位置，都保存在文档旁边一个隐藏的
+              页间不上传你的文档。批注、笔记、和 AI 的对话、讲过的白板，都保存在文档旁边一个隐藏的
               <code>.html-reader</code> 文件夹里。备份、迁移、换电脑，把整个文件夹带走就行。
             </p>
             <ul class="checks">
               <li>不需要账号，不收集你读了什么</li>
               <li>批注不写进原文件，HTML 与 PDF 保持原样</li>
+              <li>只有你用 AI 时，相关文字才发给你选的服务商</li>
               <li>删除走系统废纸篓，随时可以找回</li>
               <li>数据是普通的 JSON 文件，看得见，也带得走</li>
             </ul>
@@ -407,11 +580,12 @@
             <pre><span class="t-dir">论文精读/</span>
 ├─ <span class="t-file">Attention Is All You Need.pdf</span>
 ├─ <span class="t-file">Attention 伴读笔记.html</span>
-└─ <span class="t-hidden">.html-reader/</span>    <span class="t-hand">← 批注都在这里</span>
+└─ <span class="t-hidden">.html-reader/</span>   <span class="t-hand">← 都在这里</span>
    ├─ workspace.json
-   ├─ documents/
-   │  └─ <span class="t-dim">&lt;文档ID&gt;.json</span>  <span class="t-dim">高亮、便签、笔迹</span>
-   └─ backups/       <span class="t-dim">源码的历史版本</span></pre>
+   ├─ documents/   <span class="t-dim">高亮、便签、笔迹</span>
+   ├─ ai/          <span class="t-dim">和 AI 的对话</span>
+   ├─ boards/      <span class="t-dim">讲过的白板</span>
+   └─ backups/     <span class="t-dim">源码的历史版本</span></pre>
           </figure>
         </div>
       </section>
@@ -420,8 +594,9 @@
       <section class="section download" id="download">
         <div class="container">
           <div class="download-card reveal">
+            <div class="download-glow" aria-hidden="true"></div>
             <img class="download-icon" src="assets/icon.svg" alt="" width="104" height="104" />
-            <h2>在页间，读下一篇</h2>
+            <h2><span class="nb">在页间，</span><span class="nb">读下一篇。</span></h2>
             <p class="lead">免费下载。打开文件夹，就能开始。</p>
             <div class="download-options" data-download-options>
               <div class="download-option" data-platform="mac">
@@ -429,14 +604,14 @@
                   <svg class="icon" aria-hidden="true"><use href="#i-download" /></svg>
                   <span data-download-label>下载 macOS 版</span>
                 </a>
-                <span class="download-file">DMG · <span data-size="mac">127 MB</span></span>
+                <span class="download-file">DMG · <span data-size="mac">130 MB</span></span>
               </div>
               <div class="download-option" data-platform="win">
                 <a class="btn btn-light btn-lg" href="#install" data-download="win">
                   <svg class="icon" aria-hidden="true"><use href="#i-download" /></svg>
                   <span data-download-label>下载 Windows 版</span>
                 </a>
-                <span class="download-file">安装程序 · <span data-size="win">108 MB</span></span>
+                <span class="download-file">安装程序 · <span data-size="win">110 MB</span></span>
               </div>
             </div>
             <dl class="specs">
@@ -457,61 +632,61 @@
                 </div>
               </div>
               <div class="os-panel" id="install-mac" role="tabpanel" aria-labelledby="tab-mac" data-os-panel="mac">
-              <p class="os-panel-title">macOS</p>
-              <ol class="steps">
-                <li>
-                  <span class="step-n">1</span>
-                  <div><strong>打开下载的 DMG</strong><span>把「页间」拖到「应用程序」文件夹。</span></div>
-                </li>
-                <li>
-                  <span class="step-n">2</span>
-                  <div><strong>推出磁盘映像</strong><span>在「应用程序」或 Spotlight 里打开页间。</span></div>
-                </li>
-                <li>
-                  <span class="step-n">3</span>
-                  <div><strong>选择项目</strong><span>选一个放着 HTML 或 PDF 的文件夹。首次启动附带三篇演示文档，可以直接练手。</span></div>
-                </li>
-              </ol>
-              <details class="notice" id="first-open">
-                <summary>第一次打开时提示“无法验证开发者”？</summary>
-                <div class="notice-body">
-                  <p>
-                    页间目前使用本地签名，还没有经过 Apple 公证，所以 macOS 会拦一下。先尝试打开一次，然后到
-                    <strong>系统设置 → 隐私与安全性</strong>，找到页间对应的提示，点 <strong>仍要打开</strong>。只需要做一次。
-                  </p>
-                  <p>
-                    请只对从本站下载的安装包这样操作。如果系统提示文件已损坏，请重新下载。
-                    <a href="https://support.apple.com/zh-cn/102445" target="_blank" rel="noopener">Apple 官方说明</a>
-                  </p>
-                </div>
-              </details>
+                <p class="os-panel-title">macOS</p>
+                <ol class="steps">
+                  <li>
+                    <span class="step-n">1</span>
+                    <div><strong>打开下载的 DMG</strong><span>把「页间」拖到「应用程序」文件夹。</span></div>
+                  </li>
+                  <li>
+                    <span class="step-n">2</span>
+                    <div><strong>推出磁盘映像</strong><span>在「应用程序」或 Spotlight 里打开页间。</span></div>
+                  </li>
+                  <li>
+                    <span class="step-n">3</span>
+                    <div><strong>选择项目</strong><span>选一个放着 HTML 或 PDF 的文件夹。首次启动附带三篇演示文档，可以直接练手。</span></div>
+                  </li>
+                </ol>
+                <details class="notice" id="first-open">
+                  <summary>第一次打开时提示“无法验证开发者”？</summary>
+                  <div class="notice-body">
+                    <p>
+                      页间目前使用本地签名，还没有经过 Apple 公证，所以 macOS 会拦一下。先尝试打开一次，然后到
+                      <strong>系统设置 → 隐私与安全性</strong>，找到页间对应的提示，点 <strong>仍要打开</strong>。只需要做一次。
+                    </p>
+                    <p>
+                      请只对从本站下载的安装包这样操作。如果系统提示文件已损坏，请重新下载。
+                      <a href="https://support.apple.com/zh-cn/102445" target="_blank" rel="noopener">Apple 官方说明</a>
+                    </p>
+                  </div>
+                </details>
               </div>
               <div class="os-panel" id="install-win" role="tabpanel" aria-labelledby="tab-win" data-os-panel="win">
-              <p class="os-panel-title">Windows</p>
-              <ol class="steps">
-                <li>
-                  <span class="step-n">1</span>
-                  <div><strong>运行下载的安装程序</strong><span>按向导完成安装。默认只装给当前用户，不需要管理员权限。</span></div>
-                </li>
-                <li>
-                  <span class="step-n">2</span>
-                  <div><strong>打开页间</strong><span>从开始菜单或桌面快捷方式打开。也可以右键 HTML 文件，选「打开方式 → 页间」。</span></div>
-                </li>
-                <li>
-                  <span class="step-n">3</span>
-                  <div><strong>选择项目</strong><span>选一个放着 HTML 或 PDF 的文件夹。首次启动附带三篇演示文档，可以直接练手。</span></div>
-                </li>
-              </ol>
-              <details class="notice" id="first-open-win">
-                <summary>运行安装程序时提示“Windows 已保护你的电脑”？</summary>
-                <div class="notice-body">
-                  <p>
-                    页间还没有购买代码签名证书，所以 Windows SmartScreen 会拦一下。点 <strong>更多信息</strong>，再点
-                    <strong>仍要运行</strong>。只在安装时需要一次。
-                  </p>
-                  <p>请只对从本站下载的安装包这样操作。如果杀毒软件报毒或文件无法运行，请重新下载。</p>
-                </div>
-              </details>
+                <p class="os-panel-title">Windows</p>
+                <ol class="steps">
+                  <li>
+                    <span class="step-n">1</span>
+                    <div><strong>运行下载的安装程序</strong><span>按向导完成安装。默认只装给当前用户，不需要管理员权限。</span></div>
+                  </li>
+                  <li>
+                    <span class="step-n">2</span>
+                    <div><strong>打开页间</strong><span>从开始菜单或桌面快捷方式打开。也可以右键 HTML 文件，选「打开方式 → 页间」。</span></div>
+                  </li>
+                  <li>
+                    <span class="step-n">3</span>
+                    <div><strong>选择项目</strong><span>选一个放着 HTML 或 PDF 的文件夹。首次启动附带三篇演示文档，可以直接练手。</span></div>
+                  </li>
+                </ol>
+                <details class="notice" id="first-open-win">
+                  <summary>运行安装程序时提示“Windows 已保护你的电脑”？</summary>
+                  <div class="notice-body">
+                    <p>
+                      页间还没有购买代码签名证书，所以 Windows SmartScreen 会拦一下。点 <strong>更多信息</strong>，再点
+                      <strong>仍要运行</strong>。只在安装时需要一次。
+                    </p>
+                    <p>请只对从本站下载的安装包这样操作。如果杀毒软件报毒或文件无法运行，请重新下载。</p>
+                  </div>
+                </details>
               </div>
             </div>
 
@@ -540,8 +715,8 @@
           </div>
           <div class="faq-list reveal">
             <details>
-              <summary>页间收费吗？</summary>
-              <p>目前免费下载、免费使用。</p>
+              <summary>页间收费吗？AI 功能要另外付钱吗？</summary>
+              <p>页间免费下载、免费使用。AI 用的是你自己的服务：云端服务按用量付给服务商，页间不经手；用 ChatGPT 账号走的是套餐里的 Codex 额度；本机运行的模型不花钱。不配置 AI，其他功能照常使用。</p>
             </details>
             <details>
               <summary>能打开哪些文件？</summary>
@@ -550,10 +725,17 @@
               </p>
             </details>
             <details>
-              <summary>HTML 里的公式能正常显示吗？</summary>
+              <summary>会上传我的文档吗？</summary>
               <p>
-                用 MathML 写的公式离线就能显示；如果依赖 MathJax、KaTeX 这类在线脚本，需要联网加载。PDF 里的公式按原样显示。
+                不会。页间本身不上传任何内容，也不需要账号。只有当你的 HTML 里本来就引用了网上的字体、图片或脚本时，这些资源会像在浏览器里一样从对应网站加载。
               </p>
+              <p>
+                使用 AI 时，相关的文字会发送给你在「AI 设置」里选的服务商，第一次使用某个服务前会先问你是否同意；API Key 只保存在你的电脑上。用本机运行的模型（Ollama、LM Studio）时，文档不会离开电脑。
+              </p>
+            </details>
+            <details>
+              <summary>白板的语音对话会上传录音吗？</summary>
+              <p>用这台电脑的中文语音时，语音合成和识别都在本机完成，不上传录音。选用 ChatGPT 的声音时，语音会通过 Codex 发给 ChatGPT，用的是 Codex 账号的额度。语音对话目前只有 macOS 版可用；静音讲解和页老师出声两种方式两个平台都能用。</p>
             </details>
             <details>
               <summary>批注存在哪里？会改动我的文件吗？</summary>
@@ -562,12 +744,9 @@
               </p>
             </details>
             <details>
-              <summary>会上传我的文档吗？</summary>
+              <summary>HTML 里的公式能正常显示吗？</summary>
               <p>
-                不会。页间本身不上传任何内容，也不需要账号。只有当你的 HTML 里本来就引用了网上的字体、图片或脚本时，这些资源会像在浏览器里一样从对应网站加载。
-              </p>
-              <p>
-                使用 AI 助手时，相关的文字会发送给你在「AI 设置」里选的服务商，第一次使用某个服务前会先问你是否同意；API Key 只保存在你的电脑上。用本机运行的模型（Ollama、LM Studio）时，文档不会离开电脑。
+                用 MathML 写的公式离线就能显示；如果依赖 MathJax、KaTeX 这类在线脚本，需要联网加载。PDF 里的公式按原样显示，AI 回答里的公式由页间直接排版。
               </p>
             </details>
             <details>
@@ -603,7 +782,9 @@
           <p>读过的每一篇，都算数。</p>
         </div>
         <nav class="footer-links" aria-label="页脚导航">
-          <a href="#features">功能</a>
+          <a href="#ai">AI 陪读</a>
+          <a href="#board">白板讲解</a>
+          <a href="#themes">主题</a>
           <a href="#download">下载</a>
           <a href="#faq">常见问题</a>
           <a href="#" data-feedback hidden>意见反馈</a>
