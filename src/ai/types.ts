@@ -92,6 +92,21 @@ export type ChatResult = {
   quota?: Quota | null;
 };
 
+// A paper found by search_papers (electron/papers.cjs).
+export type Paper = {
+  title: string;
+  authors: string[];
+  year?: number;
+  venue?: string;
+  citations?: number;
+  doi?: string;
+  arxiv?: string;
+  url: string;
+  pdf: string[];
+  abstract: string;
+  source: string;
+};
+
 // Text of a document as the AI sees it.
 export type DocText = {
   path: string;
@@ -109,7 +124,8 @@ export type AgentPreview =
     }
   | { kind: 'note'; path: string; before: string; after: string }
   | { kind: 'source'; path: string; before: string; after: string }
-  | { kind: 'create'; path: string; content: string };
+  | { kind: 'create'; path: string; content: string }
+  | { kind: 'download'; path: string; url: string; title: string };
 export type AgentStep = {
   id: string;
   tool: string;

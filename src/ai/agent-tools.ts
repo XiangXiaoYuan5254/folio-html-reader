@@ -1,6 +1,6 @@
 import type { Annotation } from '../types';
 import type { AiHost } from './host';
-import type { AgentPreview, DocText, ToolDef } from './types';
+import type { AgentPreview, DocText, Paper, ToolDef } from './types';
 import { docBody, fileName } from './context';
 import { annotationsList } from './prompts';
 import { applyEdits } from './edits';
@@ -161,9 +161,46 @@ export const agentTools: ToolDef[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: 'search_papers',
+    description:
+      '在 OpenAlex（各学科的学术论文库）和 arXiv（预印本）中查找论文，返回标题、作者、年份、出处、被引次数、摘要和公开 PDF 链接。关键词用英文效果最好。',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: '主题或标题关键词' },
+        limit: { type: 'integer', minimum: 1, maximum: 20, description: '返回几篇，默认 8' },
+        from_year: { type: 'integer', description: '可选，只要这一年及以后发表的' },
+        pdf_only: { type: 'boolean', description: '只要有公开 PDF 的论文，准备下载时用' },
+      },
+      required: ['query'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'save_pdf',
+    description:
+      '把论文的 PDF 下载到项目中（需要用户确认）。url 用 search_papers 给出的 PDF 链接；path 是项目内的目标路径，以 .pdf 结尾，文件夹不存在时会自动新建；title 是论文标题，给用户确认时看。',
+    parameters: {
+      type: 'object',
+      properties: {
+        url: { type: 'string' },
+        path: { type: 'string' },
+        title: { type: 'string' },
+      },
+      required: ['url', 'path', 'title'],
+      additionalProperties: false,
+    },
+  },
 ];
 
-export const writeTools = new Set(['add_highlights', 'write_note', 'edit_html', 'create_html']);
+export const writeTools = new Set([
+  'add_highlights',
+  'write_note',
+  'edit_html',
+  'create_html',
+  'save_pdf',
+]);
 
 export type ToolOutcome = { content: string; isError?: boolean; detail?: string };
 export type PreparedTool = {
@@ -327,6 +364,33 @@ export function prepareTool(name: string, input: any, ctx: Context): PreparedToo
           };
         },
       };
+    case 'search_papers': {
+      const query = String(input?.query || '').trim();
+      return {
+        title: `查找论文“${query.length > 40 ? `${query.slice(0, 40)}…` : query}”`,
+        run: async () => {
+          if (!query) return fail('请提供搜索关键词。');
+          ctx.progress('正在查找…');
+          const { papers, notes } = await host.searchPapers({
+            query,
+            limit: Number(input?.limit) || undefined,
+            fromYear: Number(input?.from_year) || undefined,
+            pdfOnly: !!input?.pdf_only,
+          });
+          const note = notes.length ? `\n\n（${notes.join('；')}，只有另一个库的结果。）` : '';
+          if (!papers.length)
+            return {
+              content: `没有找到相关论文。可以换用英文关键词或更宽泛的说法再试。${note}`,
+              detail: '没有找到',
+            };
+          const withPdf = papers.filter((p) => p.pdf.length).length;
+          return {
+            content: `找到 ${papers.length} 篇（${withPdf} 篇有公开 PDF）：\n\n${paperList(papers)}${note}`,
+            detail: `找到 ${papers.length} 篇，${withPdf} 篇有 PDF`,
+          };
+        },
+      };
+    }
     case 'open_document':
       return {
         title: `打开${title(cleanPath(input?.path))}`,
@@ -344,8 +408,32 @@ export function prepareTool(name: string, input: any, ctx: Context): PreparedToo
       return prepareEdit(input, ctx);
     case 'create_html':
       return prepareCreate(input, ctx);
+    case 'save_pdf':
+      return prepareSave(input, ctx);
   }
   return { title: `未知工具 ${name}`, run: async () => fail(`没有名为 ${name} 的工具。`) };
+}
+
+function paperList(papers: Paper[]) {
+  return papers
+    .map((p, i) => {
+      const authors =
+        p.authors.length > 3 ? `${p.authors.slice(0, 3).join(', ')} 等` : p.authors.join(', ');
+      const cited = p.citations === undefined ? '' : `被引 ${p.citations}`;
+      const ids = [p.doi && `DOI ${p.doi}`, p.arxiv && `arXiv ${p.arxiv}`].filter(Boolean);
+      const abstract = p.abstract.length > 400 ? `${p.abstract.slice(0, 400)}…` : p.abstract;
+      return [
+        `${i + 1}. ${p.title}`,
+        `   ${[authors, p.year, p.venue, cited].filter(Boolean).join(' · ')}`,
+        ids.length ? `   ${ids.join(' · ')}` : '',
+        `   PDF：${p.pdf.length ? p.pdf.slice(0, 3).join(' ， ') : '没有公开 PDF'}`,
+        `   页面：${p.url}`,
+        abstract ? `   摘要：${abstract}` : '',
+      ]
+        .filter((line) => line.trim())
+        .join('\n');
+    })
+    .join('\n\n');
 }
 
 function searchText(doc: DocText, words: string[]) {
@@ -510,6 +598,31 @@ function prepareCreate(input: any, ctx: Context): Deferred {
     tool.run = async () => {
       await ctx.host.createHtml(path, content);
       return { content: `已新建 ${path}。`, detail: '已新建' };
+    };
+  };
+  return tool;
+}
+
+function prepareSave(input: any, ctx: Context): Deferred {
+  const path = cleanPath(input?.path);
+  const url = String(input?.url ?? '').trim();
+  const tool: Deferred = { title: `保存 PDF 到 ${path}`, run: async () => fail('没有下载链接。') };
+  tool.prepare = async () => {
+    if (!/\.pdf$/i.test(path)) {
+      tool.run = async () => fail('文件名必须以 .pdf 结尾。');
+      return;
+    }
+    if (ctx.host.files().some((f) => f.path === path)) {
+      tool.run = async () => fail(`${path} 已存在，请换一个文件名。`);
+      return;
+    }
+    if (!/^https?:\/\//i.test(url)) return;
+    tool.preview = { kind: 'download', path, url, title: String(input?.title ?? '').trim() };
+    tool.run = async () => {
+      ctx.progress('正在下载…');
+      const bytes = await ctx.host.savePdf(url, path);
+      const size = `${Math.max(0.1, bytes / 1048576).toFixed(1)} MB`;
+      return { content: `已保存到 ${path}（${size}）。`, detail: `已保存，${size}` };
     };
   };
   return tool;

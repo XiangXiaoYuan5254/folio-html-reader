@@ -22,6 +22,7 @@ const { projectFor, filesFromArgv } = require('./open-file.cjs');
 const { createUpdates } = require('./updater.cjs');
 const { createAi } = require('./ai.cjs');
 const { createSpeech } = require('./speech.cjs');
+const papers = require('./papers.cjs');
 const isMac = process.platform === 'darwin';
 const workspace = new Workspace();
 let win;
@@ -512,6 +513,16 @@ app
           return workspace.restoreBackup(payload);
         case 'create':
           return workspace.create(payload);
+        // The AI assistant finding papers and saving one into the project.
+        case 'papers-search':
+          return papers.search(net.fetch, payload);
+        case 'save-pdf': {
+          const data = await papers.download(net.fetch, payload?.url);
+          return {
+            workspace: await workspace.savePdf({ path: payload?.path, data }),
+            size: data.length,
+          };
+        }
         case 'move':
           return workspace.move(payload);
         case 'import-files':

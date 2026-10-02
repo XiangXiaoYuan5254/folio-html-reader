@@ -408,6 +408,21 @@ class Workspace {
       return this.summary();
     });
   }
+  // A downloaded PDF; folders on the way are created, each checked like any other path.
+  async savePdf({ path: relative, data }) {
+    return this.serial(async () => {
+      if (typeof relative !== 'string' || !isPdf(relative)) throw Error('文件名须以 .pdf 结尾');
+      const parts = relative.split('/');
+      for (let i = 1; i < parts.length; i++) {
+        const dir = await this.resolve(parts.slice(0, i).join('/'), { create: true });
+        await fs.mkdir(dir).catch((e) => {
+          if (e.code !== 'EEXIST') throw e;
+        });
+      }
+      await fs.writeFile(await this.resolve(relative, { create: true }), data, { flag: 'wx' });
+      return this.summary();
+    });
+  }
   async move({ from, to }) {
     return this.serial(async () => {
       if (!from || !to || from === to) throw Error('请输入不同的目标路径');

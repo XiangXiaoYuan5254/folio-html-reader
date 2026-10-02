@@ -1385,6 +1385,15 @@ export default function App() {
     async createHtml(path, content) {
       setWorkspace(await invoke<WorkspaceInfo>('create', { path, kind: 'file', content }));
     },
+    searchPapers: (options) => invoke('papers-search', options),
+    async savePdf(url, path) {
+      const saved = await invoke<{ workspace: WorkspaceInfo; size: number }>('save-pdf', {
+        url,
+        path,
+      });
+      setWorkspace(saved.workspace);
+      return saved.size;
+    },
     async open(path) {
       await openDocument(path);
       setMode('read');

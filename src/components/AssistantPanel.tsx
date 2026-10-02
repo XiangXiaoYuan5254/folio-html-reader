@@ -902,6 +902,13 @@ function StepPreview({ step }: { step: AgentStep }) {
         ))}
       </ul>
     );
+  if (v.kind === 'download')
+    return (
+      <div className="agent-create">
+        {v.title ? <div>{v.title}</div> : null}
+        <pre>{v.url}</pre>
+      </div>
+    );
   if (v.kind === 'create')
     return (
       <div className="agent-create">
