@@ -120,8 +120,8 @@
         <div class="hero-glow" aria-hidden="true"></div>
         <div class="container hero-copy">
           <a class="pill" href="#changelog">
-            <span class="pill-tag">新版 <span data-release="version">0.12.1</span></span>
-            AI 帮你找论文、下论文
+            <span class="pill-tag">新版 <span data-release="version">0.13.0</span></span>
+            Windows 也能和页老师语音对话
             <svg class="icon" aria-hidden="true"><use href="#i-arrow-right" /></svg>
           </a>
           <h1 class="hero-title">
@@ -146,7 +146,7 @@
             </a>
           </div>
           <p class="hero-meta">
-            免费 · <span data-release="version">0.12.1</span> 版 · macOS 12+（Apple 芯片）· Windows 10 / 11
+            免费 · <span data-release="version">0.13.0</span> 版 · macOS 12+（Apple 芯片）· Windows 10 / 11
             <span data-other-download hidden>· <a href="#download"></a></span>
           </p>
           <p class="platform-hint" data-platform-hint hidden>
@@ -358,12 +358,12 @@
             <article class="mode reveal">
               <span class="mode-icon"><svg class="icon" aria-hidden="true"><use href="#i-volume" /></svg></span>
               <h3>页老师出声</h3>
-              <p>用系统的中文语音边说边画，你打字提问。讲到一半想问，圈出来就行。</p>
+              <p>用系统的中文语音，或通义百炼、豆包、MiniMax 的真人声音边说边画，你打字提问。讲到一半想问，圈出来就行。</p>
             </article>
             <article class="mode reveal">
               <span class="mode-icon"><svg class="icon" aria-hidden="true"><use href="#i-mic" /></svg></span>
-              <h3>语音对话 <small>macOS</small></h3>
-              <p>像打电话一样直接开口，他讲的时候你一说话就停下来听。用这台电脑的声音时只在本机识别，不上传录音。</p>
+              <h3>语音对话</h3>
+              <p>像打电话一样直接开口，他讲的时候你一说话就停下来听。在这台电脑上识别时不上传录音。</p>
             </article>
           </div>
           <ul class="chips board-chips reveal" aria-label="白板能写、能画的内容">
@@ -662,8 +662,8 @@
               </div>
             </div>
             <dl class="specs">
-              <div><dt>版本</dt><dd data-release="version">0.12.1</dd></div>
-              <div><dt>更新于</dt><dd data-release="date">2026.10.01</dd></div>
+              <div><dt>版本</dt><dd data-release="version">0.13.0</dd></div>
+              <div><dt>更新于</dt><dd data-release="date">2026.10.03</dd></div>
               <div><dt>macOS</dt><dd>12+ · Apple 芯片</dd></div>
               <div><dt>Windows</dt><dd>10 / 11 · 64 位</dd></div>
             </dl>
@@ -739,13 +739,13 @@
 
             <div class="install-col reveal" id="changelog">
               <h3>
-                <span data-release="version">0.12.1</span> 更新了什么
+                <span data-release="version">0.13.0</span> 更新了什么
               </h3>
               <ul class="changes">
-                <li><strong>看图判断更准</strong>OpenRouter、Kimi、Ollama、LM Studio 按服务商给出的信息判断模型能不能看图，其他模型按实际发图后的结果记住，不再因为猜错而不发图片。</li>
-                <li><strong>找论文</strong>在助手的“整个项目”里说想找哪个领域的论文，AI 会在 OpenAlex 和 arXiv 里挑出合适的。</li>
-                <li><strong>下载到文件夹</strong>公开的 PDF 直接存进你指定的文件夹，没有的文件夹会自动新建；下载前先给你确认。</li>
-                <li><strong>任何模型都行</strong>DeepSeek、通义等支持工具调用的模型都能用，不需要另外申请 Key。</li>
+                <li><strong>Windows 也能语音对话</strong>白板上直接开口问，页老师讲的时候你一说话他就停下来听；默认在本机识别，不上传录音。</li>
+                <li><strong>真人声音</strong>填通义百炼、豆包语音或 MiniMax 的 Key，页老师就能用更自然的声音讲课，每个声音都能先试听。</li>
+                <li><strong>推理强度跟着模型走</strong>每个模型只显示它支持的档位，换模型时自动换成最接近的档位。</li>
+                <li><strong>余额一眼可见</strong>DeepSeek、Kimi、硅基流动、OpenRouter 的余额和 Codex 的套餐用量，直接显示在模型菜单里。</li>
               </ul>
               <p class="fine">已装 0.8.0 及更新版本的页间会自动更新。0.7.0 及更早的版本请先退出旧版，Mac 把新版拖进「应用程序」替换，Windows 直接运行新版安装程序。批注存在你的文件夹里，不受影响。</p>
             </div>
@@ -782,7 +782,7 @@
             </details>
             <details>
               <summary>白板的语音对话会上传录音吗？</summary>
-              <p>用这台电脑的中文语音时，语音合成和识别都在本机完成，不上传录音。选用 ChatGPT 的声音时，语音会通过 Codex 发给 ChatGPT，用的是 Codex 账号的额度。语音对话目前只有 macOS 版可用；静音讲解和页老师出声两种方式两个平台都能用。</p>
+              <p>默认不会。macOS 上用这台电脑的中文语音时，语音合成和识别都在本机完成；Windows 上默认用通义实验室的 SenseVoice 模型在本机识别，第一次语音对话时下载约 240MB 的模型。选用 ChatGPT 的声音时，语音会通过 Codex 发给 ChatGPT，用的是 Codex 账号的额度；在 Windows 上改由通义百炼或豆包语音识别时，录音会发给对应的服务商，用你自己的 Key 计费。</p>
             </details>
             <details>
               <summary>批注存在哪里？会改动我的文件吗？</summary>
