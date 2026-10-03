@@ -101,6 +101,7 @@ const presets = [
       ['^glm-5\\.2', ['off', 'high', 'max'], 'max'],
       ['^glm-(4\\.[5-7]|5)', ['off', 'on'], 'on'],
     ],
+    balance: true,
     keyUrl: 'https://open.bigmodel.cn/apikey/platform',
     region: 'cn',
   },
@@ -122,6 +123,22 @@ const presets = [
     // The key lists every model on the platform; only the ones opened on the account show.
     probe: true,
     keyUrl: 'https://console.volcengine.com/ark',
+    region: 'cn',
+  },
+  {
+    id: 'xiaomi',
+    name: '小米 MiMo',
+    kind: 'openai',
+    baseUrl: 'https://api.xiaomimimo.com/v1',
+    model: 'mimo-v2.6-flash',
+    models: ['mimo-v2.6-flash', 'mimo-v2.6-pro'],
+    context: 1_048_576,
+    thinking: 'type',
+    // MiMo's text models think unless turned off, and have no levels.
+    efforts: ['off', 'on'],
+    effort: 'on',
+    echo: true,
+    keyUrl: 'https://platform.xiaomimimo.com/#/console/api-keys',
     region: 'cn',
   },
   {
@@ -864,6 +881,7 @@ function shown(preset, m, id) {
     );
   if (preset === 'doubao')
     return /^doubao-/.test(id) && m?.status !== 'Shutdown' && ['LLM', 'VLM'].includes(m?.domain);
+  if (preset === 'xiaomi') return !/tts|asr/i.test(id);
   return true;
 }
 // Whether a model is opened on the account: Doubao answers ModelNotOpen for one that isn't,
@@ -944,42 +962,33 @@ async function listModels({ provider, key, fetch, signal }) {
 }
 
 // What's left on the account, for the services whose key can ask (`balance` presets).
-const balancePaths = {
-  deepseek: '/user/balance',
-  moonshot: '/users/me/balance',
-  siliconflow: '/user/info',
-  openrouter: '/key',
-};
 const amount = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const money = (n, currency) =>
   `${n < 0 ? '-' : ''}${currency === 'USD' ? '$' : '¥'}${Math.abs(n).toFixed(2)}`;
 async function readBalance({ provider, key, fetch, signal }) {
-  const path = balancePaths[provider.preset];
-  if (!path) throw new AiError(`${provider.name} 查不了余额，请到官网查看`);
+  const get = async (url) => {
+    let response;
+    try {
+      response = await fetch(url, { headers: { Authorization: `Bearer ${key}` }, signal });
+    } catch (e) {
+      throw networkError(e, provider);
+    }
+    const text = await response.text();
+    if (!response.ok) throw httpError(response.status, text, provider.name);
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new AiError('余额格式无法识别');
+    }
+  };
   // DeepSeek's balance sits beside its /v1 alias, not under it.
   const base =
     provider.preset === 'deepseek' ? provider.baseUrl.replace(/\/v1\/?$/, '') : provider.baseUrl;
-  let response;
-  try {
-    response = await fetch(endpoint(base, path), {
-      headers: { Authorization: `Bearer ${key}` },
-      signal,
-    });
-  } catch (e) {
-    throw networkError(e, provider);
-  }
-  const text = await response.text();
-  if (!response.ok) throw httpError(response.status, text, provider.name);
-  let value;
-  try {
-    value = JSON.parse(text);
-  } catch {
-    throw new AiError('余额格式无法识别');
-  }
   // The .com and .ai sites of the Chinese services bill in dollars.
   const currency = /\.(com|ai)$/.test(new URL(base).hostname) ? 'USD' : 'CNY';
   switch (provider.preset) {
     case 'deepseek': {
+      const value = await get(endpoint(base, '/user/balance'));
       const infos = Array.isArray(value?.balance_infos) ? value.balance_infos : [];
       const info = infos.find((i) => amount(i.total_balance) > 0) || infos[0];
       if (!info) throw new AiError('DeepSeek 没有返回余额');
@@ -993,7 +1002,7 @@ async function readBalance({ provider, key, fetch, signal }) {
       };
     }
     case 'moonshot': {
-      const d = value?.data;
+      const d = (await get(endpoint(base, '/users/me/balance')))?.data;
       if (!d) throw new AiError('Kimi 没有返回余额');
       const left = amount(d.available_balance);
       return {
@@ -1005,7 +1014,7 @@ async function readBalance({ provider, key, fetch, signal }) {
       };
     }
     case 'siliconflow': {
-      const d = value?.data;
+      const d = (await get(endpoint(base, '/user/info')))?.data;
       if (!d) throw new AiError('硅基流动没有返回余额');
       const left = amount(d.totalBalance);
       return {
@@ -1016,10 +1025,48 @@ async function readBalance({ provider, key, fetch, signal }) {
         empty: left <= 0,
       };
     }
-    default: {
+    case 'zhipu': {
+      // What the console's own finance pages ask; they take the API key too, though the API
+      // docs don't list them. Usable resource packages count besides the cash.
+      const origin = new URL(base).origin;
+      const [account, list] = await Promise.all([
+        get(`${origin}/api/biz/account/query-customer-account-report`),
+        get(`${origin}/api/biz/tokenAccounts/list/my?pageNum=1&pageSize=50&filterEnabled=true`),
+      ]);
+      if (account?.code !== 200 || !account.data)
+        throw new AiError(`智谱没有返回余额${account?.msg ? `（${account.msg}）` : ''}`);
+      const model = provider.model.toLowerCase();
+      const packs = (Array.isArray(list?.rows) ? list.rows : [])
+        .filter((r) => amount(r.availableBalance) > 0)
+        .map((r) => {
+          const tokens = r.consumeType === 'TOKENS';
+          const fits = String(r.suitableModel || '');
+          return {
+            name: String(r.resourcePackageName || '资源包').replace(/^【[^】]*】/, ''),
+            left: `${amount(r.availableBalance).toLocaleString('en-US')} ${tokens ? 'tokens' : '次'}`,
+            // Beijing time, as the console shows it.
+            until: Date.parse(`${r.expirationTime}+08:00`) || 0,
+            // A package for this model, or for every model billed by tokens.
+            fits:
+              tokens &&
+              (/[\u4e00-\u9fa5]/.test(fits) || fits.toLowerCase().split(',').includes(model)),
+          };
+        })
+        .sort((a, b) => b.fits - a.fits);
+      const left = amount(account.data.availableBalance);
+      return {
+        kind: 'money',
+        amount: left,
+        currency: 'CNY',
+        detail: '',
+        empty: left <= 0 && !packs.some((p) => p.fits),
+        packs,
+      };
+    }
+    case 'openrouter': {
       // OpenRouter tells a plain key only its own limit; the account's credits need a
       // management key.
-      const d = value?.data || {};
+      const d = (await get(endpoint(base, '/key')))?.data || {};
       const used = money(amount(d.usage), 'USD');
       if (typeof d.limit_remaining !== 'number')
         return {
@@ -1038,6 +1085,8 @@ async function readBalance({ provider, key, fetch, signal }) {
         empty: d.limit_remaining <= 0,
       };
     }
+    default:
+      throw new AiError(`${provider.name} 查不了余额，请到官网查看`);
   }
 }
 

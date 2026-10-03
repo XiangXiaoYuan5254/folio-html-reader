@@ -40,6 +40,7 @@ const blurbs: Record<string, string> = {
   moonshot: '月之暗面，长上下文',
   zhipu: '智谱开放平台',
   doubao: '字节跳动火山方舟',
+  xiaomi: '1M 上下文，能看图',
   siliconflow: '多种开源模型',
   anthropic: 'Anthropic',
   openai: 'GPT 系列',

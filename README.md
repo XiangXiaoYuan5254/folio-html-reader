@@ -123,7 +123,7 @@ PDF 原文件保持不变，新增批注和笔记自动保存到 PDF 所在文�
 
 页间可以接入你自己的 AI 服务，按用量向服务商付费，页间不经手。打开 **AI 设置**（macOS：菜单“页间 → AI 设置…”或 `⌘,`；Windows：菜单“文件 → AI 设置…”或 `Ctrl+,`；也可以点右侧栏“助手”里的设置按钮），选择服务商，填入在它官网申请的 API Key。
 
-支持 DeepSeek、通义千问、Kimi、智谱 GLM、豆包（火山方舟）、硅基流动、Claude、OpenAI、Gemini、OpenRouter 和任何 OpenAI 兼容接口，也支持在本机运行的 Ollama、LM Studio。填好 Key 后可以获取模型列表、测试连接；可以添加多个服务，在助手输入框下方切换。
+支持 DeepSeek、通义千问、Kimi、智谱 GLM、豆包（火山方舟）、小米 MiMo、硅基流动、Claude、OpenAI、Gemini、OpenRouter 和任何 OpenAI 兼容接口，也支持在本机运行的 Ollama、LM Studio。填好 Key 后可以获取模型列表、测试连接；可以添加多个服务，在助手输入框下方切换。
 
 **用 ChatGPT 账号**：选“Codex”，不需要 API Key，用的是 ChatGPT 套餐里的 Codex 额度，不另外付费。它通过这台电脑上的 Codex（ChatGPT 桌面版自带，也可以单独安装 Codex 命令行工具）连接：页间用 OpenAI 为第三方应用提供的 Codex App Server 接口，沿用 Codex 已有的登录，没登录时可以在设置里直接“用 ChatGPT 登录”。页间碰不到账号凭据，并关闭了 Codex 自带的命令行、联网搜索、插件等工具，只让它回答问题或调用页间自己的工具。额度有 5 小时和每周上限，助手里每条回答的提示中会显示已用比例；回答比直接用 API 慢几秒。Claude 的网页账号不能这样用：Anthropic 不允许第三方应用使用 Claude 订阅登录。
 

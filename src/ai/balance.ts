@@ -34,3 +34,8 @@ export function resetText(at: number) {
   const today = d.toDateString() === new Date().toDateString();
   return `${today ? '' : `${d.getMonth() + 1}月${d.getDate()}日 `}${time} 重置`;
 }
+export function dayText(at: number) {
+  const d = new Date(at);
+  const year = d.getFullYear() === new Date().getFullYear() ? '' : `${d.getFullYear()}年`;
+  return `${year}${d.getMonth() + 1}月${d.getDate()}日`;
+}

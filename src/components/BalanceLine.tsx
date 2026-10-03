@@ -1,17 +1,20 @@
 import { useEffect, useState } from 'react';
 import { CircleX, LoaderCircle, RefreshCw, Wallet } from 'lucide-react';
 import { errorText } from '../ai/client';
-import { loadBalance, money, resetText, windowName } from '../ai/balance';
+import { dayText, loadBalance, money, resetText, windowName } from '../ai/balance';
 import type { Balance, Quota } from '../ai/types';
 
-// What's left on a saved service. The settings ask afresh; the model menu takes an answer
-// from the last minute.
+// What's left on a saved service. The settings ask afresh and list every resource package;
+// the model menu (`brief`) takes an answer from the last minute and lists only the packages
+// its model can use.
 export function BalanceLine({
   providerId,
   fresh = false,
+  brief = false,
 }: {
   providerId: string;
   fresh?: boolean;
+  brief?: boolean;
 }) {
   const [state, setState] = useState<Balance | 'loading' | { error: string }>('loading');
   const [asked, setAsked] = useState({ refresh: fresh, n: 0 });
@@ -59,20 +62,37 @@ export function BalanceLine({
         {again}
       </div>
     );
+  const packs = (state.packs || []).filter((p) => !brief || p.fits);
   return (
     <div className={`balance-line ${state.empty ? 'error' : ''}`} role="status">
       <Wallet size={13} />
-      <span>
-        {state.amount !== null ? (
-          <>
-            余额 <strong>{money(state.amount, state.currency)}</strong>
-            {state.empty ? '，已用完，请充值' : ''}
-            <em>{state.detail}</em>
-          </>
-        ) : (
-          state.detail
-        )}
-      </span>
+      <div className="balance-text">
+        <span>
+          {state.amount !== null ? (
+            <>
+              余额 <strong>{money(state.amount, state.currency)}</strong>
+              {state.empty ? '，已用完，请充值' : ''}
+              {state.detail ? <em>{state.detail}</em> : null}
+            </>
+          ) : (
+            state.detail
+          )}
+        </span>
+        {packs.length ? (
+          <ul className="balance-packs" aria-label="资源包">
+            {packs.map((p) => (
+              <li key={p.name + p.until} className={p.fits ? 'fits' : ''}>
+                <span>{p.name}</span>
+                {p.fits && !brief ? <b>当前模型可用</b> : null}
+                <em>
+                  剩 {p.left}
+                  {p.until ? ` · ${dayText(p.until)}到期` : ''}
+                </em>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
       {again}
     </div>
   );

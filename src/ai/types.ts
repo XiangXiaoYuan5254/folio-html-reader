@@ -108,8 +108,8 @@ export type CodexStatus = {
   error?: string;
 };
 // What's left on a service: money for the services whose key can ask (`amount` is null when
-// the service only tells what's used), or how much of each of a ChatGPT plan's usage windows
-// is used.
+// the service only tells what's used), with the resource packages some services give, or how
+// much of each of a ChatGPT plan's usage windows is used.
 export type Balance =
   | {
       kind: 'money';
@@ -117,8 +117,11 @@ export type Balance =
       currency: 'CNY' | 'USD';
       detail: string;
       empty: boolean;
+      packs?: ResourcePack[];
     }
   | { kind: 'plan'; windows: Quota[] };
+// A package of tokens or calls a service gave or sold; `fits` the service's model.
+export type ResourcePack = { name: string; left: string; until: number; fits: boolean };
 export type ChatResult = {
   text: string;
   reasoning: string;

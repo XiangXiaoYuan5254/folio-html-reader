@@ -243,6 +243,15 @@ test('reasoning levels follow each service and model', () => {
   assert.deepEqual(providers.effortParams(p('doubao', 'off', 'doubao-seed-2-1-turbo-260628')), {
     thinking: { type: 'disabled' },
   });
+  assert.deepEqual(providers.effortParams(p('xiaomi', '', 'mimo-v2.6-flash')), {
+    thinking: { type: 'enabled' },
+  });
+  assert.deepEqual(providers.effortParams(p('xiaomi', 'high', 'mimo-v2.6-pro')), {
+    thinking: { type: 'enabled' },
+  });
+  assert.deepEqual(providers.effortParams(p('xiaomi', 'off', 'mimo-v2.6-pro')), {
+    thinking: { type: 'disabled' },
+  });
   assert.deepEqual(providers.effortParams(p('openai', 'high', 'gpt-4o')), {});
   assert.deepEqual(providers.effortParams(p('openai', 'high', 'gpt-5.5')), {
     reasoning_effort: 'high',
@@ -284,7 +293,7 @@ test('a level the model lacks becomes the nearest; parts start at their own', ()
   assert.equal(levelFor([], '', 'high', 'chat'), '');
 });
 
-test('Qwen and Doubao lists keep their own chat models, and Doubao only opened ones', async () => {
+test('Qwen, Doubao and MiMo lists keep their own chat models, and Doubao only opened ones', async () => {
   const server = await mockServer((req, res) => {
     if (req.url === '/v1/chat/completions') {
       if (req.body.model === 'doubao-seed-open') return sse(res, [{ choices: [{ delta: {} }] }]);
@@ -306,6 +315,9 @@ test('Qwen and Doubao lists keep their own chat models, and Doubao only opened o
           { id: 'doubao-seed-old', domain: 'LLM', status: 'Shutdown' },
           { id: 'doubao-seedream-5-0', domain: 'ImageGeneration' },
           { id: 'glm-5-3-flash-260828', domain: 'LLM' },
+          { id: 'mimo-v2.6-pro' },
+          { id: 'mimo-v2.5-tts-voiceclone' },
+          { id: 'mimo-v2.5-asr' },
         ],
       }),
     );
@@ -317,6 +329,8 @@ test('Qwen and Doubao lists keep their own chat models, and Doubao only opened o
       ).map((m) => m.id);
     assert.deepEqual(await list('qwen'), ['qwen3.8-flash']);
     assert.deepEqual(await list('doubao'), ['doubao-seed-open']);
+    assert.ok((await list('xiaomi')).includes('mimo-v2.6-pro'));
+    assert.ok(!(await list('xiaomi')).some((id) => /tts|asr/.test(id)));
     assert.deepEqual(
       server.requests.filter((r) => r.body).map((r) => r.body.model),
       ['doubao-seed-open', 'doubao-seed-closed'],
@@ -873,6 +887,8 @@ test('which models can look at pictures', () => {
   assert.equal(seesImages(p('zhipu', 'openai', 'glm-5.3-flash')), true);
   assert.equal(seesImages(p('zhipu', 'openai', 'glm-5.3-flashx')), true);
   assert.equal(seesImages(p('zhipu', 'openai', 'glm-5v-turbo')), true);
+  assert.equal(seesImages(p('xiaomi', 'openai', 'mimo-v2.6-flash')), true);
+  assert.equal(seesImages(p('xiaomi', 'openai', 'mimo-v2.5-pro')), undefined);
   assert.equal(seesImages(p('ollama', 'openai', 'qwen2.5vl:7b')), true);
   assert.equal(seesImages(p('openrouter', 'openai', 'anthropic/claude-sonnet-4')), true);
   assert.equal(seesImages(p('anthropic', 'anthropic', 'claude-opus-5')), true);

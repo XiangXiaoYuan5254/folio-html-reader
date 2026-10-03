@@ -326,7 +326,9 @@ export function ModelMenu({
                   )}
                 </>
               )}
-              {shown && tellsBalance(shown, config) ? <BalanceLine providerId={shown.id} /> : null}
+              {shown && tellsBalance(shown, config) ? (
+                <BalanceLine providerId={shown.id} brief />
+              ) : null}
               {onOpenSettings ? (
                 <button
                   type="button"

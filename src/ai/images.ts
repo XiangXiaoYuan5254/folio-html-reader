@@ -41,7 +41,7 @@ export const isImageFile = (file: File) => /^image\/(png|jpeg|webp|gif|bmp)$/.te
 const textOnly =
   /o1-mini|o3-mini|gpt-3\.5|gpt-oss|embed|whisper|tts|rerank|deepseek(?!.*vl)|qwq|^qwen-(plus|max|turbo|flash|long|coder)|^qwen\d?(\.\d)?-coder|^(?!glm-5\.3-flash)glm-\d(\.\d)?(-(air|airx|flash|flashx|plus|long|x|turbo))?$|glm-z1|moonshot-v1-(8k|32k|128k|auto)$|kimi-k2(?!\.5)/i;
 const sees =
-  /claude|gemini|gpt-4o|gpt-4\.1|gpt-4\.5|gpt-4-turbo|gpt-5|chatgpt|(^|[^\w])o[134](\b|-)|vision|[-_.:]vl|vl[-_.:\d]|vl$|qvq|omni|glm-\d(\.\d)?v|glm-4v|glm-5\.3-flash|llava|moondream|minicpm-v|gemma-?3|pixtral|mistral-(small|medium)|llama-?4|internvl|step-\dv|grok-4|kimi-k2\.5|kimi-latest|seed-1[.-][568]|seed-2/i;
+  /claude|gemini|gpt-4o|gpt-4\.1|gpt-4\.5|gpt-4-turbo|gpt-5|chatgpt|(^|[^\w])o[134](\b|-)|vision|[-_.:]vl|vl[-_.:\d]|vl$|qvq|omni|glm-\d(\.\d)?v|glm-4v|glm-5\.3-flash|llava|moondream|minicpm-v|gemma-?3|pixtral|mistral-(small|medium)|llama-?4|internvl|step-\dv|grok-4|kimi-k2\.5|kimi-latest|seed-1[.-][568]|seed-2|mimo-v2\.6|mimo-v2\.5$/i;
 // What is known rather than guessed: what sending pictures taught, then what the service's
 // model list says.
 function known(provider: AiProvider, options?: ModelOption[]) {
