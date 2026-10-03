@@ -120,6 +120,13 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(401, { 'Content-Type': 'application/json' });
     return res.end('{"error":{"message":"bad key"}}');
   }
+  // DeepSeek's balance, which the settings and the model menu ask for.
+  if (req.url === '/user/balance') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(
+      '{"is_available":true,"balance_infos":[{"currency":"CNY","total_balance":"10.00"}]}',
+    );
+  }
   const system = body.messages.find((m) => m.role === 'system')?.content || '';
   const user = [...body.messages].reverse().find((m) => m.role === 'user')?.content || '';
   if (typeof user === 'string' && user.includes('连接测试')) return stream(res, { text: 'OK' });

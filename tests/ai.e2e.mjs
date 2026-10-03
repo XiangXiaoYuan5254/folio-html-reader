@@ -138,6 +138,23 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(401, { 'Content-Type': 'application/json' });
     return res.end('{"error":{"message":"bad key"}}');
   }
+  // DeepSeek's balance, beside its /v1 address.
+  if (req.url === '/user/balance') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(
+      JSON.stringify({
+        is_available: true,
+        balance_infos: [
+          {
+            currency: 'CNY',
+            total_balance: '12.34',
+            granted_balance: '2.00',
+            topped_up_balance: '10.34',
+          },
+        ],
+      }),
+    );
+  }
   const system = body.messages.find((m) => m.role === 'system')?.content || '';
   const user = [...body.messages].reverse().find((m) => m.role === 'user')?.content || '';
   if (user.includes('连接测试')) return stream(res, { text: 'OK' });
@@ -292,8 +309,33 @@ try {
   await page.screenshot({ path: path.join(evidence, 'ai-settings-provider.png') });
   const stored = await fs.readFile(path.join(userData, 'ai.json'), 'utf8');
   assert.ok(!stored.includes(testKey), 'the key is not stored as plain text');
+  // What's left on the account shows under the key.
+  await settings
+    .locator('.balance-line', { hasText: '余额 ¥12.34' })
+    .filter({ hasText: '赠送 ¥2.00 · 充值 ¥10.34' })
+    .waitFor();
+  // Speech services: whether each is set up, and which of its voices to try.
+  await settings.getByRole('button', { name: '语音服务' }).click();
+  const doubaoVoice = settings.locator('.ai-voice-service', { hasText: '豆包语音' });
+  await doubaoVoice.locator('.ai-voice-state', { hasText: '未接入' }).waitFor();
+  const voicePick = doubaoVoice.getByLabel('试听 豆包语音 的哪个声音');
+  await voicePick.selectOption({ label: '云舟（男声，自然）' });
+  assert.ok(
+    await doubaoVoice.getByRole('button', { name: '试听' }).isDisabled(),
+    'nothing to try without a key',
+  );
+  await doubaoVoice.getByLabel('豆包语音 的 API Key').fill('mock-speech-key');
+  await doubaoVoice.getByRole('button', { name: '保存' }).click();
+  await doubaoVoice.locator('.ai-voice-state.on', { hasText: '已接入' }).waitFor();
+  assert.equal(await voicePick.inputValue(), 'zh_male_m191_uranus_bigtts', 'picked voice kept');
+  assert.ok(await doubaoVoice.getByRole('button', { name: '试听' }).isEnabled(), 'can try');
+  await page.screenshot({ path: path.join(evidence, 'ai-settings-voices.png') });
+  await doubaoVoice.getByRole('button', { name: '删除 Key' }).click();
+  await doubaoVoice.locator('.ai-voice-state', { hasText: '未接入' }).waitFor();
   await settings.getByRole('button', { name: '关闭 AI 设置' }).click();
-  console.log('PASS: add a service, list models, test the connection, key kept out of plain text');
+  console.log(
+    'PASS: add a service, list models, test the connection, key kept out of plain text, balance, speech services',
+  );
 
   // A question: consent once, streamed answer, verified citations that jump to the text.
   await panel().getByLabel('向 AI 提问').fill('注意力机制的核心是什么？');
@@ -347,6 +389,7 @@ try {
   await picker.click();
   const menu = page.getByRole('menu', { name: '模型和推理强度' });
   await menu.getByRole('menuitemradio', { name: 'mock-large' }).waitFor();
+  await menu.locator('.balance-line', { hasText: '余额 ¥12.34' }).waitFor();
   await page.screenshot({ path: path.join(evidence, 'ai-model-menu.png') });
   await menu.getByRole('menuitemradio', { name: '最高', exact: true }).click();
   await waitFor(async () => /最高/.test(await picker.innerText()), 'level shown');
