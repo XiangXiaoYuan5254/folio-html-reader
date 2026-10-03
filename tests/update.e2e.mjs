@@ -212,7 +212,13 @@ try {
   await launch();
   await card().getByText('页间 0.0.2 已准备好').waitFor();
   const before = (await fs.stat(settings)).mtimeMs;
-  await card().getByRole('button', { name: '立即重启' }).click();
+  // 页间 quits as the click lands, which can end the click with the page already closed.
+  await card()
+    .getByRole('button', { name: '立即重启' })
+    .click()
+    .catch((e) => {
+      if (!/closed/.test(e.message)) throw e;
+    });
   await exited();
   await waitFor(async () => (await installedVersion()) === '0.0.2', 'installed', 120000);
   await waitFor(async () => (await running()).length === 1, 'reopened', 60000);
