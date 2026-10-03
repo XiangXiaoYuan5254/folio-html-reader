@@ -41,6 +41,17 @@ async function replaceFile(tmp, file) {
     }
   }
 }
+// Names Windows cannot store. A colon is worse than an error: it writes into a hidden stream
+// of another file, so “BERT: Pre-training.pdf” would seem saved and never show up.
+function windowsNameError(relative) {
+  for (const name of relative.split(/[\\/]/)) {
+    if (/[<>:"|?*\x00-\x1f]/.test(name)) return '文件名不能包含下列字符：\\ / : * ? " < > |';
+    if (/[. ]$/.test(name) && name !== '.' && name !== '..') return '文件名不能以空格或句点结尾';
+    if (/^(con|prn|aux|nul|com\d|lpt\d)(\.|$)/i.test(name))
+      return `“${name}”是 Windows 保留的名称，请换一个`;
+  }
+  return '';
+}
 async function atomicWrite(file, data) {
   await fs.mkdir(path.dirname(file), { recursive: true });
   const tmp = `${file}.${crypto.randomUUID()}.tmp`;
@@ -100,6 +111,8 @@ class Workspace {
     if (!this.root) throw Error('请先选择项目');
     if (typeof relative !== 'string' || path.isAbsolute(relative) || relative.includes('\0'))
       throw Error('无效的文件路径');
+    const badName = create && process.platform === 'win32' && windowsNameError(relative);
+    if (badName) throw Error(badName);
     const full = path.resolve(this.root, relative);
     if (full !== this.root && !full.startsWith(this.root + path.sep))
       throw Error('文件必须位于当前项目内');

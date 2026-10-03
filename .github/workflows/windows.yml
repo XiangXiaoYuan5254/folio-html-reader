@@ -33,6 +33,42 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The runner's screen is 1024 × 768, which squeezes 页间's 1536 × 1024 window into its
+      # compact layout. The Mac runs the tests at full size, so this does too.
+      - name: Use a 1920 × 1080 screen
+        shell: pwsh
+        run: |
+          Add-Type -TypeDefinition @'
+          using System.Runtime.InteropServices;
+          public static class Display {
+            [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+            public struct DEVMODE {
+              [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmDeviceName;
+              public short dmSpecVersion, dmDriverVersion, dmSize, dmDriverExtra;
+              public int dmFields, dmPositionX, dmPositionY, dmDisplayOrientation, dmDisplayFixedOutput;
+              public short dmColor, dmDuplex, dmYResolution, dmTTOption, dmCollate;
+              [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmFormName;
+              public short dmLogPixels;
+              public int dmBitsPerPel, dmPelsWidth, dmPelsHeight, dmDisplayFlags, dmDisplayFrequency;
+              public int dmICMMethod, dmICMIntent, dmMediaType, dmDitherType, dmReserved1, dmReserved2;
+              public int dmPanningWidth, dmPanningHeight;
+            }
+            [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+            public static extern bool EnumDisplaySettings(string device, int mode, ref DEVMODE dm);
+            [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+            public static extern int ChangeDisplaySettings(ref DEVMODE dm, int flags);
+          }
+          '@
+          $dm = New-Object Display+DEVMODE
+          $dm.dmSize = [Runtime.InteropServices.Marshal]::SizeOf($dm)
+          [void][Display]::EnumDisplaySettings($null, -1, [ref]$dm)
+          $dm.dmPelsWidth = 1920
+          $dm.dmPelsHeight = 1080
+          $dm.dmFields = 0x180000
+          $result = [Display]::ChangeDisplaySettings([ref]$dm, 0)
+          Add-Type -AssemblyName System.Windows.Forms
+          Write-Host "ChangeDisplaySettings: $result, screen: $([System.Windows.Forms.Screen]::PrimaryScreen.Bounds)"
+
       - name: Unit tests
         run: npm test
 
@@ -80,12 +116,81 @@ jobs:
         env:
           FOLIO_EVIDENCE: ${{ env.EVIDENCE }}
 
-      - name: Platform-neutral end-to-end tests (development build)
+      # The suites the Mac runs, on the development build. One step each, so a failure in one
+      # does not hide the others.
+      - name: 'Reading, notes and pen (development build)'
         if: ${{ !cancelled() && env.FOLIO_EXE }}
+        timeout-minutes: 10
+        run: node tests/e2e.mjs
+        env:
+          FOLIO_QA_DIR: ${{ env.EVIDENCE }}\e2e
+      - name: 'Annotations (development build)'
+        if: ${{ !cancelled() && env.FOLIO_EXE }}
+        timeout-minutes: 10
+        run: node tests/annotations.e2e.mjs
+        env:
+          FOLIO_QA_DIR: ${{ env.EVIDENCE }}\annotations
+      - name: 'Reading interactions (development build)'
+        if: ${{ !cancelled() && env.FOLIO_EXE }}
+        timeout-minutes: 10
+        run: node tests/reading-interactions.e2e.mjs
+        env:
+          FOLIO_QA_DIR: ${{ env.EVIDENCE }}\reading-interactions
+      - name: 'Zoom (development build)'
+        if: ${{ !cancelled() && env.FOLIO_EXE }}
+        timeout-minutes: 10
+        run: node tests/zoom.e2e.mjs
+        env:
+          FOLIO_QA_DIR: ${{ env.EVIDENCE }}\zoom
+      - name: 'PDF (development build)'
+        if: ${{ !cancelled() && env.FOLIO_EXE }}
+        timeout-minutes: 10
+        run: node tests/pdf.e2e.mjs
+        env:
+          FOLIO_QA_DIR: ${{ env.EVIDENCE }}\pdf
+      - name: 'Tabs (development build)'
+        if: ${{ !cancelled() && env.FOLIO_EXE }}
+        timeout-minutes: 10
+        run: node tests/tabs.e2e.mjs
+        env:
+          FOLIO_QA_DIR: ${{ env.EVIDENCE }}\tabs
+      - name: 'Text width (development build)'
+        if: ${{ !cancelled() && env.FOLIO_EXE }}
+        timeout-minutes: 10
+        run: node tests/text-width.e2e.mjs
+        env:
+          FOLIO_QA_DIR: ${{ env.EVIDENCE }}\text-width
+      - name: 'Source editing (development build)'
+        if: ${{ !cancelled() && env.FOLIO_EXE }}
+        timeout-minutes: 10
+        run: node tests/source.e2e.mjs
+        env:
+          FOLIO_QA_DIR: ${{ env.EVIDENCE }}\source
+      - name: 'Opening files (development build)'
+        if: ${{ !cancelled() && env.FOLIO_EXE }}
+        timeout-minutes: 10
+        run: node tests/open-file.e2e.mjs
+        env:
+          FOLIO_QA_DIR: ${{ env.EVIDENCE }}\open-file
+      - name: 'AI assistant (development build)'
+        if: ${{ !cancelled() && env.FOLIO_EXE }}
+        timeout-minutes: 10
+        run: node tests/ai.e2e.mjs
+        env:
+          FOLIO_QA_DIR: ${{ env.EVIDENCE }}\ai
+      - name: 'Whiteboard, papers and themes (development build)'
+        if: ${{ !cancelled() && env.FOLIO_EXE }}
+        timeout-minutes: 10
+        run: node tests/board-papers.e2e.mjs
+        env:
+          FOLIO_QA_DIR: ${{ env.EVIDENCE }}\board-papers
+
+      # Codex (the ChatGPT provider) installed the usual Windows way, with npm as codex.cmd.
+      - name: Find Codex installed with npm
+        if: ${{ !cancelled() }}
         run: |
-          node tests/open-file.e2e.mjs
-          node tests/tabs.e2e.mjs
-          node tests/source.e2e.mjs
+          npm install -g @openai/codex
+          node tests/codex-found.mjs
 
       - name: Uninstall and check cleanup
         if: ${{ !cancelled() && env.FOLIO_EXE }}

@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { AudioLines, Check, LoaderCircle, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
-import { errorText } from '../ai/client';
+import { errorText, useAiConfig } from '../ai/client';
 import type { Tutor } from '../ai/board';
 import {
+  canTalk,
+  cloudPrefix,
   codexPrefix,
   hearsItself,
   listen,
@@ -53,15 +55,21 @@ export function VoiceButton({
   mode,
   voice,
   style,
+  ears,
   support,
   busy,
+  onOpenSettings,
 }: {
   mode: VoiceMode;
   voice: string;
   style: CodexStyle;
+  // Who writes down what the student says, where the page listens.
+  ears: string;
   support: Support | null;
   // The teacher is talking, so a sample of a voice would talk over them.
   busy: boolean;
+  // Opens the AI settings on the page for speech services' keys.
+  onOpenSettings: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const panel = useRef<HTMLDivElement>(null);
@@ -79,20 +87,42 @@ export function VoiceButton({
   const Icon = current.icon;
   const voices = support ? voicesFor(support.voices, 'zh') : [];
   const codex = support?.codex || [];
+  // Speech services with a key, whose voices can read the script.
+  const cloud = (useAiConfig()?.speech || []).filter((s) => s.hasKey);
+  const cloudVoice = (service: string, id: string) => `${cloudPrefix}${service}:${id}`;
   const chosen =
     (codex.includes(voice.slice(codexPrefix.length)) && voice.startsWith(codexPrefix)
       ? voice
       : '') ||
+    (cloud.some((s) => s.voices.some((v) => cloudVoice(s.id, v.id) === voice)) ? voice : '') ||
     voices.find((v) => v.id === voice)?.id ||
     voices[0]?.id;
   const usingCodex = !!chosen?.startsWith(codexPrefix);
+  const cloudService = chosen?.startsWith(cloudPrefix)
+    ? cloud.find((s) => s.id === chosen.split(':')[1])
+    : undefined;
+  // Where the page listens: on this computer, or a speech service with a key writes it down.
+  const pageEars = mode === 'talk' && !usingCodex && !!support?.hearing;
+  const listeners = cloud.filter((s) => s.hears);
+  const earsService = listeners.find((s) => s.id === ears);
+  const heardNote =
+    mode !== 'talk' || usingCodex || !support
+      ? ''
+      : support.helper
+        ? '你说的话在这台电脑上识别，不上传录音。外放也能用，戴耳机更清楚。'
+        : (earsService
+            ? `你说的话发给${earsService.name}识别，按时长计费，用的是你自己的 API Key。`
+            : '你说的话用通义实验室的 SenseVoice 模型在这台电脑上识别，不上传录音；第一次要下载约 240MB 的模型。') +
+          (cloudService
+            ? '外放也能用，戴耳机更清楚。'
+            : '用电脑自带的声音外放时，页老师的声音可能被当成你在说话，戴耳机更好。');
   async function sample(id: string) {
     if (busy) return;
     const s = await speaker();
     s.hush();
     const text = '你好，我来给你讲讲这一段。';
-    if (await s.prepare(`sample-${id}-${Date.now()}`, text))
-      void s.say(`sample-${id}-${Date.now()}`);
+    const said = `sample-${id}-${Date.now()}`;
+    if (await s.prepare(said, text)) void s.say(said);
   }
   return (
     <div className="wb-voice">
@@ -125,7 +155,7 @@ export function VoiceButton({
           <h4>讲解方式</h4>
           <div role="radiogroup" aria-label="讲解方式">
             {modes.map((m) => {
-              const unavailable = m.mode === 'talk' && support && !support.helper;
+              const unavailable = m.mode === 'talk' && support && !canTalk(support, chosen || '');
               const MIcon = m.icon;
               return (
                 <button
@@ -140,14 +170,14 @@ export function VoiceButton({
                   <MIcon size={16} />
                   <span>
                     <b>{m.name}</b>
-                    <small>{unavailable ? '目前只有 macOS 版可以' : m.about}</small>
+                    <small>{unavailable ? '这台电脑上用不了' : m.about}</small>
                   </span>
                   {m.mode === mode ? <Check size={14} /> : null}
                 </button>
               );
             })}
           </div>
-          {voices.length || codex.length ? (
+          {voices.length || codex.length || cloud.length ? (
             <label className="wb-voice-pick">
               <span>页老师的声音</span>
               <select
@@ -166,6 +196,15 @@ export function VoiceButton({
                     ))}
                   </optgroup>
                 ) : null}
+                {cloud.map((s) => (
+                  <optgroup key={s.id} label={s.name}>
+                    {s.voices.map((v) => (
+                      <option key={v.id} value={cloudVoice(s.id, v.id)}>
+                        {v.name}（{v.about}）
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
                 <optgroup label="这台电脑的声音">
                   {voices.map((v) => (
                     <option key={v.id} value={v.id}>
@@ -205,13 +244,46 @@ export function VoiceButton({
                 ? '他直接听你说话，你随时开口打断就行；你说的话会发给 ChatGPT。外放也能用，戴耳机更清楚。'
                 : '声音由 ChatGPT 生成，用的是你 Codex 账号的额度。'}
             </p>
-          ) : support?.helper ? (
+          ) : cloudService ? (
             <p className="wb-voice-note">
-              {mode === 'talk'
-                ? '语音在这台电脑上识别，不上传录音。外放也能用，戴耳机更清楚。'
-                : '想要更自然的声音：在「系统设置 › 辅助功能 › 朗读内容 › 系统声音」里下载“高级”中文语音。'}
+              声音由{cloudService.name}合成，按字数计费，用的是你自己的 API Key。
             </p>
+          ) : (
+            <>
+              {support && !cloud.length ? (
+                <p className="wb-voice-note">
+                  想要更像真人的声音：填一个语音服务的 API Key（通义百炼、豆包语音或 MiniMax）。
+                  <button
+                    type="button"
+                    className="wb-voice-link"
+                    onClick={() => {
+                      setOpen(false);
+                      onOpenSettings();
+                    }}
+                  >
+                    去填写
+                  </button>
+                </p>
+              ) : null}
+            </>
+          )}
+          {pageEars && listeners.length ? (
+            <label className="wb-voice-pick">
+              <span>识别你说的话</span>
+              <select
+                value={earsService?.id || 'local'}
+                onChange={(e) => setVoiceSettings({ ears: e.target.value })}
+              >
+                <option value="local">这台电脑（免费，不上传录音）</option>
+                {listeners.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}（按时长计费）
+                  </option>
+                ))}
+              </select>
+            </label>
           ) : null}
+          {heardNote ? <p className="wb-voice-note">{heardNote}</p> : null}
         </div>
       ) : null}
     </div>
@@ -233,11 +305,13 @@ function echoOf(heard: string, said: string[]) {
   for (let i = 0; i < h.length - 1; i++) if (pairs.has(h.slice(i, i + 2))) hit++;
   return hit / (h.length - 1) >= 0.8;
 }
-// Recognition puts spaces around Chinese punctuation and between Chinese and English.
+// Recognition puts spaces around Chinese punctuation and between Chinese and English, and
+// writes the teacher's name with a more common 叶 or 夜.
 const tidy = (s: string) =>
   s
     .replace(/\s+([，。！？、；：,.!?])/g, '$1')
     .replace(/([，。！？、；：])\s+/g, '$1')
+    .replace(/[叶夜]老师/g, '页老师')
     .trim();
 // Sounds that aren't a question.
 const filler = /^(嗯+|呃+|啊+|哦+|噢+|额+|唔+|hmm+|uh+|um+)$/i;
@@ -263,6 +337,8 @@ export function Listening({
   onError: (text: string) => void;
 }) {
   const [status, setStatus] = useState<Status>('starting');
+  // How much of the speech recognition model has been downloaded, the first time.
+  const [installed, setInstalled] = useState<number | null>(null);
   const [heard, setHeard] = useState('');
   const [talking, setTalking] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -304,6 +380,7 @@ export function Listening({
           break;
         case 'installing':
           setStatus('installing');
+          setInstalled(e.progress ?? null);
           break;
         case 'level':
           meter.current?.style.setProperty('--level', String(e.v));
@@ -384,7 +461,9 @@ export function Listening({
 
   const note =
     status === 'installing'
-      ? '正在下载语音识别模型，第一次会慢一点…'
+      ? installed === null
+        ? '正在下载语音识别模型，第一次会慢一点…'
+        : `正在下载语音识别模型（${Math.floor(installed * 100)}%），只有第一次需要…`
       : status === 'starting'
         ? '正在打开麦克风…'
         : status === 'off'

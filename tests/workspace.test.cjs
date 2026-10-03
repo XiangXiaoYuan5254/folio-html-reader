@@ -329,3 +329,21 @@ test('PDF 二进制保持原样，批注、缩放与混合双栏随移动和重�
     right: '示例.html',
   });
 });
+test(
+  'Windows 不能存的文件名给出清楚的提示，不会写进别的文件',
+  { skip: process.platform !== 'win32' },
+  async (t) => {
+    const { w, root } = await setup(t);
+    await assert.rejects(
+      w.savePdf({ path: '论文/BERT: Pre-training.pdf', data: Buffer.from('%PDF-1.4') }),
+      /不能包含/,
+    );
+    assert.deepEqual(await fs.readdir(path.join(root, '论文')), []);
+    await assert.rejects(w.create({ path: '问题?.html', kind: 'file' }), /不能包含/);
+    await assert.rejects(w.create({ path: 'con.html', kind: 'file' }), /保留/);
+    await assert.rejects(w.create({ path: '资料. ', kind: 'folder' }), /结尾/);
+    await assert.rejects(w.move({ from: '示例.html', to: 'a:b.html' }), /不能包含/);
+    await w.savePdf({ path: '论文/BERT - Pre-training.pdf', data: Buffer.from('%PDF-1.4') });
+    assert.deepEqual(await fs.readdir(path.join(root, '论文')), ['BERT - Pre-training.pdf']);
+  },
+);

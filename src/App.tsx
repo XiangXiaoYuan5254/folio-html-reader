@@ -279,6 +279,8 @@ export default function App() {
   const setRebind = (rebind: string | null) => doc && patchReader(doc.id, { rebind });
   const [dialog, setDialog] = useState<DialogOptions | null>(null);
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
+  // The page the AI settings open on, when not the services.
+  const [aiSettingsPage, setAiSettingsPage] = useState<'' | 'voices'>('');
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   const [assistantMode, setAssistantMode] = useState<AssistantMode>(() => {
     try {
@@ -676,8 +678,7 @@ export default function App() {
   }
   function requestCloseDocument(id: string) {
     const closing = model.docsRef.current.find((d) => d.id === id);
-    if (closing)
-      guardDirty([closing], async () => closeDocument(id));
+    if (closing) guardDirty([closing], async () => closeDocument(id));
   }
   async function dropIntoReading(path: string, side: PaneSide) {
     if (!doc || !readableFiles(workspace?.tree || []).includes(path)) return;
@@ -2129,7 +2130,10 @@ export default function App() {
             selection={lesson.selection}
             onNotify={notify}
             onHistory={() => setBoardList(true)}
-            onOpenSettings={() => setAiSettingsOpen(true)}
+            onOpenSettings={(page) => {
+              setAiSettingsPage(page === 'voices' ? page : '');
+              setAiSettingsOpen(true);
+            }}
             noteTarget={lesson.tutor.source || doc?.path}
             onNote={(picture) => boardToNote(lesson.tutor.entry(), lesson.tutor.get(), picture)}
             noteAsk={noteAsk}
@@ -2142,7 +2146,11 @@ export default function App() {
       ) : null}
       {aiSettingsOpen ? (
         <AiSettings
-          onClose={() => setAiSettingsOpen(false)}
+          page={aiSettingsPage}
+          onClose={() => {
+            setAiSettingsOpen(false);
+            setAiSettingsPage('');
+          }}
           root={workspace?.root}
           projectName={workspace?.name}
         />

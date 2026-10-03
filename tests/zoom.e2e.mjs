@@ -75,9 +75,9 @@ async function point(side = 'left') {
 async function wheel(delta, side = 'left', cmd = true) {
   const p = await point(side);
   await page.mouse.move(p.x, p.y);
-  if (cmd) await page.keyboard.down('Meta');
+  if (cmd) await page.keyboard.down('ControlOrMeta');
   await page.mouse.wheel(0, delta);
-  if (cmd) await page.keyboard.up('Meta');
+  if (cmd) await page.keyboard.up('ControlOrMeta');
 }
 async function setZoom(value) {
   await page.getByLabel('阅读缩放', { exact: true }).selectOption(String(value));
@@ -200,9 +200,9 @@ try {
   // High-frequency input is accumulated while the iframe applies the prior zoom.
   const pos = await point('right');
   await page.mouse.move(pos.x, pos.y);
-  await page.keyboard.down('Meta');
+  await page.keyboard.down('ControlOrMeta');
   for (let i = 0; i < 12; i++) await page.mouse.wheel(0, -8);
-  await page.keyboard.up('Meta');
+  await page.keyboard.up('ControlOrMeta');
   await wait(async () => (await scale('right')) > rightZoom * 1.15, 'trackpad-sized burst');
   await page.waitForTimeout(220);
   await setZoom(4);

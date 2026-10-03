@@ -15,7 +15,9 @@ function createSpeech({ app, systemPreferences, send }) {
     : path.join(__dirname, '..', 'build', 'native', 'folio-speech');
   let child = null;
   let waiting = [];
-  const available = () => process.platform === 'darwin' && fs.existsSync(binary);
+  // FOLIO_NO_SPEECH_HELPER tries the way Windows listens (hearing.cjs) on a Mac.
+  const available = () =>
+    process.platform === 'darwin' && !process.env.FOLIO_NO_SPEECH_HELPER && fs.existsSync(binary);
 
   function start() {
     if (child) return child;
@@ -73,6 +75,10 @@ function createSpeech({ app, systemPreferences, send }) {
       });
     },
     command,
+    // A sentence a speech service has already said, as 16-bit mono samples.
+    sound(id, pcm, rate) {
+      write({ type: 'prepare', id: String(id).slice(0, 40), pcm: pcm.toString('base64'), rate });
+    },
     async listen({ on, locale }) {
       // FOLIO_SPEECH_INPUT (tests) plays a recording in instead of using the microphone.
       if (on && !process.env.FOLIO_SPEECH_INPUT) {

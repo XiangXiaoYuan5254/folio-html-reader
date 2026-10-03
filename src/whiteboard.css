@@ -764,6 +764,18 @@
   line-height: 1.55;
   color: var(--text-4);
 }
+.wb-voice-link {
+  margin-left: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+}
+.wb-voice-link:hover {
+  text-decoration: underline;
+}
 
 /* Listening, in a voice conversation. */
 .wb-listen {

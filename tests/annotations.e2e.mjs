@@ -237,13 +237,13 @@ try {
   await page.keyboard.type(' 1234567890', { delay: 25 });
   const noteText = await editor.inputValue();
   assert.equal(noteText, '直接在这里写下我的想法。 1234567890');
-  await page.keyboard.press('Meta+z');
+  await page.keyboard.press('ControlOrMeta+z');
   assert.notEqual(
     await editor.inputValue(),
     noteText,
     'text undo edits the note, not the annotation list',
   );
-  await page.keyboard.press('Meta+Shift+z');
+  await page.keyboard.press('ControlOrMeta+Shift+z');
   assert.equal(await editor.inputValue(), noteText);
   await waitFor(
     async () => (await safeData(sampleName))?.data.annotations[0]?.note === noteText,
@@ -373,7 +373,7 @@ try {
     assert.equal(erasedInk[i].paths[1].at(-1).x, beforeErase[i].points.at(-1).x);
   }
   await page.screenshot({ path: path.join(evidence, 'partial-eraser.png') });
-  await page.keyboard.press('Meta+z');
+  await page.keyboard.press('ControlOrMeta+z');
   await waitFor(
     async () =>
       (await safeData(sampleName))?.data.annotations
@@ -381,7 +381,7 @@ try {
         .every((a) => !a.paths),
     'one undo restores both strokes',
   );
-  await page.keyboard.press('Meta+Shift+z');
+  await page.keyboard.press('ControlOrMeta+Shift+z');
   await waitFor(
     async () =>
       (await safeData(sampleName))?.data.annotations

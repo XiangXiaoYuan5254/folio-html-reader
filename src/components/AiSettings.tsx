@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AudioLines,
   Blocks,
   Check,
   CircleX,
@@ -13,12 +14,22 @@ import {
   Sparkle,
   Trash2,
   UserRound,
+  Volume2,
   X,
 } from 'lucide-react';
 import { invoke } from '../api';
 import { errorText, savePrefs, setAiConfig, useAiConfig, useInfo } from '../ai/client';
-import type { AiConfig, AiPreset, AiProvider, AiUse, CodexStatus, ModelOption } from '../ai/types';
+import type {
+  AiConfig,
+  AiPreset,
+  AiProvider,
+  AiUse,
+  CodexStatus,
+  ModelOption,
+  SpeechService,
+} from '../ai/types';
 import { effortLabel, forgetModelOptions } from '../ai/levels';
+import { cloudPrefix, tryCloudVoice } from '../ai/voice';
 import { ModelMenu } from './ModelMenu';
 
 const blurbs: Record<string, string> = {
@@ -80,10 +91,13 @@ export function AiSettings({
   onClose,
   root,
   projectName,
+  page = '',
 }: {
   onClose: () => void;
   root?: string;
   projectName?: string;
+  // Opens on a page besides the services.
+  page?: '' | 'voices';
 }) {
   const config = useAiConfig();
   const [selected, setSelected] = useState<string | null>(null);
@@ -96,8 +110,9 @@ export function AiSettings({
   const [modelsOpen, setModelsOpen] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [advanced, setAdvanced] = useState(false);
-  // A page besides the services: the reader profile, or each part's model.
-  const [side, setSide] = useState<'' | 'profile' | 'uses'>('');
+  // A page besides the services: the reader profile, each part's model, or the voices the
+  // whiteboard teacher can read in.
+  const [side, setSide] = useState<'' | 'profile' | 'uses' | 'voices'>(page);
   const panel = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!config || selected !== null || adding) return;
@@ -310,6 +325,13 @@ export function AiSettings({
               各功能的模型
             </button>
             <button
+              className={`ai-profile-link ${side === 'voices' ? 'active' : ''}`}
+              onClick={() => setSide('voices')}
+            >
+              <AudioLines size={14} />
+              语音服务
+            </button>
+            <button
               className={`ai-profile-link ${side === 'profile' ? 'active' : ''}`}
               onClick={() => setSide('profile')}
             >
@@ -322,6 +344,8 @@ export function AiSettings({
               <ReaderProfile saved={config?.prefs.profile || ''} />
             ) : side === 'uses' ? (
               <UseModels />
+            ) : side === 'voices' ? (
+              <SpeechVoices services={config?.speech || []} />
             ) : adding || !form ? (
               <div className="ai-presets">
                 <p className="ai-settings-lead">
@@ -729,6 +753,137 @@ function UseModels() {
         </div>
       ))}
     </div>
+  );
+}
+
+// Speech services whose voices the whiteboard teacher can read its script in, and which on
+// Windows can also write down what the student says.
+function SpeechVoices({ services }: { services: SpeechService[] }) {
+  return (
+    <div className="ai-provider-form">
+      <div className="ai-form-fields">
+        <p className="ai-settings-lead">
+          页老师照着讲稿念的时候，可以换成这些服务的真人声音，比电脑自带的声音自然得多。填好其中一个的
+          API Key，就能在白板的「出声」菜单里选它的声音。费用由服务商按字数收取，页间不经手。 在
+          Windows 上语音对话时，通义百炼和豆包语音还能识别你说的话，按时长计费。
+        </p>
+        {services.map((s) => (
+          <SpeechServiceKey key={s.id} service={s} />
+        ))}
+      </div>
+    </div>
+  );
+}
+function SpeechServiceKey({ service }: { service: SpeechService }) {
+  const [key, setKey] = useState('');
+  const [busy, setBusy] = useState<'' | 'save' | 'try'>('');
+  const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  async function save(next: string) {
+    setBusy('save');
+    setStatus(null);
+    try {
+      setAiConfig(await invoke<AiConfig>('ai-speech-key', { service: service.id, key: next }));
+      setKey('');
+      setStatus({
+        ok: true,
+        text: next ? '已保存，可以在白板的「出声」菜单里选它的声音了' : '已删除',
+      });
+    } catch (e) {
+      setStatus({ ok: false, text: errorText(e) });
+    } finally {
+      setBusy('');
+    }
+  }
+  async function listen() {
+    setBusy('try');
+    setStatus(null);
+    try {
+      await tryCloudVoice(`${cloudPrefix}${service.id}:${service.voices[0].id}`, key);
+      setStatus({ ok: true, text: `可以用：这是「${service.voices[0].name}」的声音` });
+    } catch (e) {
+      setStatus({ ok: false, text: errorText(e) });
+    } finally {
+      setBusy('');
+    }
+  }
+  return (
+    <form
+      className="ai-voice-service"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (key) void save(key);
+      }}
+    >
+      <div className="ai-voice-name">
+        <strong>{service.name}</strong>
+        <span>{service.about}</span>
+      </div>
+      <div className="ai-field">
+        <span>
+          API Key
+          <button
+            type="button"
+            className="ai-link"
+            onClick={() => void invoke('external', { url: service.keyUrl })}
+          >
+            去 {service.name} 获取
+            <ExternalLink size={11} />
+          </button>
+        </span>
+        <div className="ai-key-field">
+          <KeyRound size={14} />
+          <input
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            aria-label={`${service.name} 的 API Key`}
+            placeholder={
+              service.keyHint
+                ? `已保存 ${service.keyHint}，留空则不修改`
+                : service.shared
+                  ? `正在用「${service.shared}」的 Key，也可以单独填一个`
+                  : '粘贴 API Key'
+            }
+            value={key}
+            onChange={(e) => {
+              setKey(e.target.value.trim());
+              setStatus(null);
+            }}
+          />
+        </div>
+      </div>
+      {status ? (
+        <p className={`ai-status ${status.ok ? 'ok' : 'error'}`} role="status">
+          {status.ok ? <Check size={14} /> : <CircleX size={14} />}
+          {status.text}
+        </p>
+      ) : null}
+      <div className="ai-form-actions">
+        {service.keyHint ? (
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={!!busy}
+            onClick={() => void save('')}
+          >
+            删除 Key
+          </button>
+        ) : null}
+        <span className="toolbar-flex" />
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={!!busy || (!key && !service.hasKey)}
+          onClick={() => void listen()}
+        >
+          {busy === 'try' ? <LoaderCircle className="spin" size={14} /> : <Volume2 size={14} />}
+          试听
+        </button>
+        <button className="primary-button" disabled={!!busy || !key}>
+          {busy === 'save' ? '保存中…' : '保存'}
+        </button>
+      </div>
+    </form>
   );
 }
 

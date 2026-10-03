@@ -51,6 +51,22 @@ $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
 $g = [System.Drawing.Graphics]::FromImage($bmp)
 $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
 $bmp.Save(${quote(path.join(evidence, name))}, [System.Drawing.Imaging.ImageFormat]::Png)`);
+// The color of one screen pixel, as #rrggbb.
+async function pixel(x, y) {
+  const { stdout } = await powershell(`Add-Type -AssemblyName System.Drawing
+$bmp = New-Object System.Drawing.Bitmap 1, 1
+[System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen(${Math.round(x)}, ${Math.round(y)}, 0, 0, $bmp.Size)
+$c = $bmp.GetPixel(0, 0)
+'#{0:x2}{1:x2}{2:x2}' -f $c.R, $c.G, $c.B`);
+  return stdout.trim();
+}
+// The background of the native minimize button, which the theme colors.
+async function captionColor() {
+  const b = await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].getContentBounds(),
+  );
+  return pixel(b.x + b.width - 120, b.y + 4);
+}
 async function waitFor(fn, label, ms = 15000) {
   const end = Date.now() + ms;
   while (Date.now() < end) {
@@ -191,7 +207,9 @@ try {
   await powershell(
     `Set-Clipboard -Path ${quote(path.join(incoming, '粘贴一.html'))}, ${quote(path.join(incoming, '资料 夹'))}`,
   );
-  await win.locator('.file-tree').click({ position: { x: 20, y: 300 } });
+  // Empty space at the bottom of the tree; the whiteboard shelf sits right under it.
+  const treeBox = await win.locator('.file-tree').boundingBox();
+  await win.locator('.file-tree').click({ position: { x: 20, y: treeBox.height - 12 } });
   await win.keyboard.press('Control+V');
   await waitFor(
     async () => (await win.locator('.toast').innerText()).includes('已复制 2 个项目'),
@@ -252,6 +270,18 @@ try {
   );
   console.log('PASS: Ctrl+Shift+F focus mode enters and leaves full screen');
   await desktopShot('03-reading.png');
+
+  // A dark theme recolors the native caption buttons too, and they stay dark after a restart.
+  assert.equal(await captionColor(), '#ffffff', 'light caption buttons');
+  await win.getByLabel('界面主题', { exact: true }).click();
+  await win
+    .getByRole('dialog', { name: '界面主题' })
+    .getByLabel(/^夜读：/)
+    .click();
+  await win.keyboard.press('Escape');
+  await waitFor(async () => (await captionColor()) === '#15191f', 'dark caption buttons');
+  await desktopShot('04-dark-theme.png');
+  console.log('PASS: a dark theme recolors the caption buttons');
   await quit();
 
   // Double-clicking a file when the app is closed starts it in that file's folder.
@@ -267,6 +297,8 @@ try {
     'relative stylesheet in a subfolder loads',
   );
   console.log('PASS: opening a file starts the app in its folder, relative CSS loads');
+  assert.equal(await captionColor(), '#15191f', 'caption buttons dark from the start');
+  console.log('PASS: the dark caption buttons are remembered');
 
   assert.deepEqual(errors, []);
   console.log('WINDOWS E2E PASS');

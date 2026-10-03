@@ -138,7 +138,7 @@ try {
   await start();
   await page.getByLabel('收起批注栏', { exact: true }).click();
   await tool('选择文字');
-  await page.keyboard.press('Meta+a');
+  await page.keyboard.press('ControlOrMeta+a');
   assert.equal(
     await page.evaluate(() => getSelection().toString()),
     '',
@@ -146,7 +146,7 @@ try {
   );
   await blank();
   let f = await frame();
-  await page.keyboard.press('Meta+a');
+  await page.keyboard.press('ControlOrMeta+a');
   assert.ok(
     (await f.evaluate(() => getSelection().toString())).includes('两篇文章'),
     'article supports native select all',
@@ -157,7 +157,7 @@ try {
     'blank clears article select all',
   );
   await page.locator('.selection-toolbar').waitFor({ state: 'hidden' });
-  await page.keyboard.press('Meta+a');
+  await page.keyboard.press('ControlOrMeta+a');
   await page.keyboard.press('Escape');
   assert.equal(await f.evaluate(() => getSelection().toString()), '');
   // Previously stuck ranges must also be cleared when a reading frame receives the next click.
@@ -202,7 +202,7 @@ try {
   await activeTool('便签');
   await note.fill('输入框仍可正常全选');
   await note.focus();
-  await page.keyboard.press('Meta+a');
+  await page.keyboard.press('ControlOrMeta+a');
   await page.keyboard.insertText('替换便签内容');
   assert.equal(await note.inputValue(), '替换便签内容');
   const stickySizeBefore = await note.evaluate((el) =>
@@ -326,7 +326,7 @@ try {
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1440, 960));
   await page.getByRole('button', { name: '源码', exact: true }).click();
   await page.locator('.cm-content').click();
-  await page.keyboard.press('Meta+a');
+  await page.keyboard.press('ControlOrMeta+a');
   await page.keyboard.insertText('<html><body>尚未保存的源码</body></html>');
   await page.keyboard.press('Tab');
   assert.ok(await page.locator('.cm-content').textContent());

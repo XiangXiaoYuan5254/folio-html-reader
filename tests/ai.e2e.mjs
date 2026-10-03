@@ -162,6 +162,11 @@ const server = http.createServer(async (req, res) => {
         '<section class="card"><h2>原文金句</h2><blockquote class="quote"><p>Attention lets every token look at all other tokens.</p><footer><a class="page" data-page="1">第 1 页</a> · 注意力让每个词看到其他词</footer></blockquote></section>',
       ].join(''),
     });
+  // The DeepSeek-type service's model turns pictures away, the way text-only models do.
+  if (Array.isArray(user) && body.model === 'mock-large') {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    return res.end('{"error":{"message":"image input is not supported by this model"}}');
+  }
   if (Array.isArray(user))
     return stream(res, {
       text: `看到了 ${user.filter((part) => part.type === 'image_url').length} 张图。`,
@@ -666,7 +671,17 @@ try {
     await panel().locator('.assistant-new').click();
   await pasteImage('#e0533d');
   await waitFor(async () => (await thumbs.count()) === 1, 'pasted picture attached');
-  // The DeepSeek-type service can't look at pictures.
+  // A model's name alone doesn't hold pictures back; once it turns them away, it is known
+  // not to take them and the next pictures wait with a note.
+  await composer.fill('图里是什么？');
+  await composer.press('Enter');
+  await panel()
+    .locator('.chat-error')
+    .getByText(/不能看图/)
+    .waitFor();
+  await panel().locator('.assistant-new').click();
+  await pasteImage('#e0533d');
+  await waitFor(async () => (await thumbs.count()) === 1, 'pasted picture attached again');
   await panel()
     .locator('.assistant-vision-note')
     .getByText(/不能看图/)

@@ -44,7 +44,8 @@ import {
 } from '../ai/board-ink';
 import type { Box } from '../ai/board-ink';
 import {
-  hearsItself,
+  canTalk,
+  listener,
   onVoiceProblem,
   stopSpeech,
   useSpeechSupport,
@@ -645,7 +646,8 @@ export default function Whiteboard({
   onNotify: (text: string, error?: boolean) => void;
   // Shows the saved boards, to switch to another one.
   onHistory: () => void;
-  onOpenSettings: () => void;
+  // Opens the AI settings, on the page for speech services' keys when asked.
+  onOpenSettings: (page?: 'voices') => void;
   // The document whose note the board can be kept in, if any.
   noteTarget?: string;
   // Keeps the board in the note, with a picture of it when one could be taken.
@@ -692,10 +694,11 @@ export default function Whiteboard({
   }, [state.waiting]);
 
   // Whether the teacher talks out loud, and whether the student talks back. A voice
-  // conversation needs the helper that listens; without it the teacher just talks.
+  // conversation needs something that listens; without it the teacher just talks.
   const voice = useVoiceSettings();
   const support = useSpeechSupport();
-  const mode = voice.mode === 'talk' && support && !support.helper ? 'speak' : voice.mode;
+  const mode =
+    voice.mode === 'talk' && support && !canTalk(support, voice.voice) ? 'speak' : voice.mode;
   const locale = useAiConfig()?.prefs.language === 'en' ? 'en-US' : 'zh-CN';
   useEffect(() => tutor.setVoice(mode, mode === 'off' ? null : teacherVoice), [mode, tutor]);
   // The helper goes when the board does, and the voice forgets it: another board opened in
@@ -1270,16 +1273,18 @@ export default function Whiteboard({
                 mode={mode}
                 voice={voice.voice}
                 style={voice.style}
+                ears={voice.ears}
                 support={support}
                 busy={state.phase === 'teaching' && !state.paused}
+                onOpenSettings={() => onOpenSettings('voices')}
               />
             </div>
           </div>
           {mode === 'talk' && support ? (
             <Listening
-              // A ChatGPT voice listens itself; the helper listens for the others. Each board
-              // listens afresh, after the one before stopped the voice.
-              key={`${tutor.id}-${hearsItself() ? 'voice' : 'helper'}`}
+              // A ChatGPT voice listens itself; the helper or the page's microphone listens for
+              // the others. Each board listens afresh, after the one before stopped the voice.
+              key={`${tutor.id}-${listener()}`}
               tutor={tutor}
               locale={locale}
               onSay={(text) => send(text)}

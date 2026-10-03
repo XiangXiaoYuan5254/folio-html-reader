@@ -11,6 +11,7 @@ const {
   clipboard,
   safeStorage,
   systemPreferences,
+  utilityProcess,
 } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
@@ -22,6 +23,8 @@ const { projectFor, filesFromArgv } = require('./open-file.cjs');
 const { createUpdates } = require('./updater.cjs');
 const { createAi } = require('./ai.cjs');
 const { createSpeech } = require('./speech.cjs');
+const { createHearing } = require('./hearing.cjs');
+const { limiter } = require('./cloud-voice.cjs');
 const papers = require('./papers.cjs');
 const isMac = process.platform === 'darwin';
 const workspace = new Workspace();
@@ -34,12 +37,20 @@ let focusWindowState = null;
 let appearance = null;
 const previews = new Map();
 let ai;
-const speech = createSpeech({
+// The teacher's sentences said by a speech service, two at a time.
+const voiceQueue = limiter(2);
+let voiceHushes = 0;
+const toWindow = (event) => {
+  if (win && !win.isDestroyed()) win.webContents.send('folio:event', event);
+};
+const speech = createSpeech({ app, systemPreferences, send: toWindow });
+// Where the helper isn't there, the window's microphone is listened to here.
+const hearing = createHearing({
   app,
-  systemPreferences,
-  send: (event) => {
-    if (win && !win.isDestroyed()) win.webContents.send('folio:event', event);
-  },
+  utilityProcess,
+  fetch: (url, init) => net.fetch(url, init),
+  speechKey: (service) => ai.hearingKey(service),
+  send: toWindow,
 });
 if (process.env.FOLIO_USER_DATA) app.setPath('userData', process.env.FOLIO_USER_DATA);
 app.setName('页间');
@@ -287,6 +298,7 @@ app.on('before-quit', () => {
   quitting = true;
   ai?.shutdown();
   speech.stop();
+  hearing.stop();
 });
 // On Windows keys are encrypted with the user's login (DPAPI). macOS keeps them in the app's
 // data folder, readable only by this user: with an ad-hoc signed app the Keychain would ask
@@ -452,6 +464,10 @@ app
           'speech',
           'speech-listen',
           'speech-stop',
+          'hearing',
+          'ai-speech-key',
+          'cloud-voice',
+          'cloud-voice-hush',
         ].includes(action) &&
         token !== workspace.token
       )
@@ -646,16 +662,45 @@ app
             if (!sender.isDestroyed()) sender.send('folio:event', e);
           });
         }
-        // The whiteboard teacher's voice; empty where the helper isn't there.
+        // The whiteboard teacher's voice; empty where the helper isn't there, and listening
+        // to the window's microphone in its place.
         case 'speech-voices':
-          return { helper: speech.available(), voices: await speech.voices() };
+          return {
+            helper: speech.available(),
+            hearing: !speech.available() && hearing.available(),
+            voices: await speech.voices(),
+          };
         case 'speech':
+          if (payload?.type === 'hush') voiceHushes++;
           return speech.command(payload);
+        case 'ai-speech-key':
+          return ai.saveSpeechKey(payload || {});
+        // A sentence in a speech service's voice, played by the helper or given to the
+        // window. Hushing the teacher drops the sentences not made yet.
+        case 'cloud-voice': {
+          const at = voiceHushes;
+          const sound = await voiceQueue(() =>
+            at === voiceHushes ? ai.speak(payload || {}) : null,
+          );
+          if (!sound || at !== voiceHushes) return null;
+          if (payload.to !== 'helper') return { pcm: new Uint8Array(sound.pcm), rate: sound.rate };
+          speech.sound(payload.id, sound.pcm, sound.rate);
+          return true;
+        }
+        case 'cloud-voice-hush':
+          voiceHushes++;
+          return true;
         case 'speech-listen':
           return speech.listen(payload);
         case 'speech-stop':
           speech.stop();
+          hearing.stop();
           return true;
+        case 'hearing':
+          if (payload?.type === 'audio') return hearing.audio(payload.pcm);
+          if (payload?.type === 'mute') return hearing.mute(payload.on);
+          if (payload?.type === 'listen') return hearing.listen(payload);
+          throw Error('未知的语音操作');
         case 'appearance': {
           const colors = appearanceColors(payload);
           if (!colors) throw Error('颜色无效');

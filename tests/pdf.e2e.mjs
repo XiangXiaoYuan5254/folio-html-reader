@@ -329,9 +329,9 @@ try {
   assert.equal(await html.locator('h1').innerText(), 'HTML 与 PDF 双栏阅读');
   const ib = await page.locator('[data-pane=left] iframe').boundingBox();
   await page.mouse.move(ib.x + 130, ib.y + 200);
-  await page.keyboard.down('Meta');
+  await page.keyboard.down('ControlOrMeta');
   await page.mouse.wheel(0, -80);
-  await page.keyboard.up('Meta');
+  await page.keyboard.up('ControlOrMeta');
   await wait(async () => (await data()).zoom > 0, 'PDF wheel zoom');
   const savedZoom = (await data()).zoom;
   await page.screenshot({ path: path.join(evidence, 'pdf-html-split.png') });

@@ -222,6 +222,21 @@ function cleanPath(value: unknown) {
     .replace(/\\/g, '/')
     .replace(/^\.?\/+/, '');
 }
+// A name the model picks for a new file, made one Windows can store: a colon there would
+// write into a hidden stream of another file. “BERT: Pre-training” becomes “BERT - Pre-training”.
+function newPath(value: unknown) {
+  const path = cleanPath(value);
+  if (window.folio?.platform !== 'win32') return path;
+  return path
+    .split('/')
+    .map((name) =>
+      name
+        .replace(/\s*:\s*/g, ' - ')
+        .replace(/[<>"|?*\x00-\x1f]/g, '')
+        .replace(/[. ]+$/, ''),
+    )
+    .join('/');
+}
 function existing(host: AiHost, value: unknown) {
   const path = cleanPath(value);
   const files = host.files();
@@ -581,7 +596,7 @@ function prepareEdit(input: any, ctx: Context): Deferred {
 }
 
 function prepareCreate(input: any, ctx: Context): Deferred {
-  const path = cleanPath(input?.path);
+  const path = newPath(input?.path);
   const content = typeof input?.content === 'string' ? input.content : '';
   const tool: Deferred = { title: `新建 ${path}`, run: async () => fail('内容为空。') };
   tool.prepare = async () => {
@@ -604,7 +619,7 @@ function prepareCreate(input: any, ctx: Context): Deferred {
 }
 
 function prepareSave(input: any, ctx: Context): Deferred {
-  const path = cleanPath(input?.path);
+  const path = newPath(input?.path);
   const url = String(input?.url ?? '').trim();
   const tool: Deferred = { title: `保存 PDF 到 ${path}`, run: async () => fail('没有下载链接。') };
   tool.prepare = async () => {

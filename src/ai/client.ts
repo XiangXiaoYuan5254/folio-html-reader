@@ -30,6 +30,8 @@ export function loadAiConfig(force = false): Promise<AiConfig | null> {
     .finally(() => (loading = null));
   return loading;
 }
+// The settings as last loaded, for code that runs outside React.
+export const currentAiConfig = () => config;
 export function useAiConfig() {
   return useSyncExternalStore(
     (l) => {

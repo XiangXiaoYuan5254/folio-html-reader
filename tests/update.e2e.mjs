@@ -187,8 +187,10 @@ try {
   // Downloads in the background, then installs on a normal quit without reopening.
   await launch();
   await card().getByText('页间 0.0.2 已准备好').waitFor();
+  // electron-builder publishes build/release-notes.md as the update's notes.
   const notes = await card().locator('li').allInnerTexts();
-  assert.ok(notes.length >= 1 && notes[0].includes('后台下载'), `release notes: ${notes}`);
+  const firstNote = (await fs.readFile('build/release-notes.md', 'utf8')).split(/\r?\n/)[0];
+  assert.equal(notes[0], firstNote.replace(/^- /, '').trim(), `release notes: ${notes}`);
   assert.ok(requests.includes(update), 'update downloaded');
   await win.screenshot({ path: path.join(evidence, 'update-ready.png') });
   await card().getByRole('button', { name: '稍后', exact: true }).click();

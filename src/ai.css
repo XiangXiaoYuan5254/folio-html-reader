@@ -1507,6 +1507,32 @@
   line-height: 1.6;
   color: var(--muted);
 }
+/* A speech service on the 语音服务 page: its name, key and a sample to hear. */
+.ai-voice-service {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-soft);
+}
+.ai-voice-name {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.ai-voice-name strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.ai-voice-name span {
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.ai-voice-service .ai-form-actions {
+  padding: 0;
+  border-top: 0;
+}
 .ai-settings-main {
   flex: 1;
   min-width: 0;

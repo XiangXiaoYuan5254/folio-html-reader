@@ -49,7 +49,9 @@
     "katex": "^0.16.47",
     "lucide-react": "^0.468.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "sherpa-onnx-node": "^1.13.8",
+    "ws": "^8.22.0"
   },
   "devDependencies": {
     "@types/react": "^19.1.0",
@@ -122,12 +124,24 @@
           "role": "Editor",
           "rank": "Alternate"
         }
+      ],
+      "files": [
+        "dist/**/*",
+        "electron/**/*",
+        "package.json",
+        "!node_modules/sherpa-onnx-*{,/**/*}"
       ]
     },
     "win": {
       "icon": "assets/icon.png",
       "executableName": "Folio",
-      "artifactName": "Folio-${version}-win-${arch}.${ext}"
+      "artifactName": "Folio-${version}-win-${arch}.${ext}",
+      "extraResources": [
+        {
+          "from": "native/hearing/silero_vad.onnx",
+          "to": "silero_vad.onnx"
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,
@@ -143,6 +157,9 @@
       "artifactName": "Folio-${version}-win-${arch}-setup.${ext}"
     },
     "asar": true,
+    "asarUnpack": [
+      "node_modules/sherpa-onnx-*/**"
+    ],
     "npmRebuild": false,
     "dmg": {
       "title": "页间 Folio ${version}",

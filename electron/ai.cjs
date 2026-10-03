@@ -4,6 +4,7 @@ const fs = require('node:fs/promises');
 const crypto = require('node:crypto');
 const { presets, presetFor, streamChat, listModels, AiError } = require('./ai-providers.cjs');
 const codex = require('./ai-codex.cjs');
+const speechServices = require('./cloud-voice.cjs');
 
 const efforts = ['', 'off', 'on', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 // Parts of the app that can have their own model; chat is the active service itself.
@@ -30,6 +31,7 @@ function createAi({ file, protect, unprotect, fetch, atomicWrite, version = '', 
     for (const p of cache.providers) if (p?.name === 'ChatGPT（通过 Codex）') p.name = 'Codex';
     cache.prefs = cache.prefs && typeof cache.prefs === 'object' ? cache.prefs : {};
     cache.uses = cache.uses && typeof cache.uses === 'object' ? cache.uses : {};
+    cache.speech = cache.speech && typeof cache.speech === 'object' ? cache.speech : {};
     return cache;
   }
   async function write(next) {
@@ -64,7 +66,69 @@ function createAi({ file, protect, unprotect, fetch, atomicWrite, version = '', 
       ),
       prefs: c.prefs,
       presets,
+      speech: speechServices.services.map((service) => {
+        const { shares, ...s } = service;
+        const own = c.speech[s.id];
+        const shared = !own?.key && sharedKey(c, service);
+        return {
+          ...s,
+          hasKey: !!own?.key || !!shared,
+          keyHint: own?.key ? own.keyHint : '',
+          shared: shared ? shared.name : '',
+        };
+      }),
     };
+  }
+  // The AI service whose key a speech service can use too, when it has none of its own.
+  function sharedKey(c, service) {
+    return (
+      (service.shares && c.providers.find((p) => p.preset === service.shares && p.key)) || null
+    );
+  }
+  async function saveSpeechKey({ service, key }) {
+    const c = await read();
+    if (!speechServices.serviceFor(service)) throw new AiError('没有这个语音服务');
+    key = typeof key === 'string' ? key.trim() : '';
+    if (key.length > 4096 || /\s/.test(key)) throw new AiError('API Key 格式不正确');
+    const speech = { ...c.speech };
+    if (key)
+      speech[service] = { key: protect(key), keyHint: `${key.slice(0, 3)}…${key.slice(-4)}` };
+    else delete speech[service];
+    await write({ ...c, speech });
+    return config();
+  }
+  // A speech service's key and the host it goes to; `draft` is one the settings are trying.
+  async function speechAccess(service, draft = '') {
+    const c = await read();
+    const own = c.speech[service.id];
+    const shared = !own?.key && sharedKey(c, service);
+    // A shared Qwen key belongs to its region's endpoint.
+    const region = shared && /^https:\/\/(dashscope[\w-]*\.aliyuncs\.com)\//.exec(shared.baseUrl);
+    return {
+      key: draft || keyOf(own) || keyOf(shared),
+      host: (!draft && !own?.key && region?.[1]) || 'dashscope.aliyuncs.com',
+    };
+  }
+  // Says a sentence in a speech service's voice; the settings form may try a key not saved.
+  async function speak({ voice, text, key }) {
+    const { service, voice: id } = speechServices.parseVoice(voice);
+    const draft = typeof key === 'string' ? key.trim() : '';
+    return speechServices.synthesize({
+      fetch,
+      service,
+      voice: id,
+      ...(await speechAccess(service, draft)),
+      text: clean(text, 2000),
+    });
+  }
+  // For writing down what the student says with a speech service.
+  async function hearingKey(id) {
+    const service = speechServices.serviceFor(id);
+    if (!service?.hears) throw new AiError('这个语音服务不能识别语音');
+    const access = await speechAccess(service);
+    if (!access.key)
+      throw new AiError(`还没有填 ${service.name} 的 API Key：请在 AI 设置 › 语音服务里填写`);
+    return access;
   }
   // Fields from the settings form, checked as if they came from anywhere.
   function sanitize(input, previous) {
@@ -321,6 +385,9 @@ function createAi({ file, protect, unprotect, fetch, atomicWrite, version = '', 
     codexStatus,
     codexLogin,
     codexVoice,
+    saveSpeechKey,
+    speak,
+    hearingKey,
   };
 }
 module.exports = { createAi };

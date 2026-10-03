@@ -47,6 +47,23 @@ export type AiConfig = {
   uses: Partial<Record<AiUse, AiUseChoice>>;
   prefs: AiPrefs;
   presets: AiPreset[];
+  speech?: SpeechService[];
+};
+// A speech service people bring their own key for, whose voices the whiteboard teacher can
+// read its script in.
+export type CloudVoice = { id: string; name: string; about: string };
+export type SpeechService = {
+  id: string;
+  name: string;
+  about: string;
+  keyUrl: string;
+  voices: CloudVoice[];
+  // It can also write down what the student says in a voice conversation.
+  hears?: boolean;
+  hasKey: boolean;
+  keyHint: string;
+  // The AI service whose key it uses, when it has none of its own.
+  shared: string;
 };
 
 // A model a service offers, with the reasoning levels it supports and, when the service

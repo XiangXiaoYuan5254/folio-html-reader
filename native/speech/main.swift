@@ -4,6 +4,8 @@
 //
 // In:  {"type":"voices"}
 //      {"type":"prepare","id","text","voice"}   synthesize a sentence ahead of saying it
+//      {"type":"prepare","id","pcm","rate"}     a sentence already said by a speech service,
+//                                               as base64 16-bit mono samples
 //      {"type":"say","id"}                      say a prepared sentence
 //      {"type":"pause"} {"type":"resume"} {"type":"hush"} {"type":"speed","rate"}
 //      {"type":"listen","on","locale"}          start or stop listening
@@ -350,7 +352,15 @@ final class Helper: NSObject, AVSpeechSynthesizerDelegate {
     switch m["type"] as? String {
     case "voices": emit(["type": "voices", "voices": voices()])
     case "prepare":
-      guard let id = m["id"] as? String, let text = m["text"] as? String else { return }
+      guard let id = m["id"] as? String else { return }
+      // A sentence a speech service has already said, as 16-bit mono samples.
+      if let audio = m["pcm"] as? String, let data = Data(base64Encoded: audio) {
+        let values = data.withUnsafeBytes { raw in
+          raw.bindMemory(to: Int16.self).map { Float(Int16(littleEndian: $0)) / 32768 }
+        }
+        return keep(id, resampled(values, from: m["rate"] as? Double ?? 24000))
+      }
+      guard let text = m["text"] as? String else { return }
       jobs.append((id, text, m["voice"] as? String ?? ""))
       makeNext()
     case "say":
@@ -432,7 +442,12 @@ final class Helper: NSObject, AVSpeechSynthesizerDelegate {
     guard let job = making else { return }
     making = nil
     utterance = nil
-    var values = resampled(job.samples, from: job.rate)
+    keep(job.id, job.rate == 0 ? [] : resampled(job.samples, from: job.rate))
+    makeNext()
+  }
+  // Keeps a sentence's sound, at the rate everything is said at, until it is said.
+  private func keep(_ id: String, _ sound: [Float]) {
+    var values = sound
     // Silence at the ends would only delay the words and what is drawn with them.
     let quiet: Float = 0.004
     if let first = values.firstIndex(where: { abs($0) > quiet }),
@@ -443,14 +458,13 @@ final class Helper: NSObject, AVSpeechSynthesizerDelegate {
     } else {
       values = []
     }
-    if values.isEmpty || job.rate == 0 {
-      emit(["type": "fail", "id": job.id, "message": "这句话没有合成出声音"])
+    if values.isEmpty {
+      emit(["type": "fail", "id": id, "message": "这句话没有合成出声音"])
     } else if let buffer = pcm(values, rate: speechRate) {
-      clips[job.id] = buffer
-      emit(["type": "ready", "id": job.id, "ms": Double(values.count) / speechRate * 1000])
-      if sayNext == job.id { say(job.id) }
+      clips[id] = buffer
+      emit(["type": "ready", "id": id, "ms": Double(values.count) / speechRate * 1000])
+      if sayNext == id { say(id) }
     }
-    makeNext()
   }
   private func say(_ id: String) {
     guard let clip = clips.removeValue(forKey: id) else {

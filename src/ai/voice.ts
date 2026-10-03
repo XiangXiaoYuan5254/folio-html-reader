@@ -1,15 +1,20 @@
 import { useSyncExternalStore } from 'react';
 import { invoke, isDesktop, subscribe } from '../api';
 import { plainText } from './board';
+import { currentAiConfig, errorText } from './client';
 import { codexVoice } from './codex-voice';
 import type { CodexStyle } from './codex-voice';
+import { hear, muteHearing, stopHearing } from './page-hearing';
 
 // How the whiteboard teacher talks: silently with captions, out loud while the student
 // types, or in a voice conversation where the student talks too and can cut in. On macOS a
-// helper process does the speaking and listening on this computer (electron/speech.cjs);
-// elsewhere the page's own speech synthesis speaks and there is no listening. With a Codex
-// login the teacher can be one of ChatGPT's voices instead, which also does its own
-// listening (codex-voice.ts).
+// helper process does the speaking and listening on this computer (electron/speech.cjs).
+// Elsewhere (Windows) the page's own speech synthesis speaks, and the page's microphone is
+// listened to by electron/hearing.cjs: written down on this computer, or by a speech service
+// the student has a key for (`ears`). With a Codex login the teacher can be one of ChatGPT's
+// voices instead, which also does its own listening (codex-voice.ts). With a speech
+// service's key (通义百炼, 豆包语音, MiniMax) it can read its script in one of that service's
+// voices, made in electron/cloud-voice.cjs and played like the system's.
 
 export type VoiceMode = 'off' | 'speak' | 'talk';
 export type VoiceOption = {
@@ -22,10 +27,13 @@ export type VoiceOption = {
   novelty?: boolean;
 };
 
-// `voice` is a system voice's id, or `codex:<name>` for a ChatGPT voice, which reads the
-// script word for word or says it in its own words, as `style` says.
-type Settings = { mode: VoiceMode; voice: string; style: CodexStyle };
+// `voice` is a system voice's id, `codex:<name>` for a ChatGPT voice, which reads the
+// script word for word or says it in its own words, as `style` says, or
+// `cloud:<service>:<voice>` for a speech service's voice. `ears`: who writes down what the
+// student says where the page listens, 'local' or a speech service.
+type Settings = { mode: VoiceMode; voice: string; style: CodexStyle; ears: string };
 export const codexPrefix = 'codex:';
+export const cloudPrefix = 'cloud:';
 const settingsKey = 'folio.board-voice';
 function loadSettings(): Settings {
   try {
@@ -35,9 +43,10 @@ function loadSettings(): Settings {
       mode,
       voice: typeof saved?.voice === 'string' ? saved.voice : '',
       style: saved?.style === 'read' ? 'read' : 'free',
+      ears: typeof saved?.ears === 'string' ? saved.ears : 'local',
     };
   } catch {
-    return { mode: 'off', voice: '', style: 'free' };
+    return { mode: 'off', voice: '', style: 'free', ears: 'local' };
   }
 }
 let settings = loadSettings();
@@ -53,6 +62,7 @@ export function setVoiceSettings(patch: Partial<Settings>) {
     const was = before.voice.startsWith(codexPrefix);
     if (was !== settings.voice.startsWith(codexPrefix)) {
       if (was) void codex.listen(false);
+      else if (known?.hearing) void hear(false, '', '').catch(() => {});
       else if (isDesktop) void invoke('speech-listen', { on: false }).catch(() => {});
     }
   }
@@ -73,9 +83,10 @@ export function useVoiceSettings() {
   );
 }
 
-// What this computer can do: the helper speaks and listens; without it the page speaks.
-// `codex` are the ChatGPT voices a Codex login offers; they play through the helper.
-export type Support = { helper: boolean; voices: VoiceOption[]; codex: string[] };
+// What this computer can do: the helper speaks and listens; without it the page speaks and,
+// with `hearing`, the page's microphone is listened to. `codex` are the ChatGPT voices a
+// Codex login offers.
+export type Support = { helper: boolean; hearing: boolean; voices: VoiceOption[]; codex: string[] };
 let support: Promise<Support> | null = null;
 function pageVoices(): Promise<VoiceOption[]> {
   if (typeof speechSynthesis === 'undefined') return Promise.resolve([]);
@@ -106,7 +117,12 @@ async function codexVoices() {
   }
 }
 export function speechSupport(): Promise<Support> {
-  const page = async () => ({ helper: false, voices: await pageVoices(), codex: [] });
+  const page = async () => ({
+    helper: false,
+    hearing: false,
+    voices: await pageVoices(),
+    codex: [],
+  });
   return (support ||= (
     isDesktop
       ? invoke<Omit<Support, 'codex'>>('speech-voices')
@@ -114,7 +130,11 @@ export function speechSupport(): Promise<Support> {
             console.debug('[voice] helper voices', Math.round(performance.now())); // DEBUG
             return s;
           })
-          .then(async (s) => (s.helper ? { ...s, codex: await codexVoices() } : page()))
+          .then(async (s) => ({
+            ...s,
+            voices: s.helper ? s.voices : await pageVoices(),
+            codex: await codexVoices(),
+          }))
       : page()
   )
     .catch(page)
@@ -265,6 +285,18 @@ function helperSpeaker(): Speaker {
     prepare(id, text) {
       return new Promise((resolve) => {
         ready.set(id, resolve);
+        // Made by the service and handed to the helper, which says it was ready.
+        if (usingCloud())
+          return void invoke('cloud-voice', {
+            id,
+            text: spoken(text),
+            voice: settings.voice,
+            to: 'helper',
+          }).catch((err) => {
+            ready.get(id)?.(0);
+            ready.delete(id);
+            report(errorText(err));
+          });
         void speechSupport()
           .then(({ voices }) =>
             send({ type: 'prepare', id, text, voice: voiceFor(text, voices)?.id }),
@@ -289,17 +321,48 @@ function helperSpeaker(): Speaker {
 }
 
 // The page's speech synthesis, where there is no helper. It can't say how long a sentence
-// takes beforehand, so that is guessed.
+// takes beforehand, so that is guessed. A speech service's sentences play as audio.
 function pageSpeaker(): Speaker {
   const texts = new Map<string, string>();
+  const sounds = new Map<string, string>();
   const done = new Set<() => void>();
+  let playing: HTMLAudioElement | null = null;
   let rate = 1;
   return {
-    prepare(id, text) {
-      texts.set(id, text);
-      return Promise.resolve(hasHan(text) ? text.length * 220 : text.length * 70);
+    async prepare(id, text) {
+      if (!usingCloud()) {
+        texts.set(id, text);
+        return hasHan(text) ? text.length * 220 : text.length * 70;
+      }
+      try {
+        const sound = await cloudSound(text, settings.voice);
+        if (!sound) return 0;
+        sounds.set(id, sound.url);
+        return sound.ms;
+      } catch (err) {
+        report(errorText(err));
+        return 0;
+      }
     },
     say(id) {
+      const url = sounds.get(id);
+      sounds.delete(id);
+      if (url)
+        return new Promise((resolve) => {
+          const audio = new Audio(url);
+          audio.preservesPitch = true;
+          audio.playbackRate = rate;
+          playing = audio;
+          const end = () => {
+            done.delete(end);
+            if (playing === audio) playing = null;
+            URL.revokeObjectURL(url);
+            resolve();
+          };
+          done.add(end);
+          audio.onended = audio.onerror = end;
+          audio.play().catch(end);
+        });
       const text = texts.get(id);
       texts.delete(id);
       if (!text || typeof speechSynthesis === 'undefined') return Promise.resolve();
@@ -322,15 +385,74 @@ function pageSpeaker(): Speaker {
           }),
       );
     },
-    pause: () => speechSynthesis.pause(),
-    resume: () => speechSynthesis.resume(),
+    pause() {
+      playing?.pause();
+      if (typeof speechSynthesis !== 'undefined') speechSynthesis.pause();
+    },
+    resume() {
+      void playing?.play().catch(() => {});
+      if (typeof speechSynthesis !== 'undefined') speechSynthesis.resume();
+    },
     hush() {
       texts.clear();
-      speechSynthesis.cancel();
+      sounds.forEach((url) => URL.revokeObjectURL(url));
+      sounds.clear();
+      playing?.pause();
+      if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
       [...done].forEach((d) => d());
+      if (isDesktop) void invoke('cloud-voice-hush').catch(() => {});
     },
-    speed: (r) => void (rate = r),
+    speed(r) {
+      rate = r;
+      if (playing) playing.playbackRate = r;
+    },
   };
+}
+
+// Whether the teacher reads in a speech service's voice whose key is there.
+function usingCloud() {
+  if (!settings.voice.startsWith(cloudPrefix)) return false;
+  const service = settings.voice.split(':')[1];
+  return !!currentAiConfig()?.speech?.some((s) => s.id === service && s.hasKey);
+}
+// A sentence said by a speech service, to play in the page: null when the teacher was
+// hushed while it was made. `key` is one the settings are trying before it is saved.
+async function cloudSound(text: string, voice: string, key?: string) {
+  const sound = await invoke<{ pcm: Uint8Array; rate: number } | null>('cloud-voice', {
+    text: spoken(text),
+    voice,
+    to: 'page',
+    ...(key ? { key } : {}),
+  });
+  if (!sound) return null;
+  const { pcm, rate } = sound;
+  const head = new DataView(new ArrayBuffer(44));
+  const ascii = (at: number, s: string) =>
+    [...s].forEach((c, i) => head.setUint8(at + i, c.charCodeAt(0)));
+  ascii(0, 'RIFF');
+  head.setUint32(4, 36 + pcm.length, true);
+  ascii(8, 'WAVEfmt ');
+  head.setUint32(16, 16, true);
+  head.setUint16(20, 1, true);
+  head.setUint16(22, 1, true);
+  head.setUint32(24, rate, true);
+  head.setUint32(28, rate * 2, true);
+  head.setUint16(32, 2, true);
+  head.setUint16(34, 16, true);
+  ascii(36, 'data');
+  head.setUint32(40, pcm.length, true);
+  return {
+    url: URL.createObjectURL(new Blob([head, pcm as BlobPart], { type: 'audio/wav' })),
+    ms: (pcm.length / 2 / rate) * 1000,
+  };
+}
+// Says a sample sentence in a speech service's voice, for the settings to try a key with.
+export async function tryCloudVoice(voice: string, key?: string) {
+  const sound = await cloudSound('你好，我是页老师。我们从这一段开始讲吧。', voice, key);
+  if (!sound) return;
+  const audio = new Audio(sound.url);
+  audio.onended = audio.onerror = () => URL.revokeObjectURL(sound.url);
+  await audio.play();
 }
 
 // Something went wrong with the voice that the student should know about.
@@ -338,6 +460,14 @@ const problems = new Set<(message: string) => void>();
 export function onVoiceProblem(listener: (message: string) => void) {
   problems.add(listener);
   return () => void problems.delete(listener);
+}
+// Told once, not for every sentence that fails the same way.
+let lastProblem = { message: '', at: 0 };
+function report(message: string) {
+  const now = Date.now();
+  if (message === lastProblem.message && now - lastProblem.at < 60_000) return;
+  lastProblem = { message, at: now };
+  problems.forEach((l) => l(message));
 }
 const codex = codexVoice(
   // No ChatGPT voice chosen: none, rather than a system voice's id cut short.
@@ -380,11 +510,29 @@ export const voice: Speaker = {
   onSpeech: (listener) => codex.onSpeech!(listener),
 };
 
-// Listening, in a voice conversation: the helper does it, or a ChatGPT voice hears the
-// student itself, and stops talking when they start the way a person does.
+// Whether this computer can hold a voice conversation in this voice: a ChatGPT voice listens
+// itself; the others need the helper or the page's microphone.
+export function canTalk(support: Support, voice: string) {
+  return (
+    support.helper ||
+    support.hearing ||
+    (voice.startsWith(codexPrefix) && support.codex.includes(voice.slice(codexPrefix.length)))
+  );
+}
+// Speech services with a key that can write down what the student says.
+export const listeners = () => (currentAiConfig()?.speech || []).filter((s) => s.hears && s.hasKey);
+// Who writes it down where the page listens: the chosen service while its key is there.
+export const earsInUse = () =>
+  listeners().some((s) => s.id === settings.ears) ? settings.ears : 'local';
+// Which one listens, so listening starts afresh when that changes.
+export const listener = () =>
+  usingCodex() ? 'codex' : known?.hearing ? `page-${earsInUse()}` : 'helper';
+
+// Listening, in a voice conversation: the helper or the page's microphone, or a ChatGPT
+// voice hears the student itself, and stops talking when they start the way a person does.
 export type Hearing =
   | { type: 'listening'; on: boolean }
-  | { type: 'installing' }
+  | { type: 'installing'; progress?: number }
   | { type: 'level'; v: number; talking: boolean }
   | { type: 'heard'; text: string }
   | { type: 'utterance'; text: string }
@@ -409,13 +557,19 @@ export function onHearing(listener: (e: Hearing) => void) {
   };
 }
 export async function listen(on: boolean, locale = 'zh-CN') {
-  await speechSupport();
+  const support = await speechSupport();
   if (usingCodex()) return codex.listen(on);
+  if (support.hearing) return hear(on, locale, earsInUse());
   return invoke('speech-listen', { on, locale });
 }
 export const muteMicrophone = (on: boolean) =>
-  usingCodex() ? Promise.resolve(codex.mute(on)) : invoke('speech', { type: 'mute', on });
+  usingCodex()
+    ? Promise.resolve(codex.mute(on))
+    : known?.hearing
+      ? muteHearing(on)
+      : invoke('speech', { type: 'mute', on });
 export const stopSpeech = () => {
   codex.forget();
+  stopHearing();
   return invoke('speech-stop').catch(() => {});
 };

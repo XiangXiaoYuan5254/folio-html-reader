@@ -48,17 +48,35 @@ function candidates() {
       '/usr/local/bin/codex',
       path.join(home, '.local/bin/codex'),
     );
+  // npm installs Codex on Windows as codex.cmd, which needs a shell and only starts a Node
+  // script; the binary that script runs sits in the package's platform dependency.
+  const triple = process.arch === 'arm64' ? 'aarch64-pc-windows-msvc' : 'x86_64-pc-windows-msvc';
+  const npmBinary = (dir) => {
+    const pkg = path.join(dir, 'node_modules/@openai/codex');
+    return [
+      path.join(
+        pkg,
+        `node_modules/@openai/codex-win32-${process.arch}/vendor`,
+        triple,
+        'bin/codex.exe',
+      ),
+      path.join(pkg, 'vendor', triple, 'bin/codex.exe'),
+      path.join(pkg, 'vendor', triple, 'codex/codex.exe'),
+    ];
+  };
   if (process.platform === 'win32') {
     const local = process.env.LOCALAPPDATA || path.join(home, 'AppData/Local');
     list.push(
       path.join(local, 'Programs/ChatGPT/resources/codex-cli/codex.exe'),
       path.join(local, 'Programs/Codex/codex.exe'),
-      path.join(process.env.APPDATA || '', 'npm/node_modules/@openai/codex/bin/codex.exe'),
+      ...npmBinary(path.join(process.env.APPDATA || path.join(home, 'AppData/Roaming'), 'npm')),
     );
   }
-  const exe = process.platform === 'win32' ? ['codex.exe'] : ['codex'];
-  for (const dir of (process.env.PATH || '').split(path.delimiter))
-    if (dir) for (const name of exe) list.push(path.join(dir, name));
+  for (const dir of (process.env.PATH || '').split(path.delimiter)) {
+    if (!dir) continue;
+    if (process.platform !== 'win32') list.push(path.join(dir, 'codex'));
+    else list.push(path.join(dir, 'codex.exe'), ...npmBinary(dir));
+  }
   return list.filter(Boolean);
 }
 function findCodex() {
