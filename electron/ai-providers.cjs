@@ -10,15 +10,20 @@
 // unchanged; `reasoning` is echoed to providers that require it during tool use.
 
 // `thinking` says how a request sets the reasoning level:
-//   type     -> { thinking: { type: 'enabled' | 'disabled' } }, plus reasoning_effort for
-//               DeepSeek                                          (DeepSeek, GLM, Doubao)
-//   enable   -> { enable_thinking: boolean }                      (Qwen)
+//   type     -> { thinking: { type: 'enabled' | 'disabled' } }, and reasoning_effort for a
+//               level                                     (DeepSeek, GLM, Doubao, Kimi)
+//   enable   -> { enable_thinking: boolean }, and reasoning_effort for a level      (Qwen)
 //   effort   -> { reasoning_effort }                               (OpenAI, Gemini)
 //   claude / codex -> the service's own effort setting
 //   none     -> not controllable
-// `efforts` are the levels offered to pick from; every request uses the level picked, and
-// an empty choice leaves it to the service.
+// `efforts` are the levels offered to pick from and `effort` the one used until another is
+// picked: the service's own default, so every request says its level. Where a service's
+// models differ, `levels` gives [pattern, levels, default] by model name, from the
+// service's documentation: the first pattern that matches wins, and models no pattern
+// matches have `efforts`. 'off' among a model's levels means its thinking can be turned off;
+// a model with no levels is sent none.
 // `echo` providers require reasoning_content back on assistant turns once tools are used.
+// `balance` services tell what's left on the account through the same key (readBalance).
 const presets = [
   {
     id: 'deepseek',
@@ -30,8 +35,10 @@ const presets = [
     context: 1_000_000,
     thinking: 'type',
     efforts: ['off', 'low', 'high', 'max'],
+    effort: 'high',
     echo: true,
     usage: true,
+    balance: true,
     keyUrl: 'https://platform.deepseek.com/api_keys',
     region: 'cn',
   },
@@ -44,9 +51,18 @@ const presets = [
     models: ['qwen-plus', 'qwen-max', 'qwen-flash', 'qwen-long'],
     context: 131_072,
     thinking: 'enable',
-    efforts: ['off', 'on'],
+    efforts: [],
+    // qwen3.8's reasoning_effort is low, medium and xhigh, which `high` stands for; Qwen3,
+    // 3.5 to 3.7, qwen-plus, -flash and -turbo only turn thinking on and off.
+    levels: [
+      ['^qwen3\\.8-2\\.4t', ['low', 'medium', 'high'], 'high'],
+      ['^qwen3\\.8-', ['off', 'low', 'medium', 'high'], 'high'],
+      ['thinking|instruct|coder|character|vl|^qwen3\\.7-max-preview', [], ''],
+      ['^qwen3-max|^qwen-(plus|flash|turbo)', ['off', 'on'], 'off'],
+      ['^qwen3(\\.\\d)?-', ['off', 'on'], 'on'],
+    ],
     usage: true,
-    keyUrl: 'https://bailian.console.aliyun.com/',
+    keyUrl: 'https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key',
     region: 'cn',
   },
   {
@@ -57,9 +73,15 @@ const presets = [
     model: '',
     models: [],
     context: 262_144,
-    thinking: 'none',
+    thinking: 'type',
     efforts: [],
+    // kimi-k3 always thinks; kimi-k2.7-code always thinks at its own level.
+    levels: [
+      ['^kimi-k3', ['low', 'high', 'max'], 'max'],
+      ['^kimi-k2\\.6', ['off', 'on'], 'on'],
+    ],
     echo: true,
+    balance: true,
     keyUrl: 'https://platform.moonshot.cn/console/api-keys',
     region: 'cn',
   },
@@ -72,8 +94,14 @@ const presets = [
     models: [],
     context: 131_072,
     thinking: 'type',
-    efforts: ['off', 'on'],
-    keyUrl: 'https://open.bigmodel.cn/usercenter/apikeys',
+    efforts: [],
+    // GLM-5.3 always thinks; GLM-5.2's low and medium are high.
+    levels: [
+      ['^glm-5\\.3', ['low', 'high', 'max'], 'max'],
+      ['^glm-5\\.2', ['off', 'high', 'max'], 'max'],
+      ['^glm-(4\\.[5-7]|5)', ['off', 'on'], 'on'],
+    ],
+    keyUrl: 'https://open.bigmodel.cn/apikey/platform',
     region: 'cn',
   },
   {
@@ -85,7 +113,14 @@ const presets = [
     models: [],
     context: 131_072,
     thinking: 'type',
-    efforts: ['off', 'on'],
+    efforts: [],
+    // Seed 2.x levels; their xhigh and max are high.
+    levels: [
+      ['^doubao-seed-(2-1-|evolving)', ['off', 'low', 'medium', 'high'], 'high'],
+      ['^doubao-seed-(2-0-|character-260628)', ['off', 'low', 'medium', 'high'], 'medium'],
+    ],
+    // The key lists every model on the platform; only the ones opened on the account show.
+    probe: true,
     keyUrl: 'https://console.volcengine.com/ark',
     region: 'cn',
   },
@@ -99,6 +134,7 @@ const presets = [
     context: 131_072,
     thinking: 'none',
     efforts: [],
+    balance: true,
     keyUrl: 'https://cloud.siliconflow.cn/account/ak',
     region: 'cn',
   },
@@ -111,7 +147,13 @@ const presets = [
     models: [],
     context: 400_000,
     thinking: 'effort',
-    efforts: ['low', 'medium', 'high'],
+    efforts: [],
+    // The reasoning models; chat models and the pro models (which take only some levels)
+    // are sent none.
+    levels: [
+      ['chat|-pro|^o1-mini', [], ''],
+      ['^(gpt-[56]|o[134])', ['low', 'medium', 'high'], 'medium'],
+    ],
     usage: true,
     keyUrl: 'https://platform.openai.com/api-keys',
     region: 'global',
@@ -126,7 +168,9 @@ const presets = [
     models: [],
     context: 272_000,
     thinking: 'codex',
+    // Each model's levels and default come from Codex's model list.
     efforts: ['low', 'medium', 'high', 'xhigh'],
+    effort: 'medium',
     noKey: true,
     region: 'global',
   },
@@ -139,7 +183,18 @@ const presets = [
     models: ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5'],
     context: 1_000_000,
     thinking: 'claude',
-    efforts: ['low', 'medium', 'high', 'max'],
+    efforts: [],
+    // output_config.effort; Haiku 4.5 and Sonnet 4.5 have none.
+    levels: [
+      ['^claude-opus-5-5', ['low', 'medium', 'high', 'xhigh', 'max'], 'medium'],
+      [
+        '^claude-(fable|mythos|opus-5|opus-4-[78]|sonnet-5)',
+        ['low', 'medium', 'high', 'xhigh', 'max'],
+        'high',
+      ],
+      ['^claude-(opus|sonnet)-4-6', ['low', 'medium', 'high', 'max'], 'high'],
+      ['^claude-opus-4-5', ['low', 'medium', 'high'], 'high'],
+    ],
     keyUrl: 'https://console.anthropic.com/settings/keys',
     region: 'global',
   },
@@ -152,7 +207,12 @@ const presets = [
     models: [],
     context: 1_000_000,
     thinking: 'effort',
-    efforts: ['low', 'medium', 'high'],
+    efforts: [],
+    // Gemini 3 maps reasoning_effort onto its thinking levels; 2.5 thinks by a budget.
+    levels: [
+      ['^gemini-3(\\.\\d+)?-pro', ['low', 'medium', 'high'], 'high'],
+      ['^gemini-3', ['low', 'medium', 'high'], 'medium'],
+    ],
     keyUrl: 'https://aistudio.google.com/apikey',
     region: 'global',
   },
@@ -166,6 +226,7 @@ const presets = [
     context: 131_072,
     thinking: 'none',
     efforts: [],
+    balance: true,
     keyUrl: 'https://openrouter.ai/keys',
     region: 'global',
   },
@@ -388,23 +449,62 @@ function toOpenAIMessages(system, messages, { echo, tools }) {
   return out;
 }
 const hasImages = (messages) => messages.some((m) => m.images?.length);
-// The level a request uses: the one picked, if the service has it.
+// The levels a model offers and the one it uses until another is picked (see `levels` on
+// the presets).
+function modelLevels(preset, model) {
+  const rule = preset.levels?.find(([pattern]) => new RegExp(pattern, 'i').test(model || ''));
+  return rule
+    ? { efforts: rule[1], effort: rule[2] }
+    : { efforts: preset.efforts || [], effort: preset.effort || '' };
+}
+// Reasoning levels from least to most; `on` thinks as deeply as the model likes.
+const depth = { none: 0, off: 0, minimal: 1, low: 2, medium: 3, on: 4, high: 4, xhigh: 5, max: 6 };
+const thinks = (level) => depth[level] >= 2;
+const least = (levels) => levels.reduce((a, b) => (depth[b] < depth[a] ? b : a));
+// The level a model uses (src/ai/levels.ts works it out the same way for the menus). One
+// picked that the model doesn't have becomes the nearest it has, thinking or not as picked
+// where it can, the higher of two as near. With none picked, a part of the app starts at
+// its own: translation at the least, explanations and the whiteboard at the least that
+// still thinks (not thinking, for a model only switched on or off), chat and source edits
+// at the model's default.
+function levelFor(levels, fallback, picked, use) {
+  const known = levels.filter((l) => l in depth);
+  if (levels.includes(picked) || !known.length) return levels.includes(picked) ? picked : fallback;
+  if (picked in depth) {
+    const same = known.filter((l) => thinks(l) === thinks(picked));
+    const off = (l) => Math.abs(depth[l] - depth[picked]);
+    return (same.length ? same : known).reduce((a, b) =>
+      off(b) < off(a) || (off(b) === off(a) && depth[b] > depth[a]) ? b : a,
+    );
+  }
+  if (use === 'translate') return least(known);
+  if (use === 'explain' || use === 'board') {
+    const graded = known.filter((l) => thinks(l) && l !== 'on');
+    if (graded.length) return least(graded);
+    if (known.includes('off')) return 'off';
+  }
+  return fallback;
+}
+// The level a request uses; `use` is the part of the app whose own choice it is.
 function effortFor(provider) {
-  const levels = presetFor(provider.preset).efforts || [];
-  return levels.includes(provider.effort) ? provider.effort : '';
+  const { efforts, effort } = modelLevels(presetFor(provider.preset), provider.model);
+  return levelFor(efforts, effort, provider.effort, provider.use);
 }
 function effortParams(provider) {
   const preset = presetFor(provider.preset);
   const effort = effortFor(provider);
   if (!effort) return {};
+  // A model that always thinks takes the level alone.
+  const switchable = modelLevels(preset, provider.model).efforts.includes('off');
   if (preset.thinking === 'type') {
-    if (effort === 'off') return { thinking: { type: 'disabled' } };
-    return {
-      thinking: { type: 'enabled' },
-      ...(effort !== 'on' ? { reasoning_effort: effort } : {}),
-    };
+    if (effort === 'off' || effort === 'on')
+      return { thinking: { type: effort === 'on' ? 'enabled' : 'disabled' } };
+    return { ...(switchable ? { thinking: { type: 'enabled' } } : {}), reasoning_effort: effort };
   }
-  if (preset.thinking === 'enable') return { enable_thinking: effort !== 'off' };
+  if (preset.thinking === 'enable') {
+    if (effort === 'off' || effort === 'on') return { enable_thinking: effort === 'on' };
+    return { ...(switchable ? { enable_thinking: true } : {}), reasoning_effort: effort };
+  }
   if (preset.thinking === 'effort') return { reasoning_effort: effort };
   return {};
 }
@@ -555,7 +655,6 @@ async function streamOpenAI({ provider, key, request, signal, onDelta, fetch }) 
 
 let Anthropic;
 const adaptive = /claude-(opus-(4-[678]|5)|sonnet-(4-6|5)|fable|mythos)/;
-const effortModels = /claude-(opus-(4-[5678]|5)|sonnet-(4-6|5)|fable|mythos)/;
 // Refused requests continue on another model in the same call (Claude Opus 5, Fable 5.1).
 const fallbackModels = /^claude-(opus-5|fable-5-1)$/;
 function anthropicClient(provider, key, fetch) {
@@ -634,7 +733,7 @@ async function streamAnthropic({ provider, key, request, signal, onDelta, fetch 
         }
       : {}),
     ...(adaptive.test(model) ? { thinking: { type: 'adaptive', display: 'summarized' } } : {}),
-    ...(effort && effortModels.test(model) ? { output_config: { effort } } : {}),
+    ...(effort ? { output_config: { effort } } : {}),
   };
   const withFallback = fallbackModels.test(model) && !request.noFallback;
   let stream;
@@ -750,6 +849,50 @@ async function localImages(provider, ids, fetch, signal) {
   return found;
 }
 
+// Qwen and Doubao list every model on their platforms: other makers', pictures, speech,
+// retired models, open-weight sizes, previews and dated snapshots. Only their own current
+// chat models show.
+const qwenOther =
+  /tts|asr|realtime|livetranslate|image|embedding|rerank|-mt-|ocr|s2s|deep-|audio|omni|math|character|gui|longcontext|^qwen-coder/i;
+function shown(preset, m, id) {
+  if (preset === 'qwen')
+    return (
+      /^qwen/i.test(id) &&
+      !qwenOther.test(id) &&
+      !/-\d+(\.\d+)?[bt](-|$)/i.test(id) &&
+      !/-(\d{4}-\d{2}-\d{2}|\d{4}|latest|preview)$/.test(id)
+    );
+  if (preset === 'doubao')
+    return /^doubao-/.test(id) && m?.status !== 'Shutdown' && ['LLM', 'VLM'].includes(m?.domain);
+  return true;
+}
+// Whether a model is opened on the account: Doubao answers ModelNotOpen for one that isn't,
+// before any reply, so the reply is dropped unread.
+async function opened(provider, key, model, fetch, signal) {
+  try {
+    const response = await fetch(endpoint(provider.baseUrl, '/chat/completions'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: '1' }],
+        max_tokens: 1,
+        stream: true,
+      }),
+      signal,
+    });
+    if (response.ok) {
+      await response.body?.cancel().catch(() => {});
+      return true;
+    }
+    const text = await response.text().catch(() => '');
+    return response.status !== 404 && !/ModelNotOpen/i.test(text);
+  } catch (e) {
+    if (signal?.aborted) throw e;
+    return true;
+  }
+}
+
 // The service's models, each with whether it takes images when the service says.
 async function listModels({ provider, key, fetch, signal }) {
   if (provider.kind === 'anthropic') {
@@ -783,7 +926,13 @@ async function listModels({ provider, key, fetch, signal }) {
   const models = new Map();
   for (const m of list) {
     const id = String((typeof m === 'string' ? m : m?.id || m?.name) || '');
-    if (id && !models.has(id)) models.set(id, listedImages(m));
+    if (id && !models.has(id) && shown(provider.preset, m, id)) models.set(id, listedImages(m));
+  }
+  if (presetFor(provider.preset).probe) {
+    const open = await Promise.all(
+      [...models.keys()].map((id) => opened(provider, key, id, fetch, signal)),
+    );
+    [...models.keys()].forEach((id, i) => open[i] || models.delete(id));
   }
   const local = await localImages(provider, [...models.keys()], fetch, signal);
   return [...models]
@@ -794,15 +943,116 @@ async function listModels({ provider, key, fetch, signal }) {
     .sort((a, b) => a.id.localeCompare(b.id));
 }
 
+// What's left on the account, for the services whose key can ask (`balance` presets).
+const balancePaths = {
+  deepseek: '/user/balance',
+  moonshot: '/users/me/balance',
+  siliconflow: '/user/info',
+  openrouter: '/key',
+};
+const amount = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+const money = (n, currency) =>
+  `${n < 0 ? '-' : ''}${currency === 'USD' ? '$' : '¥'}${Math.abs(n).toFixed(2)}`;
+async function readBalance({ provider, key, fetch, signal }) {
+  const path = balancePaths[provider.preset];
+  if (!path) throw new AiError(`${provider.name} 查不了余额，请到官网查看`);
+  // DeepSeek's balance sits beside its /v1 alias, not under it.
+  const base =
+    provider.preset === 'deepseek' ? provider.baseUrl.replace(/\/v1\/?$/, '') : provider.baseUrl;
+  let response;
+  try {
+    response = await fetch(endpoint(base, path), {
+      headers: { Authorization: `Bearer ${key}` },
+      signal,
+    });
+  } catch (e) {
+    throw networkError(e, provider);
+  }
+  const text = await response.text();
+  if (!response.ok) throw httpError(response.status, text, provider.name);
+  let value;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    throw new AiError('余额格式无法识别');
+  }
+  // The .com and .ai sites of the Chinese services bill in dollars.
+  const currency = /\.(com|ai)$/.test(new URL(base).hostname) ? 'USD' : 'CNY';
+  switch (provider.preset) {
+    case 'deepseek': {
+      const infos = Array.isArray(value?.balance_infos) ? value.balance_infos : [];
+      const info = infos.find((i) => amount(i.total_balance) > 0) || infos[0];
+      if (!info) throw new AiError('DeepSeek 没有返回余额');
+      const c = info.currency === 'USD' ? 'USD' : 'CNY';
+      return {
+        kind: 'money',
+        amount: amount(info.total_balance),
+        currency: c,
+        detail: `赠送 ${money(amount(info.granted_balance), c)} · 充值 ${money(amount(info.topped_up_balance), c)}`,
+        empty: value.is_available === false,
+      };
+    }
+    case 'moonshot': {
+      const d = value?.data;
+      if (!d) throw new AiError('Kimi 没有返回余额');
+      const left = amount(d.available_balance);
+      return {
+        kind: 'money',
+        amount: left,
+        currency,
+        detail: `代金券 ${money(amount(d.voucher_balance), currency)} · 现金 ${money(amount(d.cash_balance), currency)}`,
+        empty: left <= 0,
+      };
+    }
+    case 'siliconflow': {
+      const d = value?.data;
+      if (!d) throw new AiError('硅基流动没有返回余额');
+      const left = amount(d.totalBalance);
+      return {
+        kind: 'money',
+        amount: left,
+        currency,
+        detail: `赠送 ${money(amount(d.balance), currency)} · 充值 ${money(amount(d.chargeBalance), currency)}`,
+        empty: left <= 0,
+      };
+    }
+    default: {
+      // OpenRouter tells a plain key only its own limit; the account's credits need a
+      // management key.
+      const d = value?.data || {};
+      const used = money(amount(d.usage), 'USD');
+      if (typeof d.limit_remaining !== 'number')
+        return {
+          kind: 'money',
+          amount: null,
+          currency: 'USD',
+          detail: `这个 Key 没设额度上限，已用 ${used}；账户余额请到 OpenRouter 官网查看`,
+          empty: false,
+        };
+      const reset = { daily: '，每天重置', weekly: '，每周重置', monthly: '，每月重置' };
+      return {
+        kind: 'money',
+        amount: d.limit_remaining,
+        currency: 'USD',
+        detail: `这个 Key 的额度上限 ${money(amount(d.limit), 'USD')}${reset[d.limit_reset] || ''}，已用 ${used}`,
+        empty: d.limit_remaining <= 0,
+      };
+    }
+  }
+}
+
 module.exports = {
   presets,
   presetFor,
   streamChat,
   listModels,
+  readBalance,
   toOpenAIMessages,
   toAnthropicMessages,
   effortParams,
   effortFor,
+  levelFor,
+  modelLevels,
   thinkSplitter,
   httpError,
   AiError,

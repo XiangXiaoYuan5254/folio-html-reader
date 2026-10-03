@@ -7,6 +7,7 @@
 // only answers, or calls the tools Folio passes in (the project agent's tools), which the
 // server hands back as `item/tool/call` requests. Chat alone turns web search back on.
 const { spawn } = require('node:child_process');
+const { levelFor } = require('./ai-providers.cjs');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -230,14 +231,27 @@ async function getServer(version) {
   return server;
 }
 
-function quota(limits) {
-  const primary = limits?.primary;
-  if (!primary || typeof primary.usedPercent !== 'number') return null;
+function usageWindow(w) {
+  if (!w || typeof w.usedPercent !== 'number') return null;
   return {
-    usedPercent: primary.usedPercent,
-    windowMins: primary.windowDurationMins || 0,
-    resetsAt: primary.resetsAt ? primary.resetsAt * 1000 : 0,
+    usedPercent: w.usedPercent,
+    windowMins: w.windowDurationMins || 0,
+    resetsAt: w.resetsAt ? w.resetsAt * 1000 : 0,
   };
+}
+const quota = (rateLimits) => usageWindow(rateLimits?.primary);
+
+// How much of each of the plan's usage windows is used (five hours and a week), read
+// without starting a turn.
+async function limits(version) {
+  const s = await getServer(version);
+  const result = await s.call('account/rateLimits/read', { excludeResetCreditDetails: true });
+  if (result?.rateLimits) s.rateLimits = result.rateLimits;
+  const windows = [result?.rateLimits?.primary, result?.rateLimits?.secondary]
+    .map(usageWindow)
+    .filter(Boolean);
+  if (!windows.length) throw new CodexError('Codex 没有返回套餐额度');
+  return { kind: 'plan', windows };
 }
 
 async function status(version) {
@@ -247,13 +261,14 @@ async function status(version) {
     const s = await getServer(version);
     const result = await s.call('account/read', { refreshToken: false });
     const account = result?.account || null;
+    const plan = account && (await limits(version).catch(() => null));
     return {
       found: true,
       path: bin,
       account: account
         ? { type: account.type, plan: account.planType || '', email: account.email || '' }
         : null,
-      quota: quota(s.rateLimits),
+      windows: plan?.windows || [],
     };
   } catch (e) {
     return { found: true, path: bin, account: null, error: e.message };
@@ -284,17 +299,20 @@ async function login(version, openUrl) {
   return status(version);
 }
 
+// Each model's levels as last listed, so a request says the level the menu shows.
+let listed = [];
 async function listModels(version) {
   const s = await getServer(version);
   const result = await s.call('model/list', {});
   const models = (result?.data || []).filter((m) => !m.hidden);
   models.sort((a, b) => (b.isDefault ? 1 : 0) - (a.isDefault ? 1 : 0));
-  return models.map((m) => ({
+  listed = models.map((m) => ({
     id: m.id,
     efforts: (m.supportedReasoningEfforts || []).map((e) => e.reasoningEffort).filter(Boolean),
     defaultEffort: m.defaultReasoningEffort || '',
     images: (m.inputModalities || ['text', 'image']).includes('image'),
   }));
+  return listed;
 }
 
 // Earlier turns, flattened into the one input a new Codex turn takes. Pictures travel as
@@ -548,10 +566,15 @@ async function streamCodex({ provider, request, signal, onDelta, version }) {
   const thread = new Thread(s, threadId);
   s.threads.set(threadId, thread);
   const pending = thread.next(onDelta, signal, idleMs);
-  // The level picked for this model, if any; otherwise Codex's own default.
-  const effort = /^(minimal|low|medium|high|xhigh|max)$/.test(provider.effort || '')
-    ? provider.effort
-    : '';
+  // The level as electron/ai-providers.cjs works it out. No model is Codex's default one,
+  // listed first.
+  const list = listed.length ? listed : await listModels(version).catch(() => []);
+  const model = list.find((m) => m.id === (provider.model || list[0]?.id));
+  const effort = model
+    ? levelFor(model.efforts, model.defaultEffort, provider.effort, provider.use)
+    : /^(minimal|low|medium|high|xhigh|max)$/.test(provider.effort || '')
+      ? provider.effort
+      : '';
   try {
     const turn = await s.call('turn/start', {
       threadId,
@@ -685,6 +708,7 @@ module.exports = {
   findCodex,
   status,
   login,
+  limits,
   listModels,
   streamCodex,
   voice,

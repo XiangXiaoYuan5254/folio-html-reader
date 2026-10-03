@@ -452,6 +452,7 @@ app
           'ai-set-use',
           'ai-prefs',
           'ai-models',
+          'ai-balance',
           'ai-test',
           'ai-chat',
           'ai-cancel',
@@ -640,6 +641,8 @@ app
           return ai.setPrefs(payload);
         case 'ai-models':
           return ai.models(payload);
+        case 'ai-balance':
+          return ai.balance(payload);
         case 'ai-test':
           return ai.test(payload);
         case 'ai-chat': {

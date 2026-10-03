@@ -8,10 +8,16 @@ export type AiPreset = {
   models: string[];
   context: number;
   thinking: string;
-  // Reasoning levels to pick from; empty means the service has none to pick.
+  // Reasoning levels to pick from, empty when the service has none, and the one used until
+  // another is picked.
   efforts: string[];
+  effort?: string;
+  // Where the service's models differ: [pattern, levels, default] by model name, first match.
+  levels?: [string, string[], string][];
   keyUrl?: string;
   noKey?: boolean;
+  // The key can ask what's left on the account.
+  balance?: boolean;
   region: 'cn' | 'global' | 'local';
 };
 export type AiProvider = {
@@ -51,7 +57,8 @@ export type AiConfig = {
 };
 // A speech service people bring their own key for, whose voices the whiteboard teacher can
 // read its script in.
-export type CloudVoice = { id: string; name: string; about: string };
+// `named`: it has a name to introduce itself by (芊悦), not only a description (温柔学姐).
+export type CloudVoice = { id: string; name: string; about: string; named?: boolean };
 export type SpeechService = {
   id: string;
   name: string;
@@ -96,9 +103,22 @@ export type CodexStatus = {
   found: boolean;
   path?: string;
   account?: { type: string; plan: string; email: string } | null;
-  quota?: Quota | null;
+  // The plan's usage windows: five hours, then a week.
+  windows?: Quota[];
   error?: string;
 };
+// What's left on a service: money for the services whose key can ask (`amount` is null when
+// the service only tells what's used), or how much of each of a ChatGPT plan's usage windows
+// is used.
+export type Balance =
+  | {
+      kind: 'money';
+      amount: number | null;
+      currency: 'CNY' | 'USD';
+      detail: string;
+      empty: boolean;
+    }
+  | { kind: 'plan'; windows: Quota[] };
 export type ChatResult = {
   text: string;
   reasoning: string;

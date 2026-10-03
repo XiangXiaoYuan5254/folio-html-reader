@@ -67,6 +67,9 @@ export function parseLine(raw: string): Command | null {
     .replace(/^`+|`+$/g, '')
     .trim();
   if (!line || line.startsWith('```')) return null;
+  // “说话：……”, after the heading the prompt lists say under, is said without the label.
+  const said = line.match(/^说话\s*[|｜:：]\s*([\s\S]*)$/);
+  if (said) return said[1].trim() ? { op: 'say', text: said[1].trim() } : null;
   const match = line.match(/^([A-Za-z][A-Za-z\d]*)(?=\s|[|｜:：]|$)\s*([\s\S]*)$/);
   const prose = () =>
     /\p{L}/u.test(line) && !/[|｜]/.test(line) && !line.startsWith('#')

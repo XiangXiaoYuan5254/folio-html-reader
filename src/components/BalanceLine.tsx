@@ -1,0 +1,108 @@
+import { useEffect, useState } from 'react';
+import { CircleX, LoaderCircle, RefreshCw, Wallet } from 'lucide-react';
+import { errorText } from '../ai/client';
+import { loadBalance, money, resetText, windowName } from '../ai/balance';
+import type { Balance, Quota } from '../ai/types';
+
+// What's left on a saved service. The settings ask afresh; the model menu takes an answer
+// from the last minute.
+export function BalanceLine({
+  providerId,
+  fresh = false,
+}: {
+  providerId: string;
+  fresh?: boolean;
+}) {
+  const [state, setState] = useState<Balance | 'loading' | { error: string }>('loading');
+  const [asked, setAsked] = useState({ refresh: fresh, n: 0 });
+  useEffect(() => {
+    let live = true;
+    setState('loading');
+    loadBalance(providerId, asked.refresh).then(
+      (b) => live && setState(b),
+      (e) => live && setState({ error: errorText(e) }),
+    );
+    return () => {
+      live = false;
+    };
+  }, [providerId, asked]);
+  const again = (
+    <button
+      type="button"
+      className="balance-refresh"
+      aria-label="刷新"
+      title="刷新"
+      disabled={state === 'loading'}
+      onClick={() => setAsked((a) => ({ refresh: true, n: a.n + 1 }))}
+    >
+      {state === 'loading' ? <LoaderCircle className="spin" size={12} /> : <RefreshCw size={12} />}
+    </button>
+  );
+  if (state === 'loading' || 'error' in state)
+    return (
+      <div className={`balance-line ${state === 'loading' ? '' : 'error'}`} role="status">
+        {state === 'loading' ? (
+          <span>正在查询余额…</span>
+        ) : (
+          <>
+            <CircleX size={13} />
+            <span>查不到余额：{state.error}</span>
+          </>
+        )}
+        {again}
+      </div>
+    );
+  if (state.kind === 'plan')
+    return (
+      <div className="balance-line">
+        <PlanUsage windows={state.windows} />
+        {again}
+      </div>
+    );
+  return (
+    <div className={`balance-line ${state.empty ? 'error' : ''}`} role="status">
+      <Wallet size={13} />
+      <span>
+        {state.amount !== null ? (
+          <>
+            余额 <strong>{money(state.amount, state.currency)}</strong>
+            {state.empty ? '，已用完，请充值' : ''}
+            <em>{state.detail}</em>
+          </>
+        ) : (
+          state.detail
+        )}
+      </span>
+      {again}
+    </div>
+  );
+}
+
+// How much of each of a ChatGPT plan's usage windows Codex has used.
+export function PlanUsage({ windows }: { windows: Quota[] }) {
+  return (
+    <div className="plan-usage">
+      {windows.map((w) => (
+        <div
+          key={w.windowMins}
+          className={w.usedPercent >= 90 ? 'high' : ''}
+          title={resetText(w.resetsAt)}
+        >
+          <span>{windowName(w.windowMins)}额度</span>
+          <span
+            className="plan-usage-bar"
+            role="meter"
+            aria-label={`${windowName(w.windowMins)}额度已用`}
+            aria-valuenow={w.usedPercent}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <i style={{ width: `${Math.min(100, Math.max(0, w.usedPercent))}%` }} />
+          </span>
+          <span>已用 {w.usedPercent}%</span>
+          <em>{resetText(w.resetsAt)}</em>
+        </div>
+      ))}
+    </div>
+  );
+}

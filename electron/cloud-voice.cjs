@@ -4,7 +4,8 @@
 const crypto = require('node:crypto');
 const { httpError, AiError } = require('./ai-providers.cjs');
 
-// `voices` are the ones fit for teaching, in Mandarin, best first. `shares` is the AI
+// `voices` are the ones fit for teaching, in Mandarin, best first; a `named` voice has a
+// name to introduce itself by, the others are only described. `shares` is the AI
 // service whose key also works here. `hears`: it can also write down what the student says
 // in a voice conversation (cloud-hearing.cjs).
 const services = [
@@ -12,20 +13,20 @@ const services = [
     id: 'qwen',
     name: '通义百炼',
     about: '阿里云百炼的千问语音，价格低，和「通义千问」共用一个 Key',
-    keyUrl: 'https://bailian.console.aliyun.com/?tab=model#/api-key',
+    keyUrl: 'https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key',
     shares: 'qwen',
     hears: true,
     voices: [
-      { id: 'Cherry', name: '芊悦', about: '女声，阳光亲切' },
-      { id: 'Elias', name: '墨讲师', about: '女声，讲课清楚' },
-      { id: 'Maia', name: '四月', about: '女声，知性温柔' },
-      { id: 'Serena', name: '苏瑶', about: '女声，温柔' },
-      { id: 'Katerina', name: '卡捷琳娜', about: '女声，成熟' },
-      { id: 'Ethan', name: '晨煦', about: '男声，阳光温暖' },
-      { id: 'Andre', name: '安德雷', about: '男声，沉稳有磁性' },
-      { id: 'Neil', name: '阿闻', about: '男声，播音腔' },
-      { id: 'Kai', name: '凯', about: '男声，舒缓' },
-      { id: 'Eldric Sage', name: '沧明子', about: '男声，睿智长者' },
+      { id: 'Cherry', name: '芊悦', about: '女声，阳光亲切', named: true },
+      { id: 'Elias', name: '墨讲师', about: '女声，讲课清楚', named: true },
+      { id: 'Maia', name: '四月', about: '女声，知性温柔', named: true },
+      { id: 'Serena', name: '苏瑶', about: '女声，温柔', named: true },
+      { id: 'Katerina', name: '卡捷琳娜', about: '女声，成熟', named: true },
+      { id: 'Ethan', name: '晨煦', about: '男声，阳光温暖', named: true },
+      { id: 'Andre', name: '安德雷', about: '男声，沉稳有磁性', named: true },
+      { id: 'Neil', name: '阿闻', about: '男声，播音腔', named: true },
+      { id: 'Kai', name: '凯', about: '男声，舒缓', named: true },
+      { id: 'Eldric Sage', name: '沧明子', about: '男声，睿智长者', named: true },
     ],
   },
   {
@@ -35,15 +36,25 @@ const services = [
     keyUrl: 'https://console.volcengine.com/speech/new',
     hears: true,
     voices: [
-      { id: 'zh_female_yingyujiaoxue_uranus_bigtts', name: 'Tina 老师', about: '女声，教学' },
-      { id: 'zh_female_vv_uranus_bigtts', name: 'Vivi', about: '女声，自然' },
-      { id: 'zh_female_xiaohe_uranus_bigtts', name: '小何', about: '女声，亲切' },
-      { id: 'zh_female_cancan_uranus_bigtts', name: '知性灿灿', about: '女声，知性' },
+      {
+        id: 'zh_female_yingyujiaoxue_uranus_bigtts',
+        name: 'Tina 老师',
+        about: '女声，教学',
+        named: true,
+      },
+      { id: 'zh_female_vv_uranus_bigtts', name: 'Vivi', about: '女声，自然', named: true },
+      { id: 'zh_female_xiaohe_uranus_bigtts', name: '小何', about: '女声，亲切', named: true },
+      { id: 'zh_female_cancan_uranus_bigtts', name: '知性灿灿', about: '女声，知性', named: true },
       { id: 'zh_female_zhixingnv_uranus_bigtts', name: '知性女声', about: '女声，沉稳' },
-      { id: 'zh_female_wenrouxiaoya_uranus_bigtts', name: '温柔小雅', about: '女声，温柔' },
-      { id: 'zh_male_m191_uranus_bigtts', name: '云舟', about: '男声，自然' },
-      { id: 'zh_male_taocheng_uranus_bigtts', name: '小天', about: '男声，年轻' },
-      { id: 'zh_male_liufei_uranus_bigtts', name: '刘飞', about: '男声，沉稳' },
+      {
+        id: 'zh_female_wenrouxiaoya_uranus_bigtts',
+        name: '温柔小雅',
+        about: '女声，温柔',
+        named: true,
+      },
+      { id: 'zh_male_m191_uranus_bigtts', name: '云舟', about: '男声，自然', named: true },
+      { id: 'zh_male_taocheng_uranus_bigtts', name: '小天', about: '男声，年轻', named: true },
+      { id: 'zh_male_liufei_uranus_bigtts', name: '刘飞', about: '男声，沉稳', named: true },
       { id: 'zh_male_yuanboxiaoshu_uranus_bigtts', name: '渊博小叔', about: '男声，博学' },
       { id: 'zh_male_ruyaqingnian_uranus_bigtts', name: '儒雅青年', about: '男声，儒雅' },
     ],

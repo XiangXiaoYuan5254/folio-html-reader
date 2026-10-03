@@ -2,7 +2,15 @@
 // hint, and requests are made here with the key attached.
 const fs = require('node:fs/promises');
 const crypto = require('node:crypto');
-const { presets, presetFor, streamChat, listModels, AiError } = require('./ai-providers.cjs');
+const {
+  presets,
+  presetFor,
+  streamChat,
+  listModels,
+  modelLevels,
+  readBalance,
+  AiError,
+} = require('./ai-providers.cjs');
 const codex = require('./ai-codex.cjs');
 const speechServices = require('./cloud-voice.cjs');
 
@@ -255,18 +263,32 @@ function createAi({ file, protect, unprotect, fetch, atomicWrite, version = '', 
   async function models(payload) {
     const { provider, key } = await resolve(payload || {});
     if (provider.kind === 'codex') return codex.listModels(version);
-    // Every model of a service shares the service's levels.
-    const levels = presetFor(provider.preset).efforts || [];
+    const preset = presetFor(provider.preset);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 20_000);
     try {
-      return (await listModels({ provider, key, fetch, signal: controller.signal })).map((m) => ({
-        ...m,
-        efforts: levels,
-        defaultEffort: '',
-      }));
+      return (await listModels({ provider, key, fetch, signal: controller.signal })).map((m) => {
+        const { efforts, effort } = modelLevels(preset, m.id);
+        return { ...m, efforts, defaultEffort: effort };
+      });
     } catch (e) {
       if (e.name === 'AbortError') throw new AiError('获取模型列表超时');
+      throw e;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  // What's left on a service: money for the services that can tell, or how much of a
+  // ChatGPT plan's usage windows Codex has used.
+  async function balance(payload) {
+    const { provider, key } = await resolve(payload || {});
+    if (provider.kind === 'codex') return codex.limits(version);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20_000);
+    try {
+      return await readBalance({ provider, key, fetch, signal: controller.signal });
+    } catch (e) {
+      if (e.name === 'AbortError') throw new AiError('查询余额超时');
       throw e;
     } finally {
       clearTimeout(timer);
@@ -316,11 +338,13 @@ function createAi({ file, protect, unprotect, fetch, atomicWrite, version = '', 
     const choice = choiceFor(await read(), payload.use);
     const resolved = await resolve({ id: choice?.provider });
     const { key } = resolved;
+    // A part following chat uses chat's level.
     const provider = choice
       ? {
           ...resolved.provider,
           model: choice.model || resolved.provider.model,
           effort: choice.effort,
+          use: payload.use,
         }
       : resolved.provider;
     const request = {
@@ -377,6 +401,7 @@ function createAi({ file, protect, unprotect, fetch, atomicWrite, version = '', 
     setUse,
     setPrefs,
     models,
+    balance,
     test,
     chat,
     cancel,

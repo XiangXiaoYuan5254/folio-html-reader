@@ -700,6 +700,10 @@ kbd {
   height: 100%;
   object-fit: cover;
 }
+/* 全屏后框跟着屏幕比例走，完整显示画面，不裁边 */
+.film-frame video:fullscreen {
+  object-fit: contain;
+}
 .film-play {
   display: none;
 }

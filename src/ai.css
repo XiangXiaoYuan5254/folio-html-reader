@@ -1521,8 +1521,32 @@
   gap: 3px;
 }
 .ai-voice-name strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 13px;
   font-weight: 600;
+}
+.ai-voice-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--fill);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 500;
+  color: var(--muted);
+}
+.ai-voice-state.on {
+  background: var(--accent-soft);
+  color: var(--success);
+}
+.ai-provider-form .ai-voice-pick {
+  width: auto;
+  max-width: 220px;
+  padding: 7px 8px;
 }
 .ai-voice-name span {
   font-size: 11.5px;
@@ -1891,6 +1915,102 @@
   font-size: 10.5px;
   line-height: 1.7;
   color: var(--muted);
+}
+
+/* What's left on a service: a balance, or a ChatGPT plan's usage windows */
+.balance-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+.balance-line > svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--faint);
+}
+.balance-line > span,
+.balance-line > .plan-usage {
+  flex: 1;
+  min-width: 0;
+}
+.balance-line strong {
+  font-weight: 600;
+  color: var(--text);
+}
+.balance-line > span em {
+  margin-left: 8px;
+  font-style: normal;
+  color: var(--muted);
+}
+.balance-line.error,
+.balance-line.error > svg {
+  color: var(--danger);
+}
+.balance-refresh {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 5px;
+  color: var(--faint);
+}
+.balance-refresh:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text-2);
+}
+.model-menu .balance-line {
+  margin: 6px 6px 0;
+  font-size: 11px;
+}
+.model-menu .balance-line > span em {
+  display: block;
+  margin-left: 0;
+}
+.plan-usage {
+  display: grid;
+  gap: 2px;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+}
+.plan-usage > div {
+  display: grid;
+  grid-template-columns: 5.5em minmax(48px, 160px) auto 1fr;
+  align-items: center;
+  column-gap: 8px;
+}
+.plan-usage-bar {
+  height: 5px;
+  border-radius: 3px;
+  background: var(--track);
+  overflow: hidden;
+}
+.plan-usage-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.plan-usage .high .plan-usage-bar i {
+  background: var(--warn);
+}
+.plan-usage em {
+  font-style: normal;
+  color: var(--muted);
+}
+.model-menu .plan-usage {
+  font-size: 11px;
+}
+.model-menu .plan-usage > div {
+  grid-template-columns: 5.5em 1fr auto;
+}
+.model-menu .plan-usage em {
+  display: none;
 }
 
 /* Pictures sent with a question */

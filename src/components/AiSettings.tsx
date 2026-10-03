@@ -28,9 +28,11 @@ import type {
   ModelOption,
   SpeechService,
 } from '../ai/types';
-import { effortLabel, forgetModelOptions } from '../ai/levels';
-import { cloudPrefix, tryCloudVoice } from '../ai/voice';
+import { effortLabel, forgetModelOptions, levelFor, modelLevels } from '../ai/levels';
+import { cloudPrefix, tryCloudVoice, useVoiceSettings } from '../ai/voice';
 import { ModelMenu } from './ModelMenu';
+import { BalanceLine, PlanUsage } from './BalanceLine';
+import { forgetBalance } from '../ai/balance';
 
 const blurbs: Record<string, string> = {
   deepseek: '国内直连，价格低，长文档友好',
@@ -126,9 +128,9 @@ export function AiSettings({
     panel.current?.focus();
   }, []);
   const preset = config?.presets.find((p) => p.id === form?.preset);
+  const stored = config?.providers.find((p) => p.id === form?.id);
   const dirty = useMemo(() => {
     if (!form) return false;
-    const stored = config?.providers.find((p) => p.id === form.id);
     if (!stored) return true;
     return (
       !!form.key ||
@@ -136,7 +138,7 @@ export function AiSettings({
         (k) => form[k] !== stored[k],
       )
     );
-  }, [form, config]);
+  }, [form, stored]);
   function pick(p: AiProvider) {
     setAdding(false);
     setSide('');
@@ -177,6 +179,7 @@ export function AiSettings({
       });
       setAiConfig(r.config);
       forgetModelOptions(r.provider.id);
+      forgetBalance(r.provider.id);
       setSelected(r.provider.id);
       setForm(fromProvider(r.provider));
       setStatus({ ok: true, text: '已保存' });
@@ -250,8 +253,12 @@ export function AiSettings({
   }
   const disabled = !!root && !!config?.prefs.disabledRoots?.includes(root);
   const allModels = [...new Set([...(models || []), ...(preset?.models || [])])];
-  const levels =
-    modelInfo?.find((m) => m.id === form?.model)?.efforts.filter(Boolean) || preset?.efforts || [];
+  // The model's levels, and the one chat uses.
+  const listed = modelInfo?.find((m) => m.id === form?.model);
+  const { efforts: levels, effort: fallback } = listed
+    ? { efforts: listed.efforts.filter(Boolean), effort: listed.defaultEffort }
+    : modelLevels(preset, form?.model);
+  const effort = levelFor(levels, fallback, form?.effort || '', 'chat');
   // Typing narrows the list; an exact choice shows everything again.
   const typed = form?.model.toLowerCase() || '';
   const modelChoices = allModels.includes(form?.model || '')
@@ -426,6 +433,14 @@ export function AiSettings({
                           onChange={(e) => patch({ key: e.target.value.trim() })}
                         />
                       </div>
+                      {preset?.balance && stored?.hasKey ? (
+                        // Asked again once a new key or address is saved.
+                        <BalanceLine
+                          key={`${stored.id} ${stored.keyHint} ${stored.baseUrl}`}
+                          providerId={stored.id}
+                          fresh
+                        />
+                      ) : null}
                     </div>
                   ) : preset?.kind === 'codex' ? (
                     <CodexAccount
@@ -507,13 +522,12 @@ export function AiSettings({
                       <span>推理强度</span>
                       <select
                         aria-label="推理强度"
-                        value={form.effort}
+                        value={effort}
                         onChange={(e) => patch({ effort: e.target.value })}
                       >
-                        {['', ...levels].map((level) => (
+                        {levels.map((level) => (
                           <option key={level} value={level}>
                             {effortLabel(level)}
-                            {level === '' ? '（由模型决定）' : ''}
                           </option>
                         ))}
                       </select>
@@ -776,6 +790,13 @@ function SpeechVoices({ services }: { services: SpeechService[] }) {
 }
 function SpeechServiceKey({ service }: { service: SpeechService }) {
   const [key, setKey] = useState('');
+  // The voice to try: the teacher's, when it's one of this service's.
+  const { voice: teacher } = useVoiceSettings();
+  const own = `${cloudPrefix}${service.id}:`;
+  const [voiceId, setVoiceId] = useState(
+    () => service.voices.find((v) => teacher === own + v.id)?.id || service.voices[0]?.id || '',
+  );
+  const sample = service.voices.find((v) => v.id === voiceId) || service.voices[0];
   const [busy, setBusy] = useState<'' | 'save' | 'try'>('');
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   async function save(next: string) {
@@ -798,8 +819,8 @@ function SpeechServiceKey({ service }: { service: SpeechService }) {
     setBusy('try');
     setStatus(null);
     try {
-      await tryCloudVoice(`${cloudPrefix}${service.id}:${service.voices[0].id}`, key);
-      setStatus({ ok: true, text: `可以用：这是「${service.voices[0].name}」的声音` });
+      await tryCloudVoice(service.id, sample, key);
+      setStatus({ ok: true, text: `可以用：这是「${sample.name}」的声音` });
     } catch (e) {
       setStatus({ ok: false, text: errorText(e) });
     } finally {
@@ -815,7 +836,17 @@ function SpeechServiceKey({ service }: { service: SpeechService }) {
       }}
     >
       <div className="ai-voice-name">
-        <strong>{service.name}</strong>
+        <strong>
+          {service.name}
+          {service.hasKey ? (
+            <em className="ai-voice-state on">
+              <Check size={11} />
+              {service.shared ? `已接入 · 用「${service.shared}」的 Key` : '已接入'}
+            </em>
+          ) : (
+            <em className="ai-voice-state">未接入</em>
+          )}
+        </strong>
         <span>{service.about}</span>
       </div>
       <div className="ai-field">
@@ -870,6 +901,21 @@ function SpeechServiceKey({ service }: { service: SpeechService }) {
           </button>
         ) : null}
         <span className="toolbar-flex" />
+        <select
+          className="ai-voice-pick"
+          aria-label={`试听 ${service.name} 的哪个声音`}
+          value={sample.id}
+          onChange={(e) => {
+            setVoiceId(e.target.value);
+            setStatus(null);
+          }}
+        >
+          {service.voices.map((v) => (
+            <option key={v.id} value={v.id}>
+              {v.name}（{v.about}）
+            </option>
+          ))}
+        </select>
         <button
           type="button"
           className="secondary-button"
@@ -951,11 +997,14 @@ function CodexAccount({ onReady }: { onReady: () => void }) {
           </div>
         </>
       ) : state.account ? (
-        <p className="ai-codex-line ok">
-          <Check size={14} />
-          已通过这台电脑上的 Codex 登录 ChatGPT{plan}
-          {state.account.email ? `（${state.account.email}）` : ''}
-        </p>
+        <>
+          <p className="ai-codex-line ok">
+            <Check size={14} />
+            已通过这台电脑上的 Codex 登录 ChatGPT{plan}
+            {state.account.email ? `（${state.account.email}）` : ''}
+          </p>
+          {state.windows?.length ? <PlanUsage windows={state.windows} /> : null}
+        </>
       ) : (
         <>
           <p className="ai-codex-line warn">

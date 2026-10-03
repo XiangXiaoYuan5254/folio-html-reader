@@ -5,6 +5,7 @@ import { currentAiConfig, errorText } from './client';
 import { codexVoice } from './codex-voice';
 import type { CodexStyle } from './codex-voice';
 import { hear, muteHearing, stopHearing } from './page-hearing';
+import type { CloudVoice } from './types';
 
 // How the whiteboard teacher talks: silently with captions, out loud while the student
 // types, or in a voice conversation where the student talks too and can cut in. On macOS a
@@ -446,9 +447,12 @@ async function cloudSound(text: string, voice: string, key?: string) {
     ms: (pcm.length / 2 / rate) * 1000,
   };
 }
-// Says a sample sentence in a speech service's voice, for the settings to try a key with.
-export async function tryCloudVoice(voice: string, key?: string) {
-  const sound = await cloudSound('你好，我是页老师。我们从这一段开始讲吧。', voice, key);
+// Says hello in one of a speech service's voices, for the settings to try a key and a voice.
+export async function tryCloudVoice(service: string, v: CloudVoice, key?: string) {
+  const hello = v.named
+    ? `你好呀，我是${v.name}，有什么不懂的都可以问我哦！`
+    : '你好呀，有什么不懂的都可以问我哦！';
+  const sound = await cloudSound(hello, `${cloudPrefix}${service}:${v.id}`, key);
   if (!sound) return;
   const audio = new Audio(sound.url);
   audio.onended = audio.onerror = () => URL.revokeObjectURL(sound.url);

@@ -117,8 +117,9 @@ test('OpenAI-compatible streaming: text, reasoning, tool calls and usage', async
     assert.equal(sent.body.model, 'mock-model');
     assert.equal(sent.body.stream, true);
     assert.deepEqual(sent.body.messages[0], { role: 'system', content: '系统' });
-    // 自动 sends no level: the service decides.
-    assert.equal(sent.body.thinking, undefined);
+    // With no level picked, the request says the model's default.
+    assert.deepEqual(sent.body.thinking, { type: 'enabled' });
+    assert.equal(sent.body.reasoning_effort, 'high');
     assert.equal(sent.body.tools[0].function.name, 'search');
   } finally {
     await server.close();
@@ -195,10 +196,13 @@ test('message conversion keeps tool turns and DeepSeek reasoning', () => {
   assert.equal(claude[1].content[0].type, 'tool_use');
 });
 
-test('reasoning levels follow each service', () => {
-  const p = (preset, effort = '') => ({ preset, effort });
-  // Every request uses the level picked, never a lower one; 自动 leaves it to the service.
-  assert.deepEqual(providers.effortParams(p('deepseek')), {});
+test('reasoning levels follow each service and model', () => {
+  const p = (preset, effort = '', model = '', use) => ({ preset, effort, model, use });
+  // Every request says its level: the one picked, else the model's default.
+  assert.deepEqual(providers.effortParams(p('deepseek')), {
+    thinking: { type: 'enabled' },
+    reasoning_effort: 'high',
+  });
   assert.deepEqual(providers.effortParams(p('deepseek', 'off')), {
     thinking: { type: 'disabled' },
   });
@@ -206,14 +210,120 @@ test('reasoning levels follow each service', () => {
     thinking: { type: 'enabled' },
     reasoning_effort: 'high',
   });
-  assert.deepEqual(providers.effortParams(p('zhipu', 'on')), { thinking: { type: 'enabled' } });
-  assert.deepEqual(providers.effortParams(p('qwen')), {});
-  assert.deepEqual(providers.effortParams(p('qwen', 'on')), { enable_thinking: true });
-  assert.deepEqual(providers.effortParams(p('openai')), {});
-  assert.deepEqual(providers.effortParams(p('openai', 'high')), { reasoning_effort: 'high' });
-  // A level the service doesn't have is ignored.
-  assert.deepEqual(providers.effortParams(p('openai', 'max')), {});
+  assert.deepEqual(providers.effortParams(p('zhipu', 'on', 'glm-4.6')), {
+    thinking: { type: 'enabled' },
+  });
+  assert.deepEqual(providers.effortParams(p('zhipu', 'high', 'glm-5.2')), {
+    thinking: { type: 'enabled' },
+    reasoning_effort: 'high',
+  });
+  // A model that always thinks takes the level alone, and can't be turned off.
+  assert.deepEqual(providers.effortParams(p('zhipu', 'low', 'glm-5.3-flash')), {
+    reasoning_effort: 'low',
+  });
+  assert.deepEqual(providers.effortParams(p('zhipu', 'off', 'glm-5.3-flash')), {
+    reasoning_effort: 'low',
+  });
+  assert.deepEqual(providers.effortParams(p('moonshot', 'low', 'kimi-k3')), {
+    reasoning_effort: 'low',
+  });
+  assert.deepEqual(providers.effortParams(p('moonshot', 'low', 'kimi-k2.7-code')), {});
+  assert.deepEqual(providers.effortParams(p('qwen', '', 'qwen3.8-flash')), {
+    enable_thinking: true,
+    reasoning_effort: 'high',
+  });
+  assert.deepEqual(providers.effortParams(p('qwen', '', 'qwen-plus')), { enable_thinking: false });
+  assert.deepEqual(providers.effortParams(p('qwen', 'on', 'qwen3.7-plus')), {
+    enable_thinking: true,
+  });
+  assert.deepEqual(providers.effortParams(p('qwen', 'medium', 'qwen3.8-flash')), {
+    enable_thinking: true,
+    reasoning_effort: 'medium',
+  });
+  assert.deepEqual(providers.effortParams(p('doubao', 'off', 'doubao-seed-2-1-turbo-260628')), {
+    thinking: { type: 'disabled' },
+  });
+  assert.deepEqual(providers.effortParams(p('openai', 'high', 'gpt-4o')), {});
+  assert.deepEqual(providers.effortParams(p('openai', 'high', 'gpt-5.5')), {
+    reasoning_effort: 'high',
+  });
+  // A level the model doesn't have becomes the nearest it has; a model with none gets none.
+  assert.deepEqual(providers.effortParams(p('openai', 'max', 'gpt-5.5')), {
+    reasoning_effort: 'high',
+  });
   assert.deepEqual(providers.effortParams(p('moonshot', 'high')), {});
+  // With none picked, a part of the app starts at its own level.
+  assert.deepEqual(providers.effortParams(p('zhipu', '', 'glm-5.3-flash', 'board')), {
+    reasoning_effort: 'low',
+  });
+  assert.deepEqual(providers.effortParams(p('deepseek', '', 'deepseek-flash', 'translate')), {
+    thinking: { type: 'disabled' },
+  });
+});
+
+test('a level the model lacks becomes the nearest; parts start at their own', () => {
+  const { levelFor } = providers;
+  const glm = ['low', 'high', 'max'];
+  const seed = ['off', 'low', 'medium', 'high'];
+  const onOff = ['off', 'on'];
+  // Picked: kept, or the nearest, thinking or not as picked, the higher of two as near.
+  assert.equal(levelFor(glm, 'max', 'high', 'chat'), 'high');
+  assert.equal(levelFor(seed, 'high', 'max', 'chat'), 'high');
+  assert.equal(levelFor(glm, 'max', 'medium', 'chat'), 'high');
+  assert.equal(levelFor(glm, 'max', 'off', 'chat'), 'low');
+  assert.equal(levelFor(onOff, 'off', 'max', 'chat'), 'on');
+  assert.equal(levelFor(onOff, 'off', 'low', 'board'), 'on');
+  // None picked: chat at the default, translation at the least, explanations and the
+  // whiteboard at the least that still thinks.
+  assert.equal(levelFor(glm, 'max', '', 'chat'), 'max');
+  assert.equal(levelFor(seed, 'high', '', 'translate'), 'off');
+  assert.equal(levelFor(glm, 'max', '', 'translate'), 'low');
+  assert.equal(levelFor(seed, 'high', '', 'board'), 'low');
+  assert.equal(levelFor(['off', 'high', 'max'], 'max', '', 'explain'), 'high');
+  assert.equal(levelFor(onOff, 'on', '', 'board'), 'off');
+  assert.equal(levelFor([], '', 'high', 'chat'), '');
+});
+
+test('Qwen and Doubao lists keep their own chat models, and Doubao only opened ones', async () => {
+  const server = await mockServer((req, res) => {
+    if (req.url === '/v1/chat/completions') {
+      if (req.body.model === 'doubao-seed-open') return sse(res, [{ choices: [{ delta: {} }] }]);
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: { code: 'ModelNotOpen', message: '未开通' } }));
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(
+      JSON.stringify({
+        data: [
+          { id: 'qwen3.8-flash' },
+          { id: 'qwen3.8-max-0902' },
+          { id: 'qwen3.8-27b' },
+          { id: 'qwen3-tts-flash' },
+          { id: 'qwen3.7-max-preview' },
+          { id: 'kimi/kimi-k3' },
+          { id: 'doubao-seed-open', domain: 'VLM' },
+          { id: 'doubao-seed-closed', domain: 'LLM' },
+          { id: 'doubao-seed-old', domain: 'LLM', status: 'Shutdown' },
+          { id: 'doubao-seedream-5-0', domain: 'ImageGeneration' },
+          { id: 'glm-5-3-flash-260828', domain: 'LLM' },
+        ],
+      }),
+    );
+  });
+  try {
+    const list = async (preset) =>
+      (
+        await providers.listModels({ provider: provider(server.url, { preset }), key: 'k', fetch })
+      ).map((m) => m.id);
+    assert.deepEqual(await list('qwen'), ['qwen3.8-flash']);
+    assert.deepEqual(await list('doubao'), ['doubao-seed-open']);
+    assert.deepEqual(
+      server.requests.filter((r) => r.body).map((r) => r.body.model),
+      ['doubao-seed-open', 'doubao-seed-closed'],
+    );
+  } finally {
+    await server.close();
+  }
 });
 
 test('<think> tags from local models become reasoning', () => {
@@ -516,6 +626,7 @@ test('Claude streaming through the Anthropic SDK: thinking, text, tool use, fall
     assert.equal(sent.body.fallbacks, 'default');
     assert.equal(sent.body.system, '系统说明');
     assert.deepEqual(sent.body.thinking, { type: 'adaptive', display: 'summarized' });
+    assert.deepEqual(sent.body.output_config, { effort: 'high' });
     assert.equal(sent.body.tools[0].input_schema.type, 'object');
   } finally {
     await server.close();
@@ -540,7 +651,21 @@ process.stdin.on('data', (d) => {
     if (m.method === 'account/read')
       out({ id: m.id, result: { account: { type: 'chatgpt', planType: 'plus' }, requiresOpenaiAuth: true } });
     if (m.method === 'model/list')
-      out({ id: m.id, result: { data: [{ id: 'hidden', hidden: true }, { id: 'gpt-b' }, { id: 'gpt-a', isDefault: true }] } });
+      out({
+        id: m.id,
+        result: {
+          data: [
+            { id: 'hidden', hidden: true },
+            { id: 'gpt-b' },
+            {
+              id: 'gpt-a',
+              isDefault: true,
+              supportedReasoningEfforts: [{ reasoningEffort: 'medium' }, { reasoningEffort: 'high' }],
+              defaultReasoningEffort: 'medium',
+            },
+          ],
+        },
+      });
     if (m.method === 'thread/start') {
       const id = 't' + (Object.keys(threads).length + 1);
       threads[id] = m.params;

@@ -342,19 +342,20 @@ try {
 
   // Model and reasoning level are switched right in the chat box.
   const picker = panel().getByRole('button', { name: '选择模型和推理强度' });
-  assert.match(await picker.innerText(), /本地模拟[\s\S]*mock-model[\s\S]*自动/);
+  // No level picked yet: the model's default shows.
+  assert.match(await picker.innerText(), /本地模拟[\s\S]*mock-model[\s\S]*高/);
   await picker.click();
   const menu = page.getByRole('menu', { name: '模型和推理强度' });
   await menu.getByRole('menuitemradio', { name: 'mock-large' }).waitFor();
   await page.screenshot({ path: path.join(evidence, 'ai-model-menu.png') });
-  await menu.getByRole('menuitemradio', { name: '高', exact: true }).click();
-  await waitFor(async () => /高/.test(await picker.innerText()), 'level shown');
+  await menu.getByRole('menuitemradio', { name: '最高', exact: true }).click();
+  await waitFor(async () => /最高/.test(await picker.innerText()), 'level shown');
   await panel().getByLabel('向 AI 提问').fill('位置编码呢？');
   await panel().getByLabel('向 AI 提问').press('Enter');
   await waitFor(async () => (await panel().locator('.chat-answer.done').count()) === 2, 'answer');
   const deep = requests.findLast((r) => r.body?.messages?.at(-1)?.content === '位置编码呢？');
   assert.deepEqual(deep.body.thinking, { type: 'enabled' });
-  assert.equal(deep.body.reasoning_effort, 'high');
+  assert.equal(deep.body.reasoning_effort, 'max');
   // Picking a model keeps the menu open for the level; picking the level closes it.
   await picker.click();
   await menu.getByRole('menuitemradio', { name: 'mock-large' }).click();

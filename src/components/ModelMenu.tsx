@@ -13,7 +13,9 @@ import {
 } from '../ai/client';
 import { effortLabel, levelsFor, modelOptions } from '../ai/levels';
 import { refusesImages, seesImages } from '../ai/images';
+import { tellsBalance } from '../ai/balance';
 import type { AiConfig, AiProvider, AiUse, ModelOption } from '../ai/types';
+import { BalanceLine } from './BalanceLine';
 
 const shortName = (p: AiProvider) => p.name.replace(/（.*?）|\(.*?\)/g, '').trim() || p.name;
 
@@ -108,8 +110,12 @@ export function ModelMenu({
       </button>
     );
   const activeList = lists[provider.id];
-  const levels = levelsFor(provider, config, Array.isArray(activeList) ? activeList : undefined);
-  const effort = levels.includes(provider.effort) ? provider.effort : '';
+  const { levels, effort } = levelsFor(
+    provider,
+    config,
+    Array.isArray(activeList) ? activeList : undefined,
+    following ? 'chat' : use,
+  );
   const shown =
     viewing === 'follow'
       ? null
@@ -125,11 +131,12 @@ export function ModelMenu({
   // The menu stays open so the reasoning level can be picked right after the model.
   async function pickModel(p: AiProvider, model: string) {
     const options = lists[p.id];
-    const allowed = (next: AiConfig | null, saved: AiProvider | undefined) =>
-      levelsFor(saved, next, Array.isArray(options) ? options : undefined);
+    // The level in use stays if the new model has it, else the nearest one it has; a part
+    // that followed chat starts at its own.
+    const fit = (next: AiConfig | null, saved: AiProvider) =>
+      levelsFor(saved, next, Array.isArray(options) ? options : undefined, use).effort;
     if (!chat) {
-      // The level in use stays if the new model has it, else automatic.
-      const kept = allowed(config, { ...p, model }).includes(effort) ? effort : '';
+      const kept = fit(config, { ...p, model, effort: following ? '' : effort });
       setAiConfig(
         await invoke<AiConfig>('ai-set-use', { use, provider: p.id, model, effort: kept }),
       );
@@ -137,11 +144,11 @@ export function ModelMenu({
     }
     const next = await invoke<AiConfig>('ai-set-active', { id: p.id, model });
     setAiConfig(next);
-    // A level the new model doesn't have falls back to automatic.
     const saved = next.providers.find((x) => x.id === p.id);
-    if (saved?.effort && !allowed(next, saved).includes(saved.effort))
+    const kept = saved?.effort && fit(next, saved);
+    if (saved && kept && kept !== saved.effort)
       setAiConfig(
-        (await invoke<{ config: AiConfig }>('ai-save-provider', { id: p.id, effort: '' })).config,
+        (await invoke<{ config: AiConfig }>('ai-save-provider', { id: p.id, effort: kept })).config,
       );
   }
   async function pickEffort(level: string) {
@@ -289,9 +296,9 @@ export function ModelMenu({
                       <div className="model-menu-label">推理强度</div>
                       {levels.length ? (
                         <div className="model-menu-levels" role="group" aria-label="推理强度">
-                          {['', ...levels].map((level) => (
+                          {levels.map((level) => (
                             <button
-                              key={level || 'auto'}
+                              key={level}
                               type="button"
                               role="menuitemradio"
                               aria-checked={level === effort}
@@ -306,7 +313,7 @@ export function ModelMenu({
                         <p className="model-menu-note">这个服务不支持调整推理强度。</p>
                       )}
                       <p className="model-menu-note">
-                        “自动”由服务自己决定。越高越仔细，也越慢、越费额度。
+                        越高越仔细，也越慢、越费额度。
                         {chat ? '解释、翻译、白板可以单独选模型和推理强度。' : ''}
                       </p>
                     </>
@@ -319,6 +326,7 @@ export function ModelMenu({
                   )}
                 </>
               )}
+              {shown && tellsBalance(shown, config) ? <BalanceLine providerId={shown.id} /> : null}
               {onOpenSettings ? (
                 <button
                   type="button"
