@@ -29,6 +29,7 @@
     "test:ai": "npm run build && node tests/ai.e2e.mjs",
     "test:ai-live": "npm run build && node tests/ai-live.mjs",
     "test:windows": "node tests/windows.e2e.mjs",
+    "test:voice": "npm run build && node tests/voice.e2e.mjs",
     "test:update": "npm run build && node tests/update.e2e.mjs",
     "website:shots": "npm run build && node scripts/website-shots/shoot.mjs",
     "website:downloads": "node scripts/website-downloads.mjs",

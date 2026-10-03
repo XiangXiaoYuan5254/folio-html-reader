@@ -89,14 +89,23 @@ function createHearing({ app, utilityProcess, fetch, speechKey, send }) {
           const target = path.join(modelDir(), file.name);
           const part = `${target}.part`;
           let got = 0;
+          // A source that stops sending for half a minute gives way to the next.
+          const stalled = new AbortController();
+          let timer = null;
+          const wait = () => {
+            clearTimeout(timer);
+            timer = setTimeout(() => stalled.abort(Error('下载停住了')), 30_000);
+          };
           try {
-            const res = await fetch(source(file.name));
+            wait();
+            const res = await fetch(source(file.name), { signal: stalled.signal });
             if (!res.ok) throw Error(`HTTP ${res.status}`);
             const hash = crypto.createHash('sha256');
             await pipeline(
               Readable.fromWeb(res.body),
               new Transform({
                 transform(chunk, _, next) {
+                  wait();
                   hash.update(chunk);
                   got += chunk.length;
                   const progress = (done + got) / total;
@@ -108,6 +117,7 @@ function createHearing({ app, utilityProcess, fetch, speechKey, send }) {
                 },
               }),
               fs.createWriteStream(part),
+              { signal: stalled.signal },
             );
             if (hash.digest('hex') !== file.sha256) throw Error('下载的文件不完整');
             fs.renameSync(part, target);
@@ -116,7 +126,9 @@ function createHearing({ app, utilityProcess, fetch, speechKey, send }) {
             break;
           } catch (e) {
             fs.rmSync(part, { force: true });
-            failure = e;
+            failure = stalled.signal.aborted ? stalled.signal.reason : e;
+          } finally {
+            clearTimeout(timer);
           }
         }
         if (failure)

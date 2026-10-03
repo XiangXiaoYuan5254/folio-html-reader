@@ -116,6 +116,15 @@ jobs:
         env:
           FOLIO_EVIDENCE: ${{ env.EVIDENCE }}
 
+      # Downloads the speech recognition model, so the development build's run below finds it.
+      - name: Voice conversation (installed app)
+        if: ${{ !cancelled() && env.FOLIO_EXE }}
+        timeout-minutes: 15
+        run: node tests/voice.e2e.mjs
+        env:
+          FOLIO_APP: ${{ env.FOLIO_EXE }}
+          FOLIO_QA_DIR: ${{ env.EVIDENCE }}\voice-installed
+
       # The suites the Mac runs, on the development build. One step each, so a failure in one
       # does not hide the others.
       - name: 'Reading, notes and pen (development build)'
@@ -184,6 +193,12 @@ jobs:
         run: node tests/board-papers.e2e.mjs
         env:
           FOLIO_QA_DIR: ${{ env.EVIDENCE }}\board-papers
+      - name: 'Voice conversation (development build)'
+        if: ${{ !cancelled() && env.FOLIO_EXE }}
+        timeout-minutes: 15
+        run: node tests/voice.e2e.mjs
+        env:
+          FOLIO_QA_DIR: ${{ env.EVIDENCE }}\voice
 
       # Codex (the ChatGPT provider) installed the usual Windows way, with npm as codex.cmd.
       - name: Find Codex installed with npm
