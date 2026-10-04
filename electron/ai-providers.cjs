@@ -14,7 +14,7 @@
 //               level                                     (DeepSeek, GLM, Doubao, Kimi)
 //   enable   -> { enable_thinking: boolean }, and reasoning_effort for a level      (Qwen)
 //   effort   -> { reasoning_effort }                               (OpenAI, Gemini)
-//   claude / codex -> the service's own effort setting
+//   claude / codex / kimi -> the service's own effort setting
 //   none     -> not controllable
 // `efforts` are the levels offered to pick from and `effort` the one used until another is
 // picked: the service's own default, so every request says its level. Where a service's
@@ -83,6 +83,27 @@ const presets = [
     echo: true,
     balance: true,
     keyUrl: 'https://platform.moonshot.cn/console/api-keys',
+    region: 'cn',
+  },
+  // A Kimi membership through the Kimi Code CLI on this computer; no API key.
+  {
+    id: 'kimicode',
+    name: 'Kimi Code',
+    kind: 'kimi',
+    baseUrl: '',
+    model: 'kimi-for-coding',
+    models: [],
+    context: 262_144,
+    thinking: 'kimi',
+    // Each model's levels and default come from the CLI's model list; these stand in until
+    // it has been read.
+    efforts: [],
+    levels: [
+      ['^kimi-for-coding-highspeed', [], ''],
+      ['^kimi-for-coding', ['low', 'high', 'max'], 'max'],
+      ['^k3', ['low', 'high', 'max'], 'high'],
+    ],
+    noKey: true,
     region: 'cn',
   },
   {

@@ -996,3 +996,244 @@ test('pictures are held back only from a model known not to take them', async ()
     await service.close();
   }
 });
+
+// A stand-in for the Kimi Code CLI: `kimi acp` speaks the same ACP lines with scripted
+// replies, and calls 页间's tools over MCP the way the CLI does; `kimi provider list` lists
+// the account.
+const fakeKimi = `#!/usr/bin/env node
+const fs = require('node:fs');
+const log = (m) => fs.appendFileSync(process.env.FAKE_KIMI_LOG, JSON.stringify(m) + '\\n');
+const args = process.argv.slice(2);
+log({ args, home: process.env.KIMI_CODE_HOME });
+// The CLI's web service: the account's usage and profile, behind the service's own key.
+if (args[0] === 'web') {
+  fs.writeFileSync(process.env.KIMI_CODE_HOME + '/server.token', 'svc');
+  require('node:http').createServer((req, res) => {
+    log({ web: req.url, auth: req.headers.authorization });
+    const data = req.url.includes('usage')
+      ? { kind: 'ok', quota: { usages: { limit5h: { usedRatio: 0.045, resetAt: '2026-10-04T10:39:40Z' }, limit7d: { usedRatio: 0.009 } }, extraUsage: null } }
+      : { kind: 'ok', userInfo: { nickname: '登月者', userLevelName: 'Moderato' } };
+    res.end(JSON.stringify({ code: 0, msg: 'success', data }));
+  }).listen(Number(args[3]), '127.0.0.1', () => console.log('  Local:    http://127.0.0.1:' + args[3] + '/#token=svc'));
+  return;
+}
+if (args[0] === 'provider') {
+  process.stdout.write(JSON.stringify({
+    providers: { 'managed:kimi-code': { baseUrl: process.env.FAKE_KIMI_BASE, oauth: { key: 'oauth/kimi-code' } } },
+    models: {
+      'kimi-code/kimi-for-coding': { provider: 'managed:kimi-code', model: 'kimi-for-coding', capabilities: ['thinking', 'always_thinking', 'image_in'], supportEfforts: ['low', 'high', 'max'], defaultEffort: 'max' },
+      'kimi-code/k3': { provider: 'managed:kimi-code', model: 'k3', capabilities: ['thinking', 'always_thinking', 'image_in'], supportEfforts: ['low', 'high', 'max'], defaultEffort: 'high' },
+      'kimi-code/fast': { provider: 'managed:kimi-code', model: 'fast', capabilities: ['thinking'] },
+    },
+  }));
+  process.exit(0);
+}
+const out = (m) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...m }) + '\\n');
+const sessions = {};
+const waiting = {};
+let next = 1;
+const say = (sessionId, kind, text) => out({ method: 'session/update', params: { sessionId, update: { sessionUpdate: kind, content: { type: 'text', text } } } });
+async function mcp(url, method, params) {
+  const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' }, body: JSON.stringify({ jsonrpc: '2.0', id: next++, method, params }) });
+  const body = await response.text();
+  return JSON.parse(response.headers.get('content-type').includes('event-stream') ? /^data: (.*)$/m.exec(body)[1] : body).result;
+}
+let buffer = '';
+process.stdin.on('data', async (d) => {
+  buffer += d;
+  let i;
+  while ((i = buffer.indexOf('\\n')) >= 0) {
+    const m = JSON.parse(buffer.slice(0, i));
+    buffer = buffer.slice(i + 1);
+    log(m);
+    if (m.id !== undefined && !m.method) { waiting[m.id]?.(m.result); continue; }
+    if (m.method === 'initialize') out({ id: m.id, result: { protocolVersion: 1, agentInfo: { name: 'Kimi Code CLI', version: '9.9.9' } } });
+    if (m.method === 'session/list') out({ id: m.id, result: { sessions: [] } });
+    if (m.method === 'session/new') {
+      const id = 's' + (Object.keys(sessions).length + 1);
+      sessions[id] = m.params;
+      const server = m.params.mcpServers[0];
+      if (server) {
+        await mcp(server.url, 'initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'kimi' } });
+        sessions[id].tools = (await mcp(server.url, 'tools/list', {})).tools;
+      }
+      out({ id: m.id, result: { sessionId: id, configOptions: [{ id: 'model', currentValue: 'kimi-code/kimi-for-coding' }] } });
+    }
+    if (m.method === 'session/set_config_option' || m.method === 'session/delete') out({ id: m.id, result: {} });
+    if (m.method === 'session/prompt') {
+      const id = m.params.sessionId;
+      const tool = sessions[id].tools?.[0];
+      if (!tool) {
+        say(id, 'agent_thought_chunk', '想一想');
+        for (const part of ['你好', '，世界']) say(id, 'agent_message_chunk', part);
+        out({ id: m.id, result: { stopReason: 'end_turn' } });
+        continue;
+      }
+      // The CLI's own tool is turned down, 页间's goes ahead.
+      const ask = (title, n) => new Promise((resolve) => { waiting[n] = resolve; out({ id: n, method: 'session/request_permission', params: { sessionId: id, toolCall: { title }, options: [{ optionId: 'approve_once', kind: 'allow_once' }, { optionId: 'reject', kind: 'reject_once' }] } }); });
+      await ask('Bash', 9001);
+      await ask('mcp__folio__' + tool.name, 9002);
+      say(id, 'agent_message_chunk', '我读一下。');
+      const result = await mcp(sessions[id].mcpServers[0].url, 'tools/call', { name: tool.name, arguments: { path: 'a.html' } });
+      say(id, 'agent_message_chunk', '读到了：' + result.content[0].text);
+      out({ id: m.id, result: { stopReason: 'end_turn' } });
+    }
+  }
+});
+`;
+
+test(
+  'Kimi membership through the Kimi Code CLI: models, streaming, 页间 tools over MCP',
+  { skip: process.platform === 'win32' },
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'folio-kimi-'));
+    const bin = path.join(dir, 'kimi');
+    const log = path.join(dir, 'log.jsonl');
+    const home = path.join(dir, 'home');
+    await fs.writeFile(bin, fakeKimi, { mode: 0o755 });
+    process.env.FOLIO_KIMI_PATH = bin;
+    process.env.FAKE_KIMI_LOG = log;
+    const kimi = require('../electron/ai-kimi.cjs');
+    try {
+      const models = await kimi.listModels(home);
+      assert.deepEqual(
+        models.map((m) => [m.id, m.efforts.join(' '), m.defaultEffort]),
+        [
+          ['kimi-for-coding', 'low high max', 'max'],
+          ['k3', 'low high max', 'high'],
+          ['fast', 'off on', 'on'],
+        ],
+      );
+      const agent = await fs.readFile(path.join(home, 'agents/agent.md'), 'utf8');
+      assert.match(agent, /override: true/);
+      assert.match(agent, /tools: mcp__folio__\*/);
+      const deltas = [];
+      const provider = { kind: 'kimi', model: 'k3', effort: 'low' };
+      const answer = await kimi.streamKimi({
+        provider,
+        home,
+        version: '1.0',
+        onDelta: (d) => deltas.push(d),
+        request: { system: '阅读助手说明', messages: [{ role: 'user', content: '你好' }] },
+      });
+      assert.equal(answer.text, '你好，世界');
+      assert.equal(answer.reasoning, '想一想');
+      assert.equal(deltas.map((d) => d.text || '').join(''), '你好，世界');
+      const tools = [
+        { name: 'read_document', description: '读取', parameters: { type: 'object' } },
+      ];
+      const wire = [{ role: 'user', content: '读一下 a.html' }];
+      const step = await kimi.streamKimi({
+        provider,
+        home,
+        version: '1.0',
+        onDelta() {},
+        request: { messages: wire, tools },
+      });
+      assert.equal(step.stopReason, 'tool_use');
+      assert.equal(step.text, '我读一下。');
+      assert.deepEqual(
+        step.toolCalls.map((c) => [c.name, c.input]),
+        [['read_document', { path: 'a.html' }]],
+      );
+      wire.push({
+        role: 'assistant',
+        content: step.text,
+        toolCalls: step.toolCalls,
+        raw: step.raw,
+      });
+      wire.push({ role: 'tool', toolCallId: step.toolCalls[0].id, content: '正文 A' });
+      const end = await kimi.streamKimi({
+        provider,
+        home,
+        version: '1.0',
+        onDelta() {},
+        request: { messages: wire, tools },
+      });
+      assert.equal(end.text, '读到了：正文 A');
+      assert.equal(end.stopReason, 'stop');
+      // A finished session is deleted after its answer returns, so wait for the last delete.
+      let lines = [];
+      for (let i = 0; i < 50; i++) {
+        lines = (await fs.readFile(log, 'utf8'))
+          .trim()
+          .split('\n')
+          .map((l) => JSON.parse(l));
+        if (lines.filter((m) => m.method === 'session/delete').length >= 2) break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      assert.ok(lines.some((l) => l.args?.[0] === 'acp' && l.home === home));
+      assert.equal(lines.find((m) => m.method === 'initialize').params.clientInfo.name, 'folio');
+      const prompt = lines.find((m) => m.method === 'session/prompt').params.prompt;
+      assert.match(prompt.at(-1).text, /^阅读助手说明\n\n---\n\n你好$/);
+      // The model by the CLI's name for it, and the level picked.
+      const set = lines.filter((m) => m.method === 'session/set_config_option');
+      assert.deepEqual(set[0].params, {
+        sessionId: 's1',
+        configId: 'model',
+        value: 'kimi-code/k3',
+      });
+      assert.deepEqual(set[1].params, { sessionId: 's1', configId: 'thinking', value: 'low' });
+      assert.deepEqual(
+        lines.filter((m) => m.method === 'session/new').map((m) => m.params.mcpServers.length),
+        [0, 1],
+      );
+      assert.deepEqual(lines.find((m) => m.id === 9001).result.outcome.optionId, 'reject');
+      assert.deepEqual(lines.find((m) => m.id === 9002).result.outcome.optionId, 'approve_once');
+      // Finished sessions are deleted.
+      assert.deepEqual(
+        lines.filter((m) => m.method === 'session/delete').map((m) => m.params.sessionId),
+        ['s1', 's2'],
+      );
+      // The membership, as the CLI's own service tells it.
+      const status = await kimi.status(home, '1.0', fetch);
+      assert.deepEqual(status.account, { name: '登月者', level: 'Moderato' });
+      assert.deepEqual(status.windows, [
+        { usedPercent: 5, windowMins: 300, resetsAt: Date.parse('2026-10-04T10:39:40Z') },
+        { usedPercent: 1, windowMins: 10_080, resetsAt: 0 },
+      ]);
+      assert.equal((await kimi.limits(home, fetch)).windows.length, 2);
+      const asked = (await fs.readFile(log, 'utf8'))
+        .trim()
+        .split('\n')
+        .map((l) => JSON.parse(l))
+        .filter((l) => l.web);
+      assert.ok(asked.length >= 3 && asked.every((l) => l.auth === 'Bearer svc'));
+    } finally {
+      kimi.stop();
+      delete process.env.FOLIO_KIMI_PATH;
+    }
+  },
+);
+
+test('Kimi membership windows and messages', () => {
+  const { usageWindows, friendly } = require('../electron/ai-kimi.cjs');
+  assert.deepEqual(
+    usageWindows({
+      usages: {
+        limit5h: { usedRatio: 0.125, resetAt: '2026-10-04T10:39:39Z' },
+        limit7d: { usedRatio: 0 },
+        monthTotal: { usedRatio: 1.2 },
+      },
+    }),
+    [
+      { usedPercent: 13, windowMins: 300, resetsAt: Date.parse('2026-10-04T10:39:39Z') },
+      { usedPercent: 0, windowMins: 10_080, resetsAt: 0 },
+      { usedPercent: 100, windowMins: 43_200, resetsAt: 0 },
+    ],
+  );
+  assert.deepEqual(usageWindows({ usages: {} }), []);
+  assert.match(
+    friendly(
+      'Authentication required: 403 Your current subscription does not have access to Kimi Code right now.',
+    ),
+    /没有 Kimi Code 会员/,
+  );
+  assert.match(
+    friendly(
+      'Authentication required: 401 Your current subscription does not have access to kimi-for-coding-highspeed.',
+    ),
+    /用不了这个模型/,
+  );
+  assert.equal(friendly('Authentication required'), '需要在 AI 设置中重新登录 Kimi Code');
+});

@@ -98,7 +98,8 @@ export function BalanceLine({
   );
 }
 
-// How much of each of a ChatGPT plan's usage windows Codex has used.
+// How much of each of a plan's usage windows is used: a ChatGPT plan's through Codex, a Kimi
+// membership's.
 export function PlanUsage({ windows }: { windows: Quota[] }) {
   return (
     <div className="plan-usage">

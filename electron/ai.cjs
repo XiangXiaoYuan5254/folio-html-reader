@@ -12,6 +12,7 @@ const {
   AiError,
 } = require('./ai-providers.cjs');
 const codex = require('./ai-codex.cjs');
+const kimi = require('./ai-kimi.cjs');
 const speechServices = require('./cloud-voice.cjs');
 
 const efforts = ['', 'off', 'on', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
@@ -24,7 +25,17 @@ function number(value, min, max) {
 }
 
 // `protect`/`unprotect` encrypt stored keys where the system allows it without prompts.
-function createAi({ file, protect, unprotect, fetch, atomicWrite, version = '', openUrl }) {
+// `kimiHome` is where the Kimi Code CLI keeps 页间's sign-in and sessions.
+function createAi({
+  file,
+  kimiHome,
+  protect,
+  unprotect,
+  fetch,
+  atomicWrite,
+  version = '',
+  openUrl,
+}) {
   let cache = null;
   const running = new Map();
   async function read() {
@@ -142,7 +153,7 @@ function createAi({ file, protect, unprotect, fetch, atomicWrite, version = '', 
   function sanitize(input, previous) {
     const preset = presetFor(clean(input.preset) || previous?.preset);
     const baseUrl =
-      preset.kind === 'codex'
+      preset.kind === 'codex' || preset.kind === 'kimi'
         ? ''
         : clean(input.baseUrl ?? previous?.baseUrl ?? preset.baseUrl, 500);
     if (baseUrl && !/^https?:\/\/[^\s]+$/i.test(baseUrl))
@@ -254,15 +265,19 @@ function createAi({ file, protect, unprotect, fetch, atomicWrite, version = '', 
     const provider = draft ? { ...sanitize(draft, stored), id: stored?.id || '' } : stored;
     return { provider, key: typeof key === 'string' && key.trim() ? key.trim() : keyOf(stored) };
   }
-  // Chat requests go to the provider's protocol; ChatGPT plans go through Codex.
+  // Chat requests go to the provider's protocol; ChatGPT plans go through Codex, Kimi
+  // memberships through the Kimi Code CLI.
   function stream({ provider, key, request, signal, onDelta }) {
     if (provider.kind === 'codex')
       return codex.streamCodex({ provider, request, signal, onDelta, version });
+    if (provider.kind === 'kimi')
+      return kimi.streamKimi({ provider, request, signal, onDelta, home: kimiHome, version });
     return streamChat({ provider, key, request, signal, onDelta, fetch });
   }
   async function models(payload) {
     const { provider, key } = await resolve(payload || {});
     if (provider.kind === 'codex') return codex.listModels(version);
+    if (provider.kind === 'kimi') return kimi.listModels(kimiHome);
     const preset = presetFor(provider.preset);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 20_000);
@@ -279,10 +294,11 @@ function createAi({ file, protect, unprotect, fetch, atomicWrite, version = '', 
     }
   }
   // What's left on a service: money for the services that can tell, or how much of a
-  // ChatGPT plan's usage windows Codex has used.
+  // ChatGPT plan's or a Kimi membership's usage windows is used.
   async function balance(payload) {
     const { provider, key } = await resolve(payload || {});
     if (provider.kind === 'codex') return codex.limits(version);
+    if (provider.kind === 'kimi') return kimi.limits(kimiHome, fetch);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 20_000);
     try {
@@ -389,10 +405,14 @@ function createAi({ file, protect, unprotect, fetch, atomicWrite, version = '', 
   function shutdown() {
     cancelAll();
     codex.stop();
+    kimi.stop();
   }
   const codexStatus = () => codex.status(version);
   const codexLogin = () => codex.login(version, openUrl);
   const codexVoice = (payload, emit) => codex.voice(version, payload, emit);
+  const kimiStatus = () => kimi.status(kimiHome, version, fetch);
+  const kimiLogin = () => kimi.login(kimiHome, version, fetch);
+  const kimiLogout = () => kimi.logout(kimiHome, version, fetch);
   return {
     config,
     saveProvider,
@@ -410,6 +430,9 @@ function createAi({ file, protect, unprotect, fetch, atomicWrite, version = '', 
     codexStatus,
     codexLogin,
     codexVoice,
+    kimiStatus,
+    kimiLogin,
+    kimiLogout,
     saveSpeechKey,
     speak,
     hearingKey,

@@ -1,4 +1,4 @@
-export type AiKind = 'openai' | 'anthropic' | 'codex';
+export type AiKind = 'openai' | 'anthropic' | 'codex' | 'kimi';
 export type AiPreset = {
   id: string;
   name: string;
@@ -97,7 +97,8 @@ export type WireMessage = {
   raw?: unknown;
 };
 export type Usage = { input: number; output: number; cached: number };
-// How much of a ChatGPT plan's Codex allowance is used in the current window.
+// How much of a plan's allowance (a ChatGPT plan's Codex, a Kimi membership) is used in the
+// current window.
 export type Quota = { usedPercent: number; windowMins: number; resetsAt: number };
 export type CodexStatus = {
   found: boolean;
@@ -107,9 +108,20 @@ export type CodexStatus = {
   windows?: Quota[];
   error?: string;
 };
+// The Kimi Code CLI on this computer: found? signed in to a Kimi account? how much of the
+// membership is used? `error` also says when the account has no membership.
+export type KimiStatus = {
+  found: boolean;
+  path?: string;
+  signedIn?: boolean;
+  // The account's nickname and membership level, e.g. Moderato.
+  account?: { name: string; level: string };
+  windows?: Quota[];
+  error?: string;
+};
 // What's left on a service: money for the services whose key can ask (`amount` is null when
 // the service only tells what's used), with the resource packages some services give, or how
-// much of each of a ChatGPT plan's usage windows is used.
+// much of each of a plan's usage windows (ChatGPT's, a Kimi membership's) is used.
 export type Balance =
   | {
       kind: 'money';

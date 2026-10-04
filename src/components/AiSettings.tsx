@@ -25,6 +25,7 @@ import type {
   AiProvider,
   AiUse,
   CodexStatus,
+  KimiStatus,
   ModelOption,
   SpeechService,
 } from '../ai/types';
@@ -37,7 +38,8 @@ import { forgetBalance } from '../ai/balance';
 const blurbs: Record<string, string> = {
   deepseek: '国内直连，价格低，长文档友好',
   qwen: '阿里云百炼',
-  moonshot: '月之暗面，长上下文',
+  moonshot: '月之暗面开放平台，按用量付费',
+  kimicode: '用 Kimi 会员额度，不需要 API Key',
   zhipu: '智谱开放平台',
   doubao: '字节跳动火山方舟',
   xiaomi: '1M 上下文，能看图',
@@ -293,7 +295,7 @@ export function AiSettings({
             <Sparkle size={17} />
             AI 设置
           </h2>
-          <span>用自己的 API Key 或 ChatGPT 账号，接入国内外主流模型或本机模型</span>
+          <span>用自己的 API Key、ChatGPT 账号或 Kimi 会员，接入国内外主流模型或本机模型</span>
           <button type="button" className="icon-button" aria-label="关闭 AI 设置" onClick={onClose}>
             <X size={18} />
           </button>
@@ -358,7 +360,8 @@ export function AiSettings({
               <div className="ai-presets">
                 <p className="ai-settings-lead">
                   选择一个服务，填入在它官网申请的 API Key，费用由服务商按用量收取，页间不经手。已有
-                  ChatGPT 套餐的话，可以选“Codex”，直接用套餐额度。
+                  ChatGPT 套餐的话，可以选“Codex”；有 Kimi 会员的话，可以选“Kimi
+                  Code”，直接用套餐额度。
                 </p>
                 {groups.map((g) => (
                   <div key={g.region}>
@@ -445,6 +448,12 @@ export function AiSettings({
                     </div>
                   ) : preset?.kind === 'codex' ? (
                     <CodexAccount
+                      onReady={() => {
+                        if (!models) void fetchModels(true);
+                      }}
+                    />
+                  ) : preset?.kind === 'kimi' ? (
+                    <KimiAccount
                       onReady={() => {
                         if (!models) void fetchModels(true);
                       }}
@@ -543,13 +552,13 @@ export function AiSettings({
                   >
                     {advanced
                       ? '收起高级设置'
-                      : preset?.kind === 'codex'
+                      : preset?.kind === 'codex' || preset?.kind === 'kimi'
                         ? '高级设置：上下文长度'
                         : '高级设置：接口地址、上下文长度'}
                   </button>
                   {advanced ? (
                     <div className="ai-advanced">
-                      {preset?.kind === 'codex' ? null : (
+                      {preset?.kind === 'codex' || preset?.kind === 'kimi' ? null : (
                         <label>
                           <span>接口地址</span>
                           <input
@@ -1031,6 +1040,123 @@ function CodexAccount({ onReady }: { onReady: () => void }) {
       <p className="ai-codex-note">
         使用 ChatGPT 套餐里的 Codex 额度，不需要 API Key，也不另外付费。额度有 5
         小时和每周上限，用量大时可能需要等一会儿；每次回答会比直接用 API 慢几秒。
+      </p>
+    </div>
+  );
+}
+
+// A Kimi membership through the Kimi Code CLI on this computer: found? signed in? how much of
+// the membership is used? 页间 signs in on its own, apart from the user's own Kimi Code.
+function KimiAccount({ onReady }: { onReady: () => void }) {
+  const [state, setState] = useState<KimiStatus | null>(null);
+  const [busy, setBusy] = useState<'' | 'login' | 'logout'>('');
+  const [error, setError] = useState('');
+  function show(next: KimiStatus) {
+    setState(next);
+    if (next.signedIn) onReady();
+  }
+  async function check() {
+    setState(null);
+    setError('');
+    try {
+      show(await invoke<KimiStatus>('ai-kimi-status'));
+    } catch (e) {
+      setState({ found: false });
+      setError(errorText(e));
+    }
+  }
+  useEffect(() => {
+    void check();
+  }, []);
+  async function act(kind: 'login' | 'logout') {
+    setBusy(kind);
+    setError('');
+    try {
+      show(await invoke<KimiStatus>(kind === 'login' ? 'ai-kimi-login' : 'ai-kimi-logout'));
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy('');
+    }
+  }
+  const again = (
+    <button type="button" className="secondary-button" onClick={() => void check()}>
+      重新检测
+    </button>
+  );
+  return (
+    <div className="ai-codex">
+      {!state ? (
+        <p className="ai-codex-line">
+          <LoaderCircle className="spin" size={14} />
+          正在检查这台电脑上的 Kimi Code…
+        </p>
+      ) : !state.found ? (
+        <>
+          <p className="ai-codex-line warn">
+            <CircleX size={14} />
+            没有找到 Kimi Code CLI。按 Kimi Code 官网的说明安装后再试。
+          </p>
+          <div className="ai-codex-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() =>
+                void invoke('external', {
+                  url: 'https://www.kimi.com/code/docs/kimi-code-cli/guides/getting-started.html',
+                })
+              }
+            >
+              查看安装说明
+              <ExternalLink size={12} />
+            </button>
+            {again}
+          </div>
+        </>
+      ) : state.signedIn ? (
+        <>
+          <p className="ai-codex-line ok">
+            <Check size={14} />
+            已通过这台电脑上的 Kimi Code 登录 Kimi 账号
+            {state.account?.name ? `「${state.account.name}」` : ''}
+            {state.account?.level ? `（${state.account.level}）` : ''}
+          </p>
+          {state.windows?.length ? <PlanUsage windows={state.windows} /> : null}
+          <div className="ai-codex-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={!!busy}
+              onClick={() => void act('logout')}
+            >
+              {busy === 'logout' ? '正在退出…' : '退出登录'}
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="ai-codex-line warn">
+            <KeyRound size={14} />
+            找到了 Kimi Code，但页间还没有登录 Kimi 账号。
+          </p>
+          <div className="ai-codex-actions">
+            <button
+              type="button"
+              className="primary-button"
+              disabled={!!busy}
+              onClick={() => void act('login')}
+            >
+              {busy === 'login' ? '请在浏览器中完成登录…' : '用 Kimi 账号登录'}
+            </button>
+            {again}
+          </div>
+        </>
+      )}
+      {error || state?.error ? <p className="ai-codex-line warn">{error || state?.error}</p> : null}
+      <p className="ai-codex-note">
+        使用 Kimi 会员里的 Kimi Code 额度，不需要 API Key，也不另外付费。页间单独登录，和你自己用的
+        Kimi Code 互不影响；Kimi Code 自带的命令、读写文件和联网工具都不会启用。额度有 5
+        小时和每周上限；每次回答会比直接用 API 慢几秒。
       </p>
     </div>
   );

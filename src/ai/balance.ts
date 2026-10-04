@@ -12,17 +12,19 @@ export function loadBalance(providerId: string, refresh = false) {
   return pending;
 }
 export const forgetBalance = (providerId: string) => cache.delete(providerId);
-// Whether a saved service can say what's left: a key that can ask, or a ChatGPT plan.
+// Whether a saved service can say what's left: a key that can ask, a ChatGPT plan or a Kimi
+// membership.
 export function tellsBalance(p: AiProvider | undefined, config: AiConfig | null) {
   if (!p) return false;
-  if (p.kind === 'codex') return true;
+  if (p.kind === 'codex' || p.kind === 'kimi') return true;
   return p.hasKey && !!config?.presets.find((x) => x.id === p.preset)?.balance;
 }
 export const money = (n: number, currency: 'CNY' | 'USD') =>
   `${n < 0 ? '-' : ''}${currency === 'USD' ? '$' : '¥'}${Math.abs(n).toFixed(2)}`;
-// The span a ChatGPT plan's usage window covers: “5 小时”, “每周”.
+// The span a plan's usage window covers: “5 小时”, “每周”, “每月”.
 export function windowName(mins: number) {
   if (mins === 10_080) return '每周';
+  if (mins === 43_200) return '每月';
   if (mins >= 1_440 && mins % 1_440 === 0) return `${mins / 1_440} 天`;
   if (mins >= 60) return `${Math.round(mins / 60)} 小时`;
   return mins ? `${mins} 分钟` : '当前周期';

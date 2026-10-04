@@ -22,14 +22,18 @@ await fs.mkdir(project, { recursive: true });
 await fs.mkdir(userData, { recursive: true });
 await fs.mkdir(evidence, { recursive: true });
 // FOLIO_AI_LIVE=codex sets up “Codex” through the settings dialog instead of
-// copying the saved settings. FOLIO_AI_LIVE_STEPS limits the run, e.g. "ask,highlights".
+// copying the saved settings, FOLIO_AI_LIVE=kimi “Kimi Code” with the app's own Kimi sign-in.
+// FOLIO_AI_LIVE_STEPS limits the run, e.g. "ask,highlights".
 const codexMode = process.env.FOLIO_AI_LIVE === 'codex';
+const kimiMode = process.env.FOLIO_AI_LIVE === 'kimi';
 const steps = new Set(
   (process.env.FOLIO_AI_LIVE_STEPS || 'ask,highlights,summary,translate,source,agent,pdf').split(
     ',',
   ),
 );
-if (!codexMode) {
+// The sign-in is linked, not copied: Kimi replaces its refresh token on every renewal.
+if (kimiMode) await fs.symlink(path.join(appData, 'kimi-code'), path.join(userData, 'kimi-code'));
+if (!codexMode && !kimiMode) {
   await fs.copyFile(config, path.join(userData, 'ai.json'));
   const settings = JSON.parse(await fs.readFile(config, 'utf8'));
   const active = settings.providers.find((p) => p.id === settings.active) || settings.providers[0];
@@ -165,6 +169,24 @@ try {
     await settings.getByText(/连接成功/).waitFor({ timeout: 90000 });
     console.log(`测试连接：${((Date.now() - started) / 1000).toFixed(1)} 秒`);
     await page.screenshot({ path: path.join(evidence, 'live-codex-settings.png') });
+    await settings.getByRole('button', { name: '添加', exact: true }).click();
+    await settings.getByText('已保存').waitFor();
+    await settings.getByRole('button', { name: '关闭 AI 设置' }).click();
+  }
+  if (kimiMode) {
+    await panel().getByRole('button', { name: '配置 AI 服务', exact: true }).click();
+    const settings = page.getByRole('dialog', { name: 'AI 设置' });
+    await settings.getByRole('button', { name: /^Kimi Code/ }).click();
+    await settings
+      .getByText(/已通过这台电脑上的 Kimi Code 登录 Kimi 账号/)
+      .waitFor({ timeout: 60000 });
+    const model = settings.getByLabel('模型', { exact: true });
+    console.log(`Service: Kimi Code · ${await model.inputValue()}`);
+    let started = Date.now();
+    await settings.getByRole('button', { name: '测试连接' }).click();
+    await settings.getByText(/连接成功/).waitFor({ timeout: 90000 });
+    console.log(`测试连接：${((Date.now() - started) / 1000).toFixed(1)} 秒`);
+    await page.screenshot({ path: path.join(evidence, 'live-kimi-settings.png') });
     await settings.getByRole('button', { name: '添加', exact: true }).click();
     await settings.getByText('已保存').waitFor();
     await settings.getByRole('button', { name: '关闭 AI 设置' }).click();

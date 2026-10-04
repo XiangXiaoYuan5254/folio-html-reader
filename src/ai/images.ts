@@ -57,7 +57,8 @@ export function seesImages(
   if (!provider?.model) return undefined;
   const sure = known(provider, options);
   if (sure !== undefined) return sure;
-  if (provider.kind === 'anthropic' || provider.kind === 'codex') return true;
+  if (provider.kind === 'anthropic' || provider.kind === 'codex' || provider.kind === 'kimi')
+    return true;
   // DeepSeek's own service offers no vision model.
   if (provider.preset === 'deepseek') return false;
   // OpenRouter names models "vendor/model".

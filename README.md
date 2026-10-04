@@ -127,6 +127,8 @@ PDF 原文件保持不变，新增批注和笔记自动保存到 PDF 所在文�
 
 **用 ChatGPT 账号**：选“Codex”，不需要 API Key，用的是 ChatGPT 套餐里的 Codex 额度，不另外付费。它通过这台电脑上的 Codex（ChatGPT 桌面版自带，也可以单独安装 Codex 命令行工具）连接：页间用 OpenAI 为第三方应用提供的 Codex App Server 接口，沿用 Codex 已有的登录，没登录时可以在设置里直接“用 ChatGPT 登录”。页间碰不到账号凭据，并关闭了 Codex 自带的命令行、联网搜索、插件等工具，只让它回答问题或调用页间自己的工具。额度有 5 小时和每周上限，助手里每条回答的提示中会显示已用比例；回答比直接用 API 慢几秒。Claude 的网页账号不能这样用：Anthropic 不允许第三方应用使用 Claude 订阅登录。
 
+**用 Kimi 会员**：选“Kimi Code”，不需要 API Key，用的是 Kimi 会员里的 Kimi Code 额度，不另外付费。Kimi 只允许编程工具使用会员额度，会员的 `sk-kimi-` Key 填在“Kimi”里会被拒绝，所以页间通过这台电脑上的 Kimi Code CLI 连接：先按 [Kimi Code 官网的说明](https://www.kimi.com/code/docs/kimi-code-cli/guides/getting-started.html)安装，再在设置里“用 Kimi 账号登录”。页间用 CLI 为编辑器提供的 ACP 接口；CLI 的登录和会话放在页间自己的数据目录里，和你自己用的 Kimi Code 互不影响。Kimi Code 自带的命令行、读写文件和联网工具都关闭，只让它回答问题或调用页间自己的工具。设置里会显示 5 小时和每周额度的已用比例；回答比直接用 API 慢几秒。
+
 - **问这篇文档**：点工具栏的 ✦ 或右侧栏“助手”标签。回答里的小编号是原文引用，点击会跳到原文并短暂标出，也可以把这句直接高亮；原文中找不到的引用会划掉，提醒可能是模型改写的。选中文字后提问，会针对选中的部分回答；双栏阅读时同时参考两篇。回答可以复制，或存入文档笔记。
 - **快捷操作**：总结全文、AI 划重点、整理我的批注、出几道思考题，双栏时还可以对比两篇文档。AI 划重点直接在原文加高亮，按类型着色、附一句说明，批注列表里标着“AI”；不满意按一次 `⌘Z` 全部撤销。
 - **制作精读笔记**：助手里的“制作精读笔记”会为当前论文或文章写一份伴读 HTML：一句话概括、背景与问题、方法分步讲解（含公式和符号说明）、关键概念、实验结果表、原文金句、贡献与局限、读后思考题。它保存在原文旁边（`论文名-精读笔记.html`），并排在右栏打开；笔记里的页码可以点，PDF 会跳到对应页。它是普通的 HTML 文档，可以照常批注和修改。长论文会先分段通读再写。
@@ -206,6 +208,7 @@ npm run dist:win   # 在 Mac 上交叉构建 Windows x64 安装程序和校验�
 - `electron/ai-providers.cjs`：OpenAI 兼容接口与 Claude（Anthropic SDK）两种协议的流式请求、工具调用和错误说明。
 - `electron/ai.cjs`：AI 服务设置、API Key 保存与请求管理。Key 只在主进程中使用，界面拿不到。
 - `electron/ai-codex.cjs`：通过本机 Codex App Server 使用 ChatGPT 账号：启动与登录、流式回答，以及把项目 Agent 的工具交给 Codex 调用。
+- `electron/ai-kimi.cjs`：通过本机 Kimi Code CLI 的 ACP 接口使用 Kimi 会员：登录、模型与额度、流式回答，以及用本机的 MCP 接口把项目 Agent 的工具交给 Kimi 调用。
 - `electron/hearing.cjs`、`electron/hearing-worker.cjs`、`electron/cloud-hearing.cjs`：没有 macOS 语音 helper 时（Windows）的语音对话识别：界面打开麦克风，子进程用 Silero VAD 判断什么时候在说话，再用 SenseVoice 在本机识别，或交给通义百炼 / 豆包语音的流式识别。
 - `src/ai/`：对话与项目 Agent、文档上下文与长文档分段、原文引用定位、源码修改的解析与对比。
 

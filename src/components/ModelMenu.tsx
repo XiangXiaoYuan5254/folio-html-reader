@@ -275,7 +275,9 @@ export function ModelMenu({
                               <title>能看图</title>
                             </ImagePlus>
                           ) : null}
-                          {Array.isArray(list) && i === 0 && shown.preset === 'codex' ? (
+                          {Array.isArray(list) &&
+                          i === 0 &&
+                          (shown.kind === 'codex' || shown.kind === 'kimi') ? (
                             <em>默认</em>
                           ) : null}
                           {current ? <Check size={13} /> : null}

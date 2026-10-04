@@ -325,6 +325,7 @@ app
     appearance = appearanceColors((await readSettings()).appearance);
     ai = createAi({
       file: path.join(app.getPath('userData'), 'ai.json'),
+      kimiHome: path.join(app.getPath('userData'), 'kimi-code'),
       fetch: (url, init) => net.fetch(url, init),
       atomicWrite,
       version: app.getVersion(),
@@ -458,6 +459,9 @@ app
           'ai-cancel',
           'ai-codex-status',
           'ai-codex-login',
+          'ai-kimi-status',
+          'ai-kimi-login',
+          'ai-kimi-logout',
           'codex-voice',
           'microphone',
           'appearance',
@@ -657,6 +661,12 @@ app
           return ai.codexStatus();
         case 'ai-codex-login':
           return ai.codexLogin();
+        case 'ai-kimi-status':
+          return ai.kimiStatus();
+        case 'ai-kimi-login':
+          return ai.kimiLogin();
+        case 'ai-kimi-logout':
+          return ai.kimiLogout();
         case 'microphone':
           return microphoneAccess();
         case 'codex-voice': {
