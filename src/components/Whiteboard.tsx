@@ -13,6 +13,8 @@ import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import '../whiteboard.css';
 import {
+  Check,
+  Copy,
   Eraser,
   GraduationCap,
   History,
@@ -268,9 +270,28 @@ function CodeBlock({ block }: { block: Extract<Block, { kind: 'code' }> }) {
     /^(py|python\d?|rb|ruby|sh|bash|shell|zsh|r|perl|ya?ml|toml)$/i.test(block.lang) ||
     (!block.lang && lines.some((l) => /^\s*(def |elif |import |from \w+ import)/.test(l)));
   const step = block.dur / Math.max(1, block.code.replace(/\s/g, '').length);
+  const box = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const [place, setPlace] = useState<{ left: number; inside: boolean } | null>(null);
+  const [copied, setCopied] = useState(false);
+  // The copy button sits just outside the box's top-right corner, clear of the code the
+  // student marks; a box reaching the board's right edge has it inside, still on the board.
+  useLayoutEffect(() => {
+    const el = box.current;
+    const main = el?.offsetParent as HTMLElement | null;
+    if (!el || !main || !button.current) return;
+    const room = boardWidth - main.offsetLeft - el.offsetLeft - button.current.offsetWidth - 20;
+    const left = Math.min(el.offsetWidth + 8, room);
+    setPlace({ left, inside: left < el.offsetWidth });
+  }, [block.code]);
   let at = 0;
   return (
-    <div className="wb-block wb-code" data-ref={block.id} aria-label={`代码 ${block.lang}`}>
+    <div
+      ref={box}
+      className="wb-block wb-code"
+      data-ref={block.id}
+      aria-label={`代码 ${block.lang}`}
+    >
       {lines.map((line, i) => {
         const indent = line.match(/^\s*/)![0];
         const rest = line.slice(indent.length);
@@ -290,22 +311,42 @@ function CodeBlock({ block }: { block: Extract<Block, { kind: 'code' }> }) {
             );
           }),
         );
+        // The indent is kept as space before the line, so a line too long for the board
+        // goes on underneath it, a little further in.
+        const width = [...indent].reduce((n, c) => (c === '\t' ? n + 4 - (n % 4) : n + 1), 0);
         return (
           <div className="wb-code-line" key={i}>
             <span className="wb-code-no wb-atom" style={{ '--d': ms(start) } as Vars}>
               {i + 1}
             </span>
-            {indent}
-            {rest ? (
-              <span data-ref={`${block.id}.${i + 1}`} data-owner={`${block.id}.${i + 1}`}>
-                {atoms}
-              </span>
-            ) : (
-              '\u200b'
-            )}
+            <span className="wb-code-text" style={{ '--indent': `${width}ch` } as Vars}>
+              {rest ? (
+                <span data-ref={`${block.id}.${i + 1}`} data-owner={`${block.id}.${i + 1}`}>
+                  {atoms}
+                </span>
+              ) : (
+                '\u200b'
+              )}
+            </span>
           </div>
         );
       })}
+      {/* Shown once the code is written; pressing it neither draws nor pauses the teacher. */}
+      <button
+        ref={button}
+        className={`wb-code-copy${place?.inside ? ' inside' : ''}`}
+        style={{ '--d': ms(block.dur + 160), left: place?.left } as Vars}
+        title="复制代码"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={() => {
+          void navigator.clipboard.writeText(block.code);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        }}
+      >
+        {copied ? <Check size={13} /> : <Copy size={13} />}
+        {copied ? '已复制' : '复制'}
+      </button>
     </div>
   );
 }

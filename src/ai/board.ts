@@ -487,7 +487,11 @@ function heightOf(cmd: Command) {
     case 'flow':
       return 70;
     case 'code':
-      return 27 * cmd.code.split('\n').length + 30;
+      // About 84 characters fit on a row before a line wraps.
+      return (
+        27 * cmd.code.split('\n').reduce((n, l) => n + Math.max(1, Math.ceil(l.length / 84)), 0) +
+        30
+      );
     case 'figure':
       return cmd.h * Math.min(1, 640 / cmd.w, 480 / cmd.h) + 10;
     default:

@@ -134,6 +134,7 @@
   white-space: pre-wrap;
 }
 .wb-code {
+  position: relative;
   padding: 10px 20px 10px 4px;
   border-radius: 8px;
   border: 1px solid color-mix(in srgb, var(--board-ink) 12%, transparent);
@@ -141,11 +142,69 @@
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   font-size: 16px;
   line-height: 1.7;
-  white-space: pre;
-  max-width: none;
+  /* As wide as its longest line, up to the board's right edge; longer lines wrap. */
+  width: max-content;
+  max-width: 880px;
+}
+.wb-code-line {
+  display: flex;
+}
+.wb-code-text {
+  min-width: 0;
+  padding-left: calc(var(--indent) + 2ch);
+  text-indent: -2ch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.wb-code-copy {
+  position: absolute;
+  top: 0;
+  left: calc(100% + 8px);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--board-ink) 12%, transparent);
+  background: var(--board-bg);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1;
+  color: var(--board-muted);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s;
+  animation: wb-show 1ms both;
+  animation-delay: var(--d, 0ms);
+}
+/* Keeps the pointer over the code on its way across the gap to the button. */
+.wb-code-copy::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 100%;
+  width: 10px;
+}
+.wb-code-copy.inside {
+  top: 6px;
+}
+.wb-code:hover .wb-code-copy,
+.wb-code-copy:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.wb-code-copy:hover {
+  color: var(--board-blue);
+}
+@keyframes wb-show {
+  from {
+    visibility: hidden;
+  }
 }
 .wb-code-no {
-  display: inline-block;
+  flex: none;
   width: 2.2em;
   margin-right: 14px;
   text-align: right;
@@ -403,6 +462,7 @@
     display: none;
   }
   .wb-atom,
+  .wb-code-copy,
   .wb-stroke,
   .wb-math,
   .wb-flow-box,
