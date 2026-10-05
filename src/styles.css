@@ -2496,12 +2496,36 @@ button.brand {
 }
 .toolbar-host .annotation-tools {
   flex-shrink: 1;
-  min-width: 28px;
-  overflow-x: auto;
-  scrollbar-width: none;
+  min-width: 0;
+  overflow: hidden;
 }
 .toolbar-host .annotation-tools > .icon-button {
   flex-shrink: 0;
+}
+.annotation-tools > .icon-button[data-overflow] {
+  display: none;
+}
+.tool-overflow {
+  position: relative;
+  width: 27px;
+}
+/* A small corner mark tells the current tool's icon here apart from a plain tool. */
+.tool-overflow.active::after {
+  content: '';
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  border: 3px solid transparent;
+  border-right-color: currentColor;
+  border-bottom-color: currentColor;
+}
+.overflow-tool {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.overflow-tool[data-active] {
+  color: var(--accent);
 }
 @container (max-width: 1050px) {
   .reader-toolbar {

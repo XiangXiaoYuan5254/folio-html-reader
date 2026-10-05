@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import type { ButtonHTMLAttributes, ReactNode, Ref } from 'react';
 import { createPortal } from 'react-dom';
 export function IconButton({
   label,
@@ -8,6 +8,7 @@ export function IconButton({
   help,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
+  ref?: Ref<HTMLButtonElement>;
   label: string;
   children: ReactNode;
   active?: boolean;

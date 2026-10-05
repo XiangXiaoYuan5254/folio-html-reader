@@ -26,6 +26,7 @@ import {
   History,
   Sparkle,
   WandSparkles,
+  ChevronDown,
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { EraserMode, Tool } from '../types';
@@ -35,6 +36,7 @@ import { annotationColors as colors } from '../colors';
 import { ColorPicker } from './ColorPicker';
 import { zoomAfterWheel, zoomLabel, zoomPresets } from '../zoom';
 import { isMac, shortcut } from '../platform';
+import { PopupMenu, belowButton, type MenuAnchor } from './PopupMenu';
 const tools = [
   {
     id: 'select',
@@ -144,6 +146,38 @@ export function Toolbar(p: {
   useEffect(() => {
     setSettings(false);
   }, [p.tool, p.mode, setSettings]);
+  // A narrow toolbar keeps as many tools as fit; the rest move into a menu behind the
+  // last button, which wears the current tool's icon when that tool is one of them.
+  const strip = useRef<HTMLDivElement>(null);
+  const more = useRef<HTMLButtonElement>(null);
+  const [fit, setFit] = useState<number>(tools.length);
+  const [moreMenu, setMoreMenu] = useState<MenuAnchor | null>(null);
+  useLayoutEffect(() => {
+    const host = strip.current;
+    const bar = host?.parentElement;
+    const spacer = bar?.querySelector<HTMLElement>('.toolbar-flex');
+    if (!host || !bar || !spacer) return;
+    const measure = () => {
+      const button = (host.firstElementChild as HTMLElement).offsetWidth;
+      const step = button + (parseFloat(getComputedStyle(host).columnGap) || 0);
+      const moreWidth =
+        (more.current?.offsetWidth || button) + (parseFloat(getComputedStyle(bar).columnGap) || 0);
+      // The room the tools would have with the spacer squeezed and no menu button.
+      const room =
+        host.clientWidth +
+        Math.max(0, spacer.offsetWidth - parseFloat(getComputedStyle(spacer).minWidth)) +
+        (more.current ? moreWidth : 0);
+      const count = (width: number) => Math.floor((width + step - button) / step);
+      setFit(count(room) >= tools.length ? tools.length : Math.max(1, count(room - moreWidth)));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    for (const el of [bar, host, spacer]) observer.observe(el);
+    return () => observer.disconnect();
+  }, [p.mode]);
+  useEffect(() => setMoreMenu(null), [p.mode, fit]);
+  const overflow = tools.slice(fit);
+  const hiddenActive = overflow.find((t) => t.id === p.tool);
   useEffect(() => {
     if (!settings) return;
     const dismiss = (e: PointerEvent) => {
@@ -173,10 +207,11 @@ export function Toolbar(p: {
       <span className="toolbar-divider" />
       {p.mode === 'read' ? (
         <>
-          <div className="annotation-tools">
-            {tools.map((t) => (
+          <div className="annotation-tools" ref={strip}>
+            {tools.map((t, i) => (
               <IconButton
                 key={t.id}
+                data-overflow={i >= fit || undefined}
                 label={t.label}
                 help={
                   t.id === 'eraser'
@@ -192,6 +227,38 @@ export function Toolbar(p: {
               </IconButton>
             ))}
           </div>
+          {overflow.length ? (
+            <IconButton
+              ref={more}
+              className="tool-overflow"
+              label={hiddenActive ? `更多工具 · 当前：${hiddenActive.label}` : '更多工具'}
+              help={`窗口太窄，${overflow.map((t) => t.label).join('、')}收在这里`}
+              active={!!hiddenActive}
+              aria-haspopup="menu"
+              aria-expanded={!!moreMenu}
+              disabled={p.disabled}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={(e) => setMoreMenu(moreMenu ? null : belowButton(e.currentTarget))}
+            >
+              {hiddenActive ? <hiddenActive.icon size={18} /> : <ChevronDown size={16} />}
+            </IconButton>
+          ) : null}
+          {moreMenu ? (
+            <PopupMenu
+              at={moreMenu}
+              label="更多工具"
+              onClose={() => setMoreMenu(null)}
+              items={overflow.map((t) => ({
+                label: (
+                  <span className="overflow-tool" data-active={p.tool === t.id || undefined}>
+                    <t.icon size={16} />
+                    {t.label}
+                  </span>
+                ),
+                onSelect: () => p.onTool(t.id),
+              }))}
+            />
+          ) : null}
           {['pen', 'arrow', 'rectangle', 'eraser'].includes(p.tool) ? (
             <div className="ink-settings" ref={settingsHost}>
               <IconButton
