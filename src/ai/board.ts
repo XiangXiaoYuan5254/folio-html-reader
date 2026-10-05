@@ -356,6 +356,8 @@ export type TutorState = {
   erased: string[];
   // The teacher stopped for the student to think, for `dur` ms.
   beat?: { key: number; dur: number } | null;
+  // The next sentence's voice is still being made.
+  voiceWait?: boolean;
 };
 // What the board is to show next: things already on it, or room below the writing for a
 // block about to be written, `room` board pixels tall.
@@ -473,6 +475,8 @@ function lookTime(cmd: Command) {
 // up to before it moves away again, at normal speed.
 const sentenceGap = 550;
 const dwellTime = 2200;
+// How many of the sentences still to come a speech service's voice has made ahead.
+const madeAhead = 3;
 // Roughly how tall, in board pixels, a new block will be, to make room for it.
 function heightOf(cmd: Command) {
   switch (cmd.op) {
@@ -837,6 +841,7 @@ export type SavedBoard = {
 };
 // A sentence being made ready to be said out loud.
 type Sound = { id: string; ms: Promise<number> };
+type Queued = { cmd: Command; raw: string; sound?: Sound };
 type Options = {
   selection: string;
   // The document the lesson is about, kept with the saved board.
@@ -873,7 +878,7 @@ export class Tutor {
   // Each request (the lesson, then each question) is a run; interrupting starts a new one.
   private run = 0;
   private controller: AbortController | null = null;
-  private queue: { cmd: Command; raw: string; sound?: Sound }[] = [];
+  private queue: Queued[] = [];
   private buffer = '';
   private streaming = false;
   private failure = '';
@@ -1238,6 +1243,7 @@ export class Tutor {
       next.speed(this.state.speed);
       if (this.state.paused && this.voicePaused) next.pause();
       next.warm?.();
+      this.madeAhead();
       // Which voice speaks may be known only later: one that says things of its own is
       // followed whenever it does.
       this.follow(next);
@@ -1545,9 +1551,24 @@ export class Tutor {
     this.push(cmd, raw.trim());
   }
   private push(cmd: Command, raw: string) {
-    const sound = cmd.op === 'say' && this.speaker ? this.sound(cmd.text) : undefined;
-    this.queue.push({ cmd, raw, ...(sound ? { sound } : {}) });
-    this.told(cmd, sound?.id);
+    const item: Queued = { cmd, raw };
+    this.queue.push(item);
+    if (cmd.op === 'say' && this.speaker) {
+      if (this.speaker.service) this.madeAhead();
+      else item.sound = this.sound(cmd.text);
+    }
+    this.told(cmd, item.sound?.id);
+  }
+  // A speech service's voice has only the next few sentences made: each is paid for, the
+  // service allows only so many a minute, and a question cuts the rest off anyway.
+  private madeAhead() {
+    if (!this.speaker?.service) return;
+    let n = 0;
+    for (const item of this.queue) {
+      if (item.cmd.op !== 'say') continue;
+      if (n++ >= madeAhead) return;
+      item.sound ||= this.sound(item.cmd.text);
+    }
   }
   // Whether a line goes on with the formula before it: anything up to the end of an
   // environment it opened, or TeX that reads as the rest of it (“= …”, “\frac…”, “& …”).
@@ -1607,7 +1628,9 @@ export class Tutor {
     const id = `v${++this.counter}`;
     return { id, ms: this.speaker!.prepare(id, text) };
   }
-  // Waits for a sentence to be ready to say: its length in ms, or 0 if it won't be said.
+  // Waits for a sentence to be ready to say: its length in ms, or 0 if it won't be said. A
+  // speech service's sentence may be waiting for room in the minute: it is waited for rather
+  // than left unsaid, and after a moment the board says so.
   private async ready(run: number, sound: Sound) {
     let ms: number | null = null;
     void sound.ms.then(
@@ -1615,7 +1638,14 @@ export class Tutor {
       () => ((ms = 0), this.wake()),
     );
     const start = performance.now();
-    while (run === this.run && ms === null && performance.now() - start < 8000) await this.nap(250);
+    const service = !!this.speaker?.service;
+    const limit = service ? 60_000 : 8000;
+    while (run === this.run && ms === null && performance.now() - start < limit) {
+      if (service && !this.state.voiceWait && performance.now() - start > 2000)
+        this.set({ voiceWait: true });
+      await this.nap(250);
+    }
+    if (this.state.voiceWait) this.set({ voiceWait: false });
     return ms ?? 0;
   }
   // Waits for a live voice to start on a sentence; one that stays silent is given up on.
@@ -1659,6 +1689,7 @@ export class Tutor {
     while (run === this.run) {
       await this.until(run, 0);
       const next = this.queue.shift();
+      this.madeAhead();
       if (!next) {
         if (!this.streaming) break;
         await this.nap(1000);

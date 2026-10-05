@@ -235,6 +235,9 @@ export type Speaker = {
   // Says sentences as it makes them, so how long one takes is known only once it is said:
   // `prepare` guesses, and `say` resolves when it has been said.
   live?: boolean;
+  // A speech service's voice: each sentence is a paid request, of which the service allows
+  // only so many a minute, so a sentence can take a while to come.
+  service?: boolean;
   // Resolves with how long saying it takes at normal speed, in ms; 0 when it can't be said.
   prepare(id: string, text: string): Promise<number>;
   // Resolves once it has been said, or was hushed.
@@ -492,6 +495,9 @@ export function speaker(): Promise<Speaker> {
 export const voice: Speaker = {
   get live() {
     return usingCodex();
+  },
+  get service() {
+    return !usingCodex() && usingCloud();
   },
   prepare: (id, text) => speaker().then((s) => s.prepare(id, text)),
   say: (id) => speaker().then((s) => s.say(id)),

@@ -129,7 +129,8 @@ function createAi({
     };
   }
   // Says a sentence in a speech service's voice; the settings form may try a key not saved.
-  async function speak({ voice, text, key }) {
+  // `stale`: the sentence is no longer wanted, while it waits its turn.
+  async function speak({ voice, text, key }, stale) {
     const { service, voice: id } = speechServices.parseVoice(voice);
     const draft = typeof key === 'string' ? key.trim() : '';
     return speechServices.synthesize({
@@ -138,6 +139,7 @@ function createAi({
       voice: id,
       ...(await speechAccess(service, draft)),
       text: clean(text, 2000),
+      stale,
     });
   }
   // For writing down what the student says with a speech service.

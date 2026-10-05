@@ -231,7 +231,7 @@ async function minimax({ fetch, key, voice, text, signal }) {
       throw new AiError(`API Key 无效、已过期或没有权限（MiniMax：${message}）`);
     if (status === 1008) throw new AiError(`账户余额不足，请到 MiniMax 充值（${message}）`);
     if (status === 1002 || status === 1039)
-      throw new AiError(`请求太频繁，请稍后再试（MiniMax：${message}）`);
+      throw new AiError(`请求太频繁，请稍后再试（MiniMax：${message}）`, { status: 429 });
     throw new AiError(`MiniMax 合成失败（${status}：${message}）`);
   }
   if (typeof value?.data?.audio !== 'string' || !value.data.audio)
@@ -243,22 +243,62 @@ async function minimax({ fetch, key, voice, text, signal }) {
 }
 
 const synthesizers = { qwen, doubao, minimax };
-// Says `text` in a service's voice: { pcm: 16-bit mono samples, rate }.
-async function synthesize({ fetch, service, voice, key, host, text }) {
+
+// MiniMax makes an account only 10 sentences a minute, or 20 once it has been topped up
+// (platform.minimaxi.com/docs/guides/rate-limits), and turns the rest away. A sentence
+// waits for room in the minute instead of going unsaid. One turned away all the same shows
+// the account's limit is lower: it is lowered to how many got through this past minute, and
+// the sentence waits and is asked for again.
+function perMinute(limit) {
+  let asked = [];
+  return {
+    // The request it may make now, or null if `stale` turns true while it waits.
+    async take(stale) {
+      for (;;) {
+        if (stale()) return null;
+        const now = Date.now();
+        asked = asked.filter((a) => now - a.at < 60_000);
+        if (asked.length < limit) {
+          const ask = { at: now, away: false };
+          asked.push(ask);
+          return ask;
+        }
+        await new Promise((r) => setTimeout(r, Math.min(1000, 60_050 - (now - asked[0].at))));
+      }
+    },
+    away(ask) {
+      ask.away = true;
+      limit = Math.max(10, Math.min(limit, asked.filter((a) => !a.away).length));
+    },
+  };
+}
+const paces = { minimax: perMinute(20) };
+
+// Says `text` in a service's voice: { pcm: 16-bit mono samples, rate }, or null when
+// `stale` turned true while it waited its turn.
+async function synthesize({ fetch, service, voice, key, host, text, stale = () => false }) {
   if (!key) throw new AiError(`还没有填 ${service.name} 的 API Key：请在 AI 设置 › 语音服务里填写`);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30_000);
-  try {
-    return await synthesizers[service.id]({
-      fetch,
-      key,
-      host,
-      voice,
-      text,
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timer);
+  const pace = paces[service.id];
+  for (let tries = 0; ; tries++) {
+    const ask = pace && (await pace.take(stale));
+    if (pace && !ask) return null;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30_000);
+    try {
+      return await synthesizers[service.id]({
+        fetch,
+        key,
+        host,
+        voice,
+        text,
+        signal: controller.signal,
+      });
+    } catch (e) {
+      if (!pace || e?.status !== 429 || tries >= 2) throw e;
+      pace.away(ask);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }
 

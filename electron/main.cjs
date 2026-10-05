@@ -694,7 +694,7 @@ app
         case 'cloud-voice': {
           const at = voiceHushes;
           const sound = await voiceQueue(() =>
-            at === voiceHushes ? ai.speak(payload || {}) : null,
+            at === voiceHushes ? ai.speak(payload || {}, () => at !== voiceHushes) : null,
           );
           if (!sound || at !== voiceHushes) return null;
           if (payload.to !== 'helper') return { pcm: new Uint8Array(sound.pcm), rate: sound.rate };

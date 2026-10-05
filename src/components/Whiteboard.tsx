@@ -1351,6 +1351,8 @@ export default function Whiteboard({
                   ? '已暂停 · 圈出没懂的地方，直接说哪里不懂'
                   : '已暂停 · 圈出没懂的地方，告诉页老师哪里不懂'}
             </div>
+          ) : state.voiceWait ? (
+            <div className="wb-paused">语音还在合成，稍等一下…</div>
           ) : null}
         </div>
         <footer className="whiteboard-foot">
