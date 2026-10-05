@@ -6,7 +6,7 @@
 // Codex's own tools (shell, web search, plugins, MCP servers) are switched off; the model
 // only answers, or calls the tools Folio passes in (the project agent's tools), which the
 // server hands back as `item/tool/call` requests. Chat alone turns web search back on.
-const { spawn } = require('node:child_process');
+const { execFile, spawn } = require('node:child_process');
 const { levelFor } = require('./ai-providers.cjs');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -32,9 +32,31 @@ const disabled = [
 
 class CodexError extends Error {}
 
+// The Codex app from the Microsoft Store keeps its own codex under WindowsApps, a folder
+// that can't be listed but whose files run; PowerShell says where the installed version is.
+// It updates with the app, so it comes before a Codex CLI that may have been left behind.
+function storeCodex() {
+  return new Promise((resolve) => {
+    execFile(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        '(Get-AppxPackage -Name OpenAI.Codex).InstallLocation',
+      ],
+      { encoding: 'utf8', windowsHide: true, timeout: 10_000 },
+      (error, stdout) => {
+        const dir = !error && stdout.trim().split(/\r?\n/)[0];
+        resolve(dir ? path.join(dir, 'app/resources/codex.exe') : null);
+      },
+    );
+  });
+}
+
 // Where Codex usually lives. Apps opened from Finder don't inherit the shell's PATH, so
 // common install locations are checked directly.
-function candidates() {
+async function candidates() {
   const home = os.homedir();
   const list = [process.env.FOLIO_CODEX_PATH];
   if (process.platform === 'darwin')
@@ -68,6 +90,7 @@ function candidates() {
   if (process.platform === 'win32') {
     const local = process.env.LOCALAPPDATA || path.join(home, 'AppData/Local');
     list.push(
+      await storeCodex(),
       path.join(local, 'Programs/ChatGPT/resources/codex-cli/codex.exe'),
       path.join(local, 'Programs/Codex/codex.exe'),
       ...npmBinary(path.join(process.env.APPDATA || path.join(home, 'AppData/Roaming'), 'npm')),
@@ -80,8 +103,8 @@ function candidates() {
   }
   return list.filter(Boolean);
 }
-function findCodex() {
-  for (const file of candidates()) {
+async function findCodex() {
+  for (const file of await candidates()) {
     try {
       fs.accessSync(file, fs.constants.X_OK);
       if (fs.statSync(file).isFile()) return file;
@@ -221,7 +244,7 @@ class Server {
 let server = null;
 async function getServer(version) {
   if (server?.child) return server;
-  const bin = findCodex();
+  const bin = await findCodex();
   if (!bin)
     throw new CodexError(
       '没有找到 Codex。请安装 ChatGPT 桌面版（其中包含 Codex）或 Codex 命令行工具，登录后再试。',
@@ -255,7 +278,7 @@ async function limits(version) {
 }
 
 async function status(version) {
-  const bin = findCodex();
+  const bin = await findCodex();
   if (!bin) return { found: false };
   try {
     const s = await getServer(version);
