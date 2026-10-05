@@ -217,6 +217,7 @@ export function sourceEditPrompt(
   source: string,
   request: string,
   selection?: string,
+  images = 0,
 ) {
   return [
     `文件：${path}`,
@@ -226,8 +227,9 @@ export function sourceEditPrompt(
     selection
       ? `\n用户在编辑器中选中了这段代码，修改应围绕它：\n\`\`\`html\n${selection}\n\`\`\``
       : '',
+    images ? `\n用户附了 ${images} 张图片（可能是页面截图，或想要的样子），修改时参照图片。` : '',
     '',
-    `修改要求：${request}`,
+    `修改要求：${request || '按图片修改'}`,
   ].join('\n');
 }
 export const fileLabel = fileName;

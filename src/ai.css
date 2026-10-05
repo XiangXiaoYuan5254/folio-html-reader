@@ -1312,6 +1312,21 @@
 .ai-source-input textarea:focus {
   border-color: var(--ai-line-strong);
 }
+.ai-source.dropping .ai-source-input textarea {
+  outline: 2px dashed var(--accent);
+  outline-offset: 2px;
+}
+.ai-source-images {
+  margin: 8px 0 0;
+}
+.ai-source-vision {
+  margin: 6px 0 0;
+}
+.ai-source-attach {
+  width: 30px;
+  height: 30px;
+  color: var(--ai-text);
+}
 .ai-source-input .primary-button,
 .ai-source-input .secondary-button {
   padding: 7px 12px;
