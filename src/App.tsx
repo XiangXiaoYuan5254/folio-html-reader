@@ -1,4 +1,5 @@
 import { Fragment, lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import {
   BookOpen,
   Check,
@@ -170,6 +171,15 @@ export default function App() {
   const [splitRatio, setSplitRatio] = useState(() => {
     try {
       const saved = Number(localStorage.getItem('folio.reading-split-ratio'));
+      return saved >= 0.2 && saved <= 0.8 ? saved : 0.5;
+    } catch {
+      return 0.5;
+    }
+  });
+  // How much of the width the source takes, beside its live preview.
+  const [sourceRatio, setSourceRatio] = useState(() => {
+    try {
+      const saved = Number(localStorage.getItem('folio.source-split-ratio'));
       return saved >= 0.2 && saved <= 0.8 ? saved : 0.5;
     } catch {
       return 0.5;
@@ -373,6 +383,11 @@ export default function App() {
       localStorage.setItem('folio.reading-split-ratio', String(splitRatio));
     } catch {}
   }, [splitRatio]);
+  useEffect(() => {
+    try {
+      localStorage.setItem('folio.source-split-ratio', String(sourceRatio));
+    } catch {}
+  }, [sourceRatio]);
   useEffect(() => {
     try {
       localStorage.setItem('folio.ink-color', color);
@@ -1664,7 +1679,10 @@ export default function App() {
               className={`document-workbench ${mode === 'source' ? 'split-editor' : ''} ${readingSplit ? 'split-reading' : ''}`}
             >
               {mode === 'source' ? (
-                <div className="editor-pane">
+                <div
+                  className="editor-pane"
+                  style={{ '--source-ratio': sourceRatio } as CSSProperties}
+                >
                   <div className="pane-caption">
                     <Code2 size={13} />
                     源码
@@ -1706,6 +1724,9 @@ export default function App() {
                     />
                   </Suspense>
                 </div>
+              ) : null}
+              {mode === 'source' ? (
+                <ReadingResizer ratio={sourceRatio} onChange={setSourceRatio} />
               ) : null}
               {panes.map(({ side, doc: paneDoc }, index) => (
                 <Fragment key={side}>

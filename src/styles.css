@@ -1144,11 +1144,10 @@ button.brand {
   white-space: nowrap;
 }
 .split-editor .editor-pane {
-  width: 50%;
+  flex: 0 0 calc(var(--source-ratio, 0.5) * 100% - 3px);
   min-width: 260px;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--line);
   background: var(--surface);
 }
 .pane-caption {
@@ -2345,10 +2344,13 @@ button.brand {
     flex-direction: column;
   }
   .split-editor .editor-pane {
+    flex: none;
     width: 100%;
     height: 50%;
-    border-right: 0;
     border-bottom: 1px solid var(--line);
+  }
+  .split-editor > .reading-resizer {
+    display: none;
   }
   .split-editor .reader-pane {
     height: 50%;
