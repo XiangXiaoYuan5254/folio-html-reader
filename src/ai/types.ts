@@ -67,6 +67,8 @@ export type SpeechService = {
   voices: CloudVoice[];
   // It can also write down what the student says in a voice conversation.
   hears?: boolean;
+  // The key can ask what's left on the account.
+  balance?: boolean;
   hasKey: boolean;
   keyHint: string;
   // The AI service whose key it uses, when it has none of its own.

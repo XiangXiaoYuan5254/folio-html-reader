@@ -8,11 +8,12 @@ import type { Balance, Quota } from '../ai/types';
 // the model menu (`brief`) takes an answer from the last minute and lists only the packages
 // its model can use.
 export function BalanceLine({
-  providerId,
+  of,
   fresh = false,
   brief = false,
 }: {
-  providerId: string;
+  // A saved AI service's id, or `speech:` and a speech service's.
+  of: string;
   fresh?: boolean;
   brief?: boolean;
 }) {
@@ -21,14 +22,14 @@ export function BalanceLine({
   useEffect(() => {
     let live = true;
     setState('loading');
-    loadBalance(providerId, asked.refresh).then(
+    loadBalance(of, asked.refresh).then(
       (b) => live && setState(b),
       (e) => live && setState({ error: errorText(e) }),
     );
     return () => {
       live = false;
     };
-  }, [providerId, asked]);
+  }, [of, asked]);
   const again = (
     <button
       type="button"

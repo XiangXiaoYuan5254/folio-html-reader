@@ -441,7 +441,7 @@ export function AiSettings({
                         // Asked again once a new key or address is saved.
                         <BalanceLine
                           key={`${stored.id} ${stored.keyHint} ${stored.baseUrl}`}
-                          providerId={stored.id}
+                          of={stored.id}
                           fresh
                         />
                       ) : null}
@@ -892,6 +892,10 @@ function SpeechServiceKey({ service }: { service: SpeechService }) {
             }}
           />
         </div>
+        {service.balance && service.hasKey ? (
+          // Asked again once a new key is saved.
+          <BalanceLine key={service.keyHint} of={`speech:${service.id}`} fresh />
+        ) : null}
       </div>
       {status ? (
         <p className={`ai-status ${status.ok ? 'ok' : 'error'}`} role="status">

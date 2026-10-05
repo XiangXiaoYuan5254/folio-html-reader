@@ -295,14 +295,25 @@ function createAi({
   }
   // What's left on a service: money for the services that can tell, or how much of a
   // ChatGPT plan's or a Kimi membership's usage windows is used.
+  // `speech` asks a speech service instead of an AI service.
   async function balance(payload) {
-    const { provider, key } = await resolve(payload || {});
-    if (provider.kind === 'codex') return codex.limits(version);
-    if (provider.kind === 'kimi') return kimi.limits(kimiHome, fetch);
+    let ask;
+    if (payload?.speech) {
+      const service = speechServices.serviceFor(payload.speech);
+      if (!service?.balance) throw new AiError('这个语音服务查不了余额，请到官网查看');
+      const { key } = await speechAccess(service);
+      if (!key) throw new AiError(`还没有填 ${service.name} 的 API Key`);
+      ask = (signal) => speechServices.balance({ fetch, service, key, signal });
+    } else {
+      const { provider, key } = await resolve(payload || {});
+      if (provider.kind === 'codex') return codex.limits(version);
+      if (provider.kind === 'kimi') return kimi.limits(kimiHome, fetch);
+      ask = (signal) => readBalance({ provider, key, fetch, signal });
+    }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 20_000);
     try {
-      return await readBalance({ provider, key, fetch, signal: controller.signal });
+      return await ask(controller.signal);
     } catch (e) {
       if (e.name === 'AbortError') throw new AiError('查询余额超时');
       throw e;

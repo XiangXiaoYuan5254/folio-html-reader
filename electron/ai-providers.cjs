@@ -1117,6 +1117,7 @@ module.exports = {
   streamChat,
   listModels,
   readBalance,
+  money,
   toOpenAIMessages,
   toAnthropicMessages,
   effortParams,

@@ -2,16 +2,18 @@ import { invoke } from '../api';
 import type { AiConfig, AiProvider, Balance } from './types';
 
 // A balance is asked for again after a minute, so reopening the model menu stays quick.
+// `of` is a saved AI service's id, or `speech:` and a speech service's.
 const cache = new Map<string, { at: number; pending: Promise<Balance> }>();
-export function loadBalance(providerId: string, refresh = false) {
-  const hit = cache.get(providerId);
+export function loadBalance(of: string, refresh = false) {
+  const hit = cache.get(of);
   if (hit && !refresh && Date.now() - hit.at < 60_000) return hit.pending;
-  const pending = invoke<Balance>('ai-balance', { id: providerId });
-  cache.set(providerId, { at: Date.now(), pending });
-  pending.catch(() => cache.get(providerId)?.pending === pending && cache.delete(providerId));
+  const speech = of.startsWith('speech:') ? of.slice('speech:'.length) : '';
+  const pending = invoke<Balance>('ai-balance', speech ? { speech } : { id: of });
+  cache.set(of, { at: Date.now(), pending });
+  pending.catch(() => cache.get(of)?.pending === pending && cache.delete(of));
   return pending;
 }
-export const forgetBalance = (providerId: string) => cache.delete(providerId);
+export const forgetBalance = (of: string) => cache.delete(of);
 // Whether a saved service can say what's left: a key that can ask, a ChatGPT plan or a Kimi
 // membership.
 export function tellsBalance(p: AiProvider | undefined, config: AiConfig | null) {

@@ -2,12 +2,12 @@
 // reading its script out loud: 通义百炼 (Qwen-TTS), 豆包语音 and MiniMax. A sentence is
 // synthesized here, with the key attached, and comes back as 16-bit mono samples.
 const crypto = require('node:crypto');
-const { httpError, AiError } = require('./ai-providers.cjs');
+const { httpError, money, AiError } = require('./ai-providers.cjs');
 
 // `voices` are the ones fit for teaching, in Mandarin, best first; a `named` voice has a
 // name to introduce itself by, the others are only described. `shares` is the AI
 // service whose key also works here. `hears`: it can also write down what the student says
-// in a voice conversation (cloud-hearing.cjs).
+// in a voice conversation (cloud-hearing.cjs). `balance`: the key can ask what's left.
 const services = [
   {
     id: 'qwen',
@@ -64,6 +64,7 @@ const services = [
     name: 'MiniMax',
     about: 'MiniMax 语音 2.8，最接近真人，价格较高；在 MiniMax 开放平台申请 Key',
     keyUrl: 'https://platform.minimax.cn/user-center/basic-information/interface-key',
+    balance: true,
     voices: [
       { id: 'Chinese (Mandarin)_Gentle_Senior', name: '温柔学姐', about: '女声，温柔' },
       { id: 'Chinese (Mandarin)_Wise_Women', name: '阅历姐姐', about: '女声，知性' },
@@ -285,4 +286,42 @@ function limiter(n) {
     });
 }
 
-module.exports = { services, serviceFor, parseVoice, synthesize, samplesOf, limiter };
+// What's left on a MiniMax account: its console's balance page asks this with the API key
+// too, though the API docs don't list it.
+async function balance({ fetch, service, key, signal }) {
+  if (service.id !== 'minimax') throw new AiError(`${service.name} 查不了余额，请到官网查看`);
+  let res;
+  try {
+    res = await fetch('https://api.minimax.cn/account/query_balance', {
+      headers: { Authorization: `Bearer ${key}` },
+      signal,
+    });
+  } catch (e) {
+    if (e?.name === 'AbortError') throw e;
+    throw new AiError(`无法连接到 MiniMax，请检查网络或代理设置（${e?.message || e}）`);
+  }
+  const text = await res.text().catch(() => '');
+  // A key it doesn't know comes back as bad parameters.
+  if (res.status === 400) throw new AiError('API Key 无效或已过期');
+  if (!res.ok) throw httpError(res.status, text, 'MiniMax');
+  let value;
+  try {
+    value = JSON.parse(text);
+  } catch {}
+  if (value?.base_resp?.status_code !== 0)
+    throw new AiError(
+      `MiniMax 没有返回余额${value?.base_resp?.status_msg ? `（${value.base_resp.status_msg}）` : ''}`,
+    );
+  const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const left = n(value.available_amount);
+  const owed = n(value.owed_amount);
+  return {
+    kind: 'money',
+    amount: left,
+    currency: 'CNY',
+    detail: `代金券 ${money(n(value.voucher_balance), 'CNY')} · 现金 ${money(n(value.cash_balance), 'CNY')}${owed > 0 ? ` · 欠费 ${money(owed, 'CNY')}` : ''}`,
+    empty: left <= 0,
+  };
+}
+
+module.exports = { services, serviceFor, parseVoice, synthesize, samplesOf, limiter, balance };

@@ -1,2 +1,1 @@
-- 可以用 Kimi 会员了：在 AI 设置里选「Kimi Code」，用 Kimi 会员里的 Kimi Code 额度，不需要 API Key，不另外付费
-- 先在这台电脑上装好 Kimi Code CLI，再在设置里用 Kimi 账号登录；设置和模型菜单里能看到 5 小时和每周额度用了多少
+- MiniMax 语音也能看余额了：在 AI 设置的「语音服务」里，填好 MiniMax 的 Key 后，下面会显示账户余额，以及代金券和现金各剩多少
