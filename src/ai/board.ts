@@ -19,6 +19,8 @@ import type { Speaker, VoiceMode } from './voice';
 export type InkColor = 'red' | 'blue' | 'green' | 'orange' | 'yellow';
 export type Command =
   | { op: 'say'; text: string }
+  // Time to think or to look, in seconds.
+  | { op: 'pause'; secs: number }
   | { op: 'title' | 'text' | 'quote'; id: string; text: string }
   | { op: 'math'; id: string; tex: string }
   | { op: 'flow'; id: string; parts: string[] }
@@ -57,6 +59,16 @@ const colorNames: Record<string, InkColor> = {
 };
 const idPattern = /^[A-Za-z][\w-]*(\.\d+)?$/;
 const validId = (s: string | undefined) => (s && idPattern.test(s) ? s : '');
+// A line that is a command, rather than code or TeX the model went on with: a command's
+// name at the start of the line, then an id or the bar (or, for say and pause, anything).
+const commandNames =
+  'title|text|quote|math|flow|code|figure|draw|axes|axes3d|plot|curve3d|surface3d|dot|circle|underline|box|mark|point|arrow|note|erase|area';
+const commandStart = new RegExp(
+  `^(?:说话|(?:say|pause)(?=\\s|[|｜:：]|$)|(?:${commandNames})(?:\\s+[A-Za-z][\\w-]*(?:\\.\\d+)?(?=\\s|[|｜]|$)|\\s*[|｜]))`,
+  'i',
+);
+const commandLine = (raw: string) =>
+  commandStart.test(raw.replace(/^(?:[-*•]\s+|\d+[.)、]\s*)+/, ''));
 
 // One line of the model's reply. Lines that aren't commands but read like speech are taken
 // as speech, so a model that forgets the format still talks.
@@ -67,8 +79,9 @@ export function parseLine(raw: string): Command | null {
     .replace(/^`+|`+$/g, '')
     .trim();
   if (!line || line.startsWith('```')) return null;
-  // “说话：……”, after the heading the prompt lists say under, is said without the label.
-  const said = line.match(/^说话\s*[|｜:：]\s*([\s\S]*)$/);
+  // “说话：……” or “说话（学生看到的字幕）：……”, after the heading the prompt lists say
+  // under, is said without the label.
+  const said = line.match(/^说话(?:[（(][^）)]*[）)])?\s*[|｜:：]\s*([\s\S]*)$/);
   if (said) return said[1].trim() ? { op: 'say', text: said[1].trim() } : null;
   const match = line.match(/^([A-Za-z][A-Za-z\d]*)(?=\s|[|｜:：]|$)\s*([\s\S]*)$/);
   const prose = () =>
@@ -93,6 +106,10 @@ export function parseLine(raw: string): Command | null {
     head = [head[0]];
   }
   switch (op) {
+    case 'pause': {
+      const secs = Number(rest.match(/\d+(?:\.\d+)?/)?.[0] ?? 2);
+      return { op, secs: clamp(secs, 0.5, 5) };
+    }
     case 'code':
       return { op, id: validId(head[0]), lang: head[1] || '', code: body };
     case 'erase': {
@@ -129,7 +146,16 @@ export function parseLine(raw: string): Command | null {
     case 'title':
     case 'text':
     case 'quote':
-      return body ? { op, id: validId(head[0]), text: body } : null;
+      if (!body) return null;
+      // A line of TeX written as text without its $ signs is a formula.
+      if (
+        op === 'text' &&
+        !body.includes('$') &&
+        /\\[A-Za-z]+/.test(body) &&
+        !/\p{Script=Han}/u.test(plainText(body))
+      )
+        return { op: 'math', id: validId(head[0]), tex: body };
+      return { op, id: validId(head[0]), text: body };
     case 'math': {
       const tex = body.replace(/^\$+|\$+$/g, '').trim();
       return tex ? { op, id: validId(head[0]), tex } : null;
@@ -328,6 +354,17 @@ export type TutorState = {
   pen: { kind: 'block' | 'shapes' | 'ink'; key: string; n: number } | null;
   // Things the teacher wiped off: they fade out and keep their place.
   erased: string[];
+  // The teacher stopped for the student to think, for `dur` ms.
+  beat?: { key: number; dur: number } | null;
+};
+// What the board is to show next: things already on it, or room below the writing for a
+// block about to be written, `room` board pixels tall.
+export type Look = { refs: string[] } | { room: number };
+// The board's view, which the lesson waits for: whether it has to move to show `look`
+// ('back' up to something written earlier), and moving it, which takes the ms returned.
+export type Camera = {
+  needs(look: Look): 'none' | 'back' | 'on';
+  go(look: Look, speed: number): number;
 };
 
 const defaultColor: Record<string, InkColor> = {
@@ -394,8 +431,71 @@ function drawTime(cmd: Command) {
       return 0;
   }
 }
-// Speaking pace: about 5.5 Chinese characters a second.
-const charsPerSecond = 5.5;
+// How long what was just written or marked is left to be looked at before the teacher goes
+// on, at normal speed: longer for more to read.
+function lookTime(cmd: Command) {
+  switch (cmd.op) {
+    case 'title':
+      return 500;
+    case 'text':
+    case 'quote':
+      return clamp(300 + plainText(cmd.text).length * 35, 500, 1600);
+    case 'math':
+      return clamp(600 + cmd.tex.length * 15, 900, 2200);
+    case 'flow':
+      return 400 + cmd.parts.length * 250;
+    case 'code':
+      return clamp(cmd.code.split('\n').length * 220, 800, 3000);
+    case 'note':
+      return clamp(300 + cmd.text.length * 30, 500, 1400);
+    case 'circle':
+    case 'underline':
+    case 'box':
+    case 'mark':
+    case 'arrow':
+      return 400;
+    case 'draw':
+    case 'plot':
+    case 'curve3d':
+    case 'surface3d':
+      return 500;
+    case 'point':
+    case 'axes':
+    case 'axes3d':
+    case 'dot':
+    case 'erase':
+      return 300;
+    default:
+      return 0;
+  }
+}
+// The pause between two sentences, and how long the board stays on something it went back
+// up to before it moves away again, at normal speed.
+const sentenceGap = 550;
+const dwellTime = 2200;
+// Roughly how tall, in board pixels, a new block will be, to make room for it.
+function heightOf(cmd: Command) {
+  switch (cmd.op) {
+    case 'title':
+      return 60;
+    case 'text':
+      return 40 * Math.ceil(plainText(cmd.text).length / 26) + 10;
+    case 'quote':
+      return 32 * Math.ceil(plainText(cmd.text).length / 34) + 16;
+    case 'math':
+      return 80;
+    case 'flow':
+      return 70;
+    case 'code':
+      return 27 * cmd.code.split('\n').length + 30;
+    case 'figure':
+      return cmd.h * Math.min(1, 640 / cmd.w, 480 / cmd.h) + 10;
+    default:
+      return 0;
+  }
+}
+// Speaking pace for captions without a voice: about 4.5 Chinese characters a second.
+const charsPerSecond = 4.5;
 // A point or graph as the board keeps it ("dot 1 1 | A", "plot x^2"), in words.
 function plotWords(text: string) {
   const dot = text.match(/^dot\s+([^|]*?)\s*(?:\|\s*(.+))?$/);
@@ -478,6 +578,7 @@ export function tutorSystem(config: AiConfig, kind: LessonKind = 'text', voice: 
     '',
     voice === 'off' ? '说话（学生看到的字幕）：' : '说话（会用语音读出来，同时显示为字幕）：',
     'say 要说的话',
+    'pause 秒数            停一下，给学生想一想、看一看的时间（1～4 秒）',
     '',
     '写字（白板从上往下自动排版，你不用、也不能指定位置）：',
     'title 编号 | 小标题',
@@ -531,13 +632,18 @@ export function tutorSystem(config: AiConfig, kind: LessonKind = 'text', voice: 
     '只在确定位置时用 area；不确定就 circle 整张图，并在 say 里说清是哪部分。图里的公式要讲时，用 math 重新写出来再标注。',
     '',
     '## 怎么讲',
-    '- 先 say，再写或画这句话提到的东西，就像边说边写。每句 say 口语化，不超过 40 字。',
-    '- 板书要精炼：关键词、公式、例子。不要把 say 的话抄到白板上。能画图就画图：示意图、结构图、函数图像、空间图形比文字直观得多。',
+    '- 手比嘴忙，白板是主角：每句 say 后面都要跟一两条写、画、标注或擦除的指令，不能连着两句 say 中间什么都不动。讲道理、解释为什么的句子也一样：把理由写成一行短板书，或者圈出它说到的那个值。只说不写，学生就跟不上。',
+    '- 先 say，再写或画这句话提到的东西，就像边说边写。每句 say 口语化，不超过 30 字，一句只讲一个意思。',
+    '- 板书写全，别偷懒：推导一步写一行，每次代入、变形、化简都单独写一行 math，不跳步；举例时把具体数字和每一步的中间结果都写出来、算出来；结论单独写一行再 box 起来。板书写的是式子、数字和关键词，不是把 say 的话抄一遍。',
+    '- 能画就画：示意图、结构图、函数图像、积分区域、数组、指针、表格……比文字直观得多。',
+    '- 过程要一步一画：讲算法、迭代、递推、几何变化时，拿一个具体例子在白板上真的走一遍，不要一句“以此类推”“走完就是答案”带过。先画出初始状态；之后每一步：say 这一步发生了什么 → erase 擦掉上一步的指针、高亮或旧数值 → draw 画出新的 → 在旁边写出这一步的变量值。至少走到关键的几步（四到六步，或者走到出现“为什么”的那一步），最后的结果写出来。比如讲二分查找，就画数组和 lo、hi、mid 三个箭头，每一轮擦掉旧箭头画新的，旁边写出这一轮比较的结果；讲切线，就在函数图像上画割线，让点一次次靠近，每次擦掉旧割线画新的。',
+    '- 讲慢一点，给学生想的时间：一次只引入一个新东西，讲完一步再进下一步。问学生一个问题、或者写完一个关键式子要他看一看时，下一行写 pause 2。',
+    '- 回头用前面的内容：就在附近（最近写的几块）的，直接 circle、point 它；离得远的，在当前位置把要用的式子或结论重新写一行，再在新写的这一行上标注，不要跳回很远的地方去指。',
     kind === 'blank'
       ? '- 讲题时先把题目的已知和要求写清楚，再一步步推，关键步骤配图；最后一句话总结思路。'
       : '- 先用一两句说清这段在讲什么（可以先 quote 原文最关键的一句），再拆开讲关键概念，必要时举个具体例子或代入数字，最后一句话总结。\n' +
         '- 学生一开始就带着问题来（第一条消息里有「我的问题」）时，围绕这个问题讲：需要的背景一两句交代，不要把这段内容从头到尾讲一遍，句数按问题需要来。',
-    '- 第一次讲 6～15 句 say。多用 circle、underline 指着你正在说的地方；arrow 用来连接上下相邻或同一行的两样东西，箭头上的字要短（不超过 6 个字）。',
+    '- 第一次讲 10～25 句 say，按需要来，最多不超过 30 句；走例子时每一步只说一两句，话都放到板书上。多用 circle、underline、point 指着你正在说的地方；arrow 用来连接上下相邻或同一行的两样东西，箭头上的字要短（不超过 6 个字）。',
     '- 最后一句 say 问学生哪里还不清楚。',
     '- 编号用字母加数字（t1、m2、g1、qk），整块白板不重复。只能标注已经写出来的编号。公式用 KaTeX 支持的 LaTeX。',
     '- 学生打断你时，会告诉你他在白板上圈了或划了哪里、你讲到了哪里。直接回应：先指着他标的地方（circle 或 underline），换一种说法讲，必要时在下面写新的板书或画图；不要从头重讲，讲完问他懂了没有。',
@@ -562,6 +668,10 @@ export function tutorSystem(config: AiConfig, kind: LessonKind = 'text', voice: 
     'say 权重越大，这个词对结果的影响就越大。',
     'circle w red',
     'note w | 所有权重加起来等于 1',
+    'say 你想想，要是每个权重都一样，会怎样？',
+    'pause 2',
+    'say 那就成了普通的平均数。',
+    'math m1 | \\bar v = \\frac{1}{n}\\sum_{i=1}^{n} v_i',
     'say 我们画一个数组，看指针怎么走。',
     'figure g1 | 420 130',
     'draw g1 | <rect id="c0" x="20" y="20" width="60" height="60"/><text x="50" y="58" text-anchor="middle">3</text><rect x="80" y="20" width="60" height="60"/><text x="110" y="58" text-anchor="middle">7</text>',
@@ -803,6 +913,10 @@ export class Tutor {
   private lastSay = '';
   private lastNote = '';
   private written = new Map<string, string>();
+  // The board's view, which follows what is written and pointed at, and until when it stays
+  // on something earlier it went back up to.
+  private camera: Camera | null = null;
+  private dwellEnd = 0;
   readonly id: string;
   private createdAt = Date.now();
   constructor(private options: Options) {
@@ -1126,6 +1240,13 @@ export class Tutor {
     }
     this.wake();
   }
+  // The board's view, which the lesson waits for while it moves.
+  setCamera(camera: Camera) {
+    this.camera = camera;
+    return () => {
+      if (this.camera === camera) this.camera = null;
+    };
+  }
   // A live voice is the caption: what it says as it says it, each thing it says a line of
   // the transcript, whether part of the lesson or not.
   private follow(speaker: Speaker) {
@@ -1244,8 +1365,9 @@ export class Tutor {
     this.buffer = '';
     this.fence = null;
     this.codeHead = null;
+    this.held = null;
     this.streaming = false;
-    this.speechEnd = this.drawEnd = 0;
+    this.speechEnd = this.drawEnd = this.dwellEnd = 0;
     this.speaker?.hush();
     this.voiceDone = null;
     this.wake();
@@ -1313,8 +1435,9 @@ export class Tutor {
       );
       if (run !== this.run) return;
       this.feed(run, '\n');
-      // A fence the model never closed.
+      // A fence the model never closed, and a formula at the very end.
       this.closeFence();
+      this.release();
       if (!result.text.trim()) throw Error('没有收到回答');
       this.speaker?.ended?.();
     } catch (e) {
@@ -1347,17 +1470,38 @@ export class Tutor {
   }
   // Code arrives as a `code` line and then a ``` fence whose lines keep their indentation.
   // A fence with a language is code even without the `code` line; a bare one, which some
-  // models wrap their whole reply in, is ignored.
+  // models wrap their whole reply in, is ignored. Some models leave the fence out: then the
+  // code after the `code` line (`bare`) goes on until the commands start again.
   private codeHead: { id: string; lang: string; raw: string } | null = null;
-  private fence: { id: string; lang: string; lines: string[]; raw: string[] } | null = null;
-  private line(raw: string) {
-    if (this.fence) {
+  private fence: {
+    id: string;
+    lang: string;
+    lines: string[];
+    raw: string[];
+    bare?: boolean;
+  } | null = null;
+  // A formula that may go on over the lines after it, kept back until it is known whether
+  // it does.
+  private held: { cmd: Extract<Command, { op: 'math' }>; lines: string[]; raw: string[] } | null =
+    null;
+  private line(raw: string): void {
+    if (this.fence && !(this.fence.bare && commandLine(raw))) {
       if (/^\s*```\s*$/.test(raw)) this.closeFence();
       else {
         this.fence.lines.push(raw.replace(/\t/g, '    ').replace(/\s+$/, ''));
         this.fence.raw.push(raw);
       }
       return;
+    }
+    if (this.fence) this.closeFence();
+    if (this.held) {
+      if (!raw.trim()) return;
+      if (this.goesOn(raw)) {
+        this.held.lines.push(raw.trim());
+        this.held.raw.push(raw.trim());
+        return;
+      }
+      this.release();
     }
     const open = raw.match(/^\s*```\s*([\w+#.-]*)\s*$/);
     if (open) {
@@ -1377,6 +1521,12 @@ export class Tutor {
       }
       return;
     }
+    if (this.codeHead && raw.trim() && !commandLine(raw)) {
+      const head = this.codeHead;
+      this.codeHead = null;
+      this.fence = { id: head.id, lang: head.lang, lines: [], raw: [head.raw], bare: true };
+      return this.line(raw);
+    }
     const cmd = parseLine(raw);
     if (!cmd) return;
     if (cmd.op === 'code' && !cmd.code) {
@@ -1384,9 +1534,39 @@ export class Tutor {
       return;
     }
     this.codeHead = null;
+    if (cmd.op === 'math') {
+      this.held = { cmd, lines: [cmd.tex], raw: [raw.trim()] };
+      return;
+    }
+    this.push(cmd, raw.trim());
+  }
+  private push(cmd: Command, raw: string) {
     const sound = cmd.op === 'say' && this.speaker ? this.sound(cmd.text) : undefined;
-    this.queue.push({ cmd, raw: raw.trim(), ...(sound ? { sound } : {}) });
+    this.queue.push({ cmd, raw, ...(sound ? { sound } : {}) });
     this.told(cmd, sound?.id);
+  }
+  // Whether a line goes on with the formula before it: anything up to the end of an
+  // environment it opened, or TeX that reads as the rest of it (“= …”, “\frac…”, “& …”).
+  private goesOn(raw: string) {
+    if (commandLine(raw)) return false;
+    const tex = this.held!.lines.join('\n');
+    const open = (tex.match(/\\begin\{/g) || []).length > (tex.match(/\\end\{/g) || []).length;
+    return open || /^(?:[=<>≤≥]|\\(?!\\)|&)/.test(raw.trim());
+  }
+  // Writes the formula kept back. Lines that went on with it are put one under another,
+  // unless they were the inside of an environment it opened itself.
+  private release() {
+    const held = this.held;
+    this.held = null;
+    if (!held) return;
+    const rows = held.lines.map((l) => l.replace(/\\\\\s*$/, ''));
+    const tex =
+      rows.length === 1
+        ? held.lines[0]
+        : /\\begin\{/.test(rows[0])
+          ? held.lines.join('\n')
+          : `\\begin{gathered}${rows.join('\\\\')}\\end{gathered}`;
+    this.push({ ...held.cmd, tex }, held.raw.join('\n'));
   }
   // Tells a voice that teaches in its own words what goes on the board with each sentence.
   private told(cmd: Command, sound?: string) {
@@ -1468,7 +1648,7 @@ export class Tutor {
     while (f.lines.length && !f.lines[f.lines.length - 1].trim()) f.lines.pop();
     if (!f.lines.length) return;
     const cmd: Command = { op: 'code', id: f.id, lang: f.lang, code: f.lines.join('\n') };
-    this.queue.push({ cmd, raw: [...f.raw, '```'].join('\n') });
+    this.queue.push({ cmd, raw: (f.bare ? f.raw : [...f.raw, '```']).join('\n') });
     this.told(cmd);
   }
   private async play(run: number) {
@@ -1486,7 +1666,7 @@ export class Tutor {
         await this.said(run);
         // A live voice pauses between sentences by itself.
         if (this.played.length && !this.speaker?.live)
-          await this.until(run, this.vnow() + 280 / speed);
+          await this.until(run, this.vnow() + sentenceGap / speed);
         if (run !== this.run) return;
         const text = next.cmd.text;
         let dur = Math.max(900, (text.length * 1000) / (charsPerSecond * speed));
@@ -1508,7 +1688,7 @@ export class Tutor {
           // The voice says it its own way and is the caption (follow). What goes on the
           // board with it is drawn once the voice is on it, and the next sentence can start
           // as soon as this one has been said.
-          this.set({ phase: 'teaching' });
+          this.set({ phase: 'teaching', beat: null });
           const begun = speaker?.started?.(live);
           if (begun) await this.begun(run, begun);
           if (run !== this.run) return;
@@ -1526,14 +1706,32 @@ export class Tutor {
             phase: 'teaching',
             caption: { key: ++this.counter, text, dur },
             transcript: [...s.transcript, { who: 'teacher', text }],
+            beat: null,
           }));
+        }
+      } else if (next.cmd.op === 'pause') {
+        // Quiet once the sentence and the writing with it are done. A live voice pauses when
+        // it sees fit, and the board follows it.
+        if (!this.speaker?.live) {
+          await this.until(run, Math.max(this.speechEnd, this.drawEnd));
+          await this.said(run);
+          if (run !== this.run) return;
+          const dur = (next.cmd.secs * 1000) / speed;
+          this.set({ beat: { key: ++this.counter, dur } });
+          this.drawEnd = this.vnow() + dur;
         }
       } else {
         await this.until(run, this.drawEnd);
         if (run !== this.run) return;
+        const back = await this.look(run, next.cmd);
+        if (run !== this.run) return;
         const dur = Math.round(drawTime(next.cmd) / speed);
         if (!this.draw(next.cmd, dur)) continue;
-        this.drawEnd = this.vnow() + dur + 150 / speed;
+        // Left a moment to be looked at before the teacher goes on; less with a live voice,
+        // which goes at its own pace and isn't to be left behind.
+        const look = (lookTime(next.cmd) * (this.speaker?.live ? 0.4 : 1)) / speed;
+        this.drawEnd = this.vnow() + dur + Math.max(150 / speed, look);
+        if (back) this.dwellEnd = this.vnow() + dur + dwellTime / speed;
       }
       this.played.push(next.raw);
     }
@@ -1548,6 +1746,58 @@ export class Tutor {
       phase: this.failure ? 'error' : 'idle',
       error: this.failure || undefined,
     });
+  }
+
+  // Brings what a command writes on or points at into view and waits for the board to get
+  // there, so the pen starts where it can be seen. Having gone back up to something written
+  // earlier, the board stays there a while before it moves on: true then.
+  private async look(run: number, cmd: Command) {
+    const camera = this.camera;
+    const look = camera && this.lookFor(cmd);
+    if (!camera || !look) return false;
+    const way = camera.needs(look);
+    if (way === 'none') return false;
+    await this.until(run, this.dwellEnd);
+    if (run !== this.run) return false;
+    const ms = camera.go(look, this.state.speed);
+    await this.until(run, this.vnow() + ms);
+    return way === 'back';
+  }
+  private lookFor(cmd: Command): Look | null {
+    const known = (refs: string[]) => {
+      const found = refs.map((r) => this.resolve(r)).filter((r) => this.refs.has(r));
+      return found.length ? { refs: found } : null;
+    };
+    switch (cmd.op) {
+      case 'circle':
+      case 'underline':
+      case 'box':
+      case 'mark':
+      case 'point':
+      case 'note':
+        return known([cmd.target]);
+      case 'arrow':
+        return known([cmd.from, cmd.to]);
+      case 'erase':
+        return known(cmd.targets);
+      case 'draw':
+      case 'axes':
+      case 'axes3d':
+      case 'plot':
+      case 'curve3d':
+      case 'surface3d':
+      case 'dot': {
+        const fig = this.resolve(cmd.fig);
+        // Drawing on a canvas that isn't there yet makes one, 600 by 360.
+        return this.state.blocks.some((b) => b.kind === 'figure' && b.id === fig)
+          ? { refs: [fig] }
+          : { room: 370 };
+      }
+      default: {
+        const room = heightOf(cmd);
+        return room ? { room } : null;
+      }
+    }
   }
 
   private nextId(prefix: string) {
@@ -1840,14 +2090,15 @@ export class Tutor {
       inks: ink
         ? [...(ink.kind === 'point' ? s.inks.filter((i) => i.kind !== 'point') : s.inks), ink]
         : s.inks,
-      focus: { ref: focus, n: ++this.counter },
+      // The camera already brought it into view; without one the board scrolls to it.
+      focus: this.camera ? s.focus : { ref: focus, n: ++this.counter },
       pen:
         block && block.kind !== 'figure'
-          ? { kind: 'block', key: block.id, n: this.counter }
+          ? { kind: 'block', key: block.id, n: ++this.counter }
           : grown || block
-            ? { kind: 'shapes', key, n: this.counter }
+            ? { kind: 'shapes', key, n: ++this.counter }
             : ink && ink.kind !== 'area'
-              ? { kind: 'ink', key: ink.key, n: this.counter }
+              ? { kind: 'ink', key: ink.key, n: ++this.counter }
               : s.pen,
     }));
     return true;

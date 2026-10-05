@@ -28,10 +28,11 @@ import {
   X,
 } from 'lucide-react';
 import { invoke } from '../api';
-import { useAiConfig } from '../ai/client';
+import { providerFor, useAiConfig, useChoice } from '../ai/client';
+import { effortLabel, levelsFor, loadedModelOptions, lowerLevel } from '../ai/levels';
 import { isImageFile, maxImages, prepareImage } from '../ai/images';
 import { plainText, segments, texWithRefs, useTutor } from '../ai/board';
-import type { Block, Ink, Shape, Stroke, Tutor } from '../ai/board';
+import type { Block, Camera, Ink, Look, Shape, Stroke, Tutor } from '../ai/board';
 import {
   arrowPath,
   boxPath,
@@ -133,8 +134,9 @@ function Written({ text, start = 0, dur }: { text: string; start?: number; dur: 
 }
 
 // The teacher is working out what to say; after a few seconds, for how long, so a long
-// think doesn't look like the board is stuck.
-function Thinking({ text }: { text: string }) {
+// think doesn't look like the board is stuck, and after a long one, `slow`: why, and what
+// would make it quicker.
+function Thinking({ text, slow }: { text: string; slow: string }) {
   const [since] = useState(() => Date.now());
   const [, tick] = useState(0);
   useEffect(() => {
@@ -143,11 +145,14 @@ function Thinking({ text }: { text: string }) {
   }, []);
   const seconds = Math.floor((Date.now() - since) / 1000);
   return (
-    <p className="wb-status">
-      <LoaderCircle className="spin" size={14} />
-      {text}
-      {seconds >= 5 ? <span className="wb-status-time">{seconds} 秒</span> : null}
-    </p>
+    <>
+      <p className="wb-status">
+        <LoaderCircle className="spin" size={14} />
+        {text}
+        {seconds >= 5 ? <span className="wb-status-time">{seconds} 秒</span> : null}
+      </p>
+      {seconds >= 25 ? <p className="wb-status-hint">{slow}</p> : null}
+    </>
   );
 }
 
@@ -699,7 +704,21 @@ export default function Whiteboard({
   const support = useSpeechSupport();
   const mode =
     voice.mode === 'talk' && support && !canTalk(support, voice.voice) ? 'speak' : voice.mode;
-  const locale = useAiConfig()?.prefs.language === 'en' ? 'en-US' : 'zh-CN';
+  const config = useAiConfig();
+  const locale = config?.prefs.language === 'en' ? 'en-US' : 'zh-CN';
+  // What a long think is put down to: the reasoning level, with a lower one to switch to in
+  // the model menu above, or else the model.
+  const teacher = providerFor(config, 'board');
+  const { levels, effort } = levelsFor(
+    teacher,
+    config,
+    loadedModelOptions(teacher?.id),
+    useChoice(config, 'board') ? 'board' : 'chat',
+  );
+  const lower = lowerLevel(levels, effort);
+  const slow = lower
+    ? `推理档位是「${effortLabel(effort)}」，页老师要多想一会儿。着急的话，可以在右上角换成「${effortLabel(lower)}」，下次提问会快一些。`
+    : '这个模型要多想一会儿。着急的话，可以在右上角换个快一些的模型。';
   useEffect(() => tutor.setVoice(mode, mode === 'off' ? null : teacherVoice), [mode, tutor]);
   // The helper goes when the board does, and the voice forgets it: another board opened in
   // its place starts afresh.
@@ -811,7 +830,82 @@ export default function Whiteboard({
     };
   }, [measure]);
 
-  // Keep what the teacher is writing or pointing at in view.
+  // The board's camera. It moves only when what the teacher writes or points at next is out
+  // of sight, glides there at a pace the eye can follow, and the lesson waits for it, so the
+  // pen starts where it can be seen.
+  useEffect(() => {
+    const view = viewport.current!;
+    let frame = 0;
+    const stop = () => cancelAnimationFrame(frame);
+    // Where the view is to scroll to for `look`, or null when it is in sight already.
+    const aim = (look: Look): number | null => {
+      const el = canvas.current;
+      if (!el || drawing.current) return null;
+      const v = view.getBoundingClientRect();
+      const top = view.scrollTop;
+      const h = view.clientHeight;
+      const at = (r: DOMRect) => ({ top: r.top - v.top + top, bottom: r.bottom - v.top + top });
+      let to: number;
+      if ('room' in look) {
+        const s = el.getBoundingClientRect().width / boardWidth || 1;
+        // Below the last thing written, or at the top of an empty board.
+        let bottom = at(el.getBoundingClientRect()).top + 36 * s;
+        el.querySelectorAll('.wb-main > *, .wb-note').forEach((n) => {
+          bottom = Math.max(bottom, at(n.getBoundingClientRect()).bottom);
+        });
+        const need = Math.min(look.room * s + 24, h * 0.85);
+        if (bottom + need <= top + h - 48) return null;
+        // Having to move, it moves far enough for the next few lines as well, with the last
+        // ones written still in sight above.
+        to = Math.max(bottom + need + 48 - h, bottom - h * 0.3);
+      } else {
+        let u: { top: number; bottom: number } | null = null;
+        for (const ref of look.refs) {
+          const all = el.querySelectorAll(`[data-ref="${CSS.escape(ref)}"]`);
+          const node = all[all.length - 1];
+          if (!node) continue;
+          const r = at(node.getBoundingClientRect());
+          u = u ? { top: Math.min(u.top, r.top), bottom: Math.max(u.bottom, r.bottom) } : r;
+        }
+        if (!u || (u.top >= top + 40 && u.bottom <= top + h - 48)) return null;
+        to = u.bottom - u.top > h - 100 ? u.top - 40 : (u.top + u.bottom) / 2 - h * 0.4;
+      }
+      to = Math.max(0, Math.min(view.scrollHeight - h, to));
+      return Math.abs(to - top) < 8 ? null : to;
+    };
+    const camera: Camera = {
+      needs(look) {
+        const to = aim(look);
+        return to === null ? 'none' : 'refs' in look && to < view.scrollTop ? 'back' : 'on';
+      },
+      go(look, speed) {
+        const to = aim(look);
+        if (to === null) return 0;
+        stop();
+        const from = view.scrollTop;
+        const ms =
+          Math.min(1100, Math.max(480, 380 + Math.abs(to - from) * 0.45)) / Math.sqrt(speed);
+        const start = performance.now();
+        const step = (now: number) => {
+          const k = Math.min(1, (now - start) / ms);
+          const eased = k < 0.5 ? 4 * k ** 3 : 1 - (-2 * k + 2) ** 3 / 2;
+          view.scrollTop = from + (to - from) * eased;
+          if (k < 1) frame = requestAnimationFrame(step);
+        };
+        frame = requestAnimationFrame(step);
+        return ms;
+      },
+    };
+    // The student scrolling takes over from a glide under way.
+    view.addEventListener('wheel', stop, { passive: true });
+    const off = tutor.setCamera(camera);
+    return () => {
+      stop();
+      off();
+      view.removeEventListener('wheel', stop);
+    };
+  }, [tutor]);
+  // Without the camera (a picture sent with a question), the board scrolls to what's new.
   useEffect(() => {
     const view = viewport.current;
     const ref = state.focus?.ref;
@@ -1074,6 +1168,8 @@ export default function Whiteboard({
               style={{
                 zoom: scale,
                 minHeight: Math.max(viewHeight / scale, noteBottom + 160),
+                // Room below the writing to scroll it up into, for what comes next.
+                paddingBottom: Math.max(180, (viewHeight / scale) * 0.75),
               }}
               onPointerDown={(e) => {
                 if (e.button !== 0) return;
@@ -1226,7 +1322,7 @@ export default function Whiteboard({
                 <p className="wb-error">{state.error}</p>
               ) : (
                 <>
-                  {status ? <Thinking text={status} /> : null}
+                  {status ? <Thinking text={status} slow={slow} /> : null}
                   {state.waiting ? (
                     <p className="wb-caption-text">
                       {mode === 'talk' ? '想问什么直接说' : '想问什么就在下面输入'}
@@ -1238,6 +1334,14 @@ export default function Whiteboard({
                     <p className="wb-caption-text" key={state.caption.key}>
                       <Written text={state.caption.text} dur={state.caption.dur} />
                     </p>
+                  ) : null}
+                  {state.beat ? (
+                    <span
+                      className="wb-beat"
+                      key={state.beat.key}
+                      aria-hidden="true"
+                      style={{ '--dur': ms(state.beat.dur) } as Vars}
+                    />
                   ) : null}
                 </>
               )}

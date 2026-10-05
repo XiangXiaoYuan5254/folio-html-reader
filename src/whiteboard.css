@@ -493,6 +493,28 @@
 .wb-status + .wb-caption-text {
   margin-top: 2px;
 }
+.wb-caption-body .wb-status-hint {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--text-4);
+}
+/* The teacher giving the student time to think: a short line that runs out. */
+.wb-beat {
+  display: block;
+  width: 56px;
+  height: 3px;
+  margin-top: 7px;
+  border-radius: 2px;
+  background: var(--ai);
+  opacity: 0.5;
+  transform-origin: left;
+  animation: wb-beat var(--dur) linear forwards;
+}
+@keyframes wb-beat {
+  to {
+    transform: scaleX(0);
+  }
+}
 .wb-error {
   color: var(--danger);
 }

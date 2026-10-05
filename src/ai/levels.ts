@@ -62,6 +62,13 @@ const depth: Record<string, number> = {
 };
 const thinks = (level: string) => depth[level] >= 2;
 const least = (levels: string[]) => levels.reduce((a, b) => (depth[b] < depth[a] ? b : a));
+// The next level down from `effort` that still thinks, to suggest when thinking takes long;
+// '' when there is none.
+export function lowerLevel(levels: string[], effort: string) {
+  return levels
+    .filter((l) => l in depth && thinks(l) && l !== 'on' && depth[l] < (depth[effort] ?? 0))
+    .reduce((a, b) => (!a || depth[b] > depth[a] ? b : a), '');
+}
 // The level a model uses, as electron/ai-providers.cjs works it out for requests. One
 // picked that the model doesn't have becomes the nearest it has, thinking or not as picked
 // where it can, the higher of two as near. With none picked, a part of the app starts at
