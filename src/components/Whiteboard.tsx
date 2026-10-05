@@ -575,7 +575,19 @@ function describeStroke(points: number[], root: HTMLElement, tutor: Tutor) {
   for (const [ref, el] of elements) {
     if (!tutor.knows(ref)) continue;
     if (shape !== 'dot' && el.querySelector('.wb-atom')) continue;
-    const v = score(local(el));
+    const r = local(el);
+    const v = score(r);
+    // A picture is marked wherever on it the stroke is, however small: mostly on it is a
+    // part of it (named by where), unless it takes in most of the picture.
+    if (el.tagName === 'IMG' && shape !== 'dot' && v < 0.8) {
+      // A straight line has no height of its own.
+      const s = { x: b.x - 1, y: b.y - 1, w: b.w + 2, h: b.h + 2 };
+      const across = Math.min(s.x + s.w, r.x + r.w) - Math.max(s.x, r.x);
+      const down = Math.min(s.y + s.h, r.y + r.h) - Math.max(s.y, r.y);
+      if (across > 0 && down > 0 && across * down >= s.w * s.h * 0.5)
+        hits.push({ ref, score: 0.5 });
+      continue;
+    }
     if (v > 0) hits.push({ ref, score: v });
   }
   const contains = (a: string, b: string) =>
@@ -896,13 +908,15 @@ export default function Whiteboard({
         return ms;
       },
     };
-    // The student scrolling takes over from a glide under way.
+    // The student scrolling, with a wheel or a finger, takes over from a glide under way.
     view.addEventListener('wheel', stop, { passive: true });
+    view.addEventListener('touchstart', stop, { passive: true });
     const off = tutor.setCamera(camera);
     return () => {
       stop();
       off();
       view.removeEventListener('wheel', stop);
+      view.removeEventListener('touchstart', stop);
     };
   }, [tutor]);
   // Without the camera (a picture sent with a question), the board scrolls to what's new.
