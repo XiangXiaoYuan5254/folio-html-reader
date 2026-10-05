@@ -672,13 +672,6 @@ async function voice(version, payload, emit) {
         clearTimeout(timer);
       }
     }
-    // Text to read out word for word.
-    case 'say':
-      await s.call('thread/realtime/appendSpeech', {
-        threadId: id,
-        text: clip(payload.text, 2000),
-      });
-      return true;
     // What the voice should know, from the board: talking points, what was drawn, what the
     // student did. Not said to the student as it is.
     case 'tell':

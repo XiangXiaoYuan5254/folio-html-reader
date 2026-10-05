@@ -3,7 +3,6 @@ import { invoke, isDesktop, subscribe } from '../api';
 import { plainText } from './board';
 import { currentAiConfig, errorText } from './client';
 import { codexVoice } from './codex-voice';
-import type { CodexStyle } from './codex-voice';
 import { hear, muteHearing, stopHearing } from './page-hearing';
 import type { CloudVoice } from './types';
 
@@ -28,11 +27,10 @@ export type VoiceOption = {
   novelty?: boolean;
 };
 
-// `voice` is a system voice's id, `codex:<name>` for a ChatGPT voice, which reads the
-// script word for word or says it in its own words, as `style` says, or
-// `cloud:<service>:<voice>` for a speech service's voice. `ears`: who writes down what the
+// `voice` is a system voice's id, `codex:<name>` for a ChatGPT voice, which says the script
+// in its own words, or `cloud:<service>:<voice>` for a speech service's voice. `ears`: who writes down what the
 // student says where the page listens, 'local' or a speech service.
-type Settings = { mode: VoiceMode; voice: string; style: CodexStyle; ears: string };
+type Settings = { mode: VoiceMode; voice: string; ears: string };
 export const codexPrefix = 'codex:';
 export const cloudPrefix = 'cloud:';
 const settingsKey = 'folio.board-voice';
@@ -43,11 +41,10 @@ function loadSettings(): Settings {
     return {
       mode,
       voice: typeof saved?.voice === 'string' ? saved.voice : '',
-      style: saved?.style === 'read' ? 'read' : 'free',
       ears: typeof saved?.ears === 'string' ? saved.ears : 'local',
     };
   } catch {
-    return { mode: 'off', voice: '', style: 'free', ears: 'local' };
+    return { mode: 'off', voice: '', ears: 'local' };
   }
 }
 let settings = loadSettings();
@@ -57,7 +54,7 @@ export function setVoiceSettings(patch: Partial<Settings>) {
   settings = { ...settings, ...patch };
   // A sentence on its way in the old voice is not finished in the new one, and the one
   // that listened stops.
-  if (settings.voice !== before.voice || settings.style !== before.style) {
+  if (settings.voice !== before.voice) {
     codex.hush();
     if (chosen) void chosen.then((s) => s.hush());
     const was = before.voice.startsWith(codexPrefix);
@@ -475,11 +472,8 @@ function report(message: string) {
 }
 const codex = codexVoice(
   // No ChatGPT voice chosen: none, rather than a system voice's id cut short.
-  () => ({
-    voice: settings.voice.startsWith(codexPrefix) ? settings.voice.slice(codexPrefix.length) : '',
-    style: settings.style,
-  }),
-  (text, style) => (style === 'read' ? spoken(text) : plainText(text)),
+  () => (settings.voice.startsWith(codexPrefix) ? settings.voice.slice(codexPrefix.length) : ''),
+  plainText,
   (message) => problems.forEach((l) => l(message)),
 );
 // Whether the teacher speaks in a ChatGPT voice.

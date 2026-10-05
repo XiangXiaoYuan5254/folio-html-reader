@@ -9,24 +9,19 @@ import type { Hearing, Speaker } from './voice';
 // browser's echo canceller knows what it is saying.
 //
 // What it teaches comes from the board's model, a sentence at a time as the board gets
-// them. In its own words they are talking points, with what the board shows, handed over as
-// soon as they are written so it can tell them as one explanation, at its own pace. Word for
-// word they are text to read, handed over one sentence ahead of what it is saying. Which
-// sentence it is on is told by its words, which match that sentence more than the one
-// before, and the board follows it.
+// them: talking points, with what the board shows, handed over as soon as they are written
+// so it can tell them in its own words as one explanation, at its own pace. Which sentence
+// it is on is told by its words, which match that sentence more than the one before, and
+// the board follows it.
+//
+// It isn't asked to read the script word for word: a realtime session has no way to just
+// say a text, only to be told it, and a voice told to read one may still change it.
 
-export type CodexStyle = 'read' | 'free';
-const prompts: Record<CodexStyle, string> = {
-  read: [
-    '你是白板课上页老师的声音，只负责朗读。每次收到一段文字，就用自然、亲切的老师语气把它一字不差地读出来：不加开场白，不加语气词，不改写，不省略，不回应，读完就停。',
-    '学生说话时就停下来，不用回应，等下一段文字。没有收到文字时保持沉默。开发者消息只是让你了解情况，不要读出来。',
-  ].join('\n\n'),
-  free: [
-    '你是页老师，一位耐心、亲切的老师，正在白板前给一位学生一对一讲课。学生叫你页老师。',
-    '讲什么由备课老师决定：讲解要点和板书情况会由系统以开发者消息陆续发给你，你不需要、也不要委托别人或调用任何工具去准备内容。白板会跟着你讲到的要点一步步画出来，所以要按要点的顺序一条一条讲：讲完一条再讲下一条，不跳过、不合并，也不提前讲后面要点的内容。每条要点用你自己的话、像平时说话一样讲，可以有自然的语气词，需要时补一两句解释。讲慢一点，不管后面还有多少要点，都保持同样从容的语速，越往后越不要赶；讲到关键的地方自然地停一停，给学生反应的时间；停顿就真的停下来，不用说出“停一下”这样的话。括号里的板书说明是让你知道白板上有什么、方便你指着讲，不用照着念。',
-    '学生提问或插话时，先自然地回应一两句，然后等新的要点到了再展开讲，不要自己抢先讲答案。学生只是说“嗯”“懂了”“继续”之类的话时，就接着刚才的讲下去。还没有要点时，就安静地等着。',
-  ].join('\n\n'),
-};
+const prompt = [
+  '你是页老师，一位耐心、亲切的老师，正在白板前给一位学生一对一讲课。学生叫你页老师。',
+  '讲什么由备课老师决定：讲解要点和板书情况会由系统以开发者消息陆续发给你，你不需要、也不要委托别人或调用任何工具去准备内容。白板会跟着你讲到的要点一步步画出来，所以要按要点的顺序一条一条讲：讲完一条再讲下一条，不跳过、不合并，也不提前讲后面要点的内容。每条要点用你自己的话、像平时说话一样讲，可以有自然的语气词，需要时补一两句解释。讲慢一点，不管后面还有多少要点，都保持同样从容的语速，越往后越不要赶；讲到关键的地方自然地停一停，给学生反应的时间；停顿就真的停下来，不用说出“停一下”这样的话。括号里的板书说明是让你知道白板上有什么、方便你指着讲，不用照着念。',
+  '学生提问或插话时，先自然地回应一两句，然后等新的要点到了再展开讲，不要自己抢先讲答案。学生只是说“嗯”“懂了”“继续”之类的话时，就接着刚才的讲下去。还没有要点时，就安静地等着。',
+].join('\n\n');
 // While the board's model takes long to work out an answer, the voice thinks out loud now
 // and then, so the student knows it is on it: a few times at most, each differently.
 const thinkingAloud = [
@@ -81,7 +76,6 @@ type Role = 'user' | 'assistant' | 'developer';
 type Session = {
   id: string;
   voice: string;
-  style: CodexStyle;
   pc: RTCPeerConnection;
   events: RTCDataChannel;
   sender: RTCRtpSender | null;
@@ -143,9 +137,10 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 class NotNow extends Error {}
 
 export function codexVoice(
-  settings: () => { voice: string; style: CodexStyle },
-  // The text to hand over for a sentence of the script.
-  speakable: (text: string, style: CodexStyle) => string,
+  // The ChatGPT voice chosen, or none.
+  voice: () => string,
+  // The talking point to hand over for a sentence of the script.
+  speakable: (text: string) => string,
   problem: (message: string) => void,
 ): CodexVoice {
   let session: Session | null = null;
@@ -196,13 +191,10 @@ export function codexVoice(
   let lastGiven = 0;
   let lastUse = 0;
   let turnDone = 0;
-  let sounding = false;
   let studentTalking = false;
   let paused = false;
   let resumed = 0;
   let pausedAt = '';
-  // Reading word for word, after the student asked: what it was reading isn't heard.
-  let muted = false;
   let listening = false;
   let micMuted = false;
   let mic: MediaStream | null = null;
@@ -215,7 +207,6 @@ export function codexVoice(
   const data = new Float32Array(1024);
 
   const now = () => performance.now();
-  const free = () => settings().style === 'free';
   const emit = (e: Hearing) => hearing.forEach((l) => l(e));
   const remember = (role: Role, text: string) => {
     if (!text.trim()) return;
@@ -242,7 +233,7 @@ export function codexVoice(
     }
   });
 
-  function open(voice: string, style: CodexStyle): Session {
+  function open(voice: string): Session {
     const ctx = new AudioContext();
     const pc = new RTCPeerConnection();
     const events = pc.createDataChannel('oai-events');
@@ -250,7 +241,6 @@ export function codexVoice(
     const s: Session = {
       id: '',
       voice,
-      style,
       pc,
       events,
       sender: null,
@@ -291,7 +281,7 @@ export function codexVoice(
     pc.ontrack = (e) => {
       const stream = e.streams[0] || new MediaStream([e.track]);
       audio.srcObject = stream;
-      audio.muted = paused || muted;
+      audio.muted = paused;
       void audio.play().catch(() => {});
       // How loud the voice is, to hear it stop.
       s.level = ctx.createAnalyser();
@@ -319,10 +309,7 @@ export function codexVoice(
         type: 'start',
         sdp: pc.localDescription!.sdp,
         voice,
-        prompt:
-          style === 'free'
-            ? `${prompts.free}\n\n${s.talk ? modes.talk : modes.type}`
-            : prompts.read,
+        prompt: `${prompt}\n\n${s.talk ? modes.talk : modes.type}`,
         history,
       });
       s.id = answer.id;
@@ -338,17 +325,17 @@ export function codexVoice(
     s.ready.catch((e) => session === s && fail(errorText(e)));
     return s;
   }
-  // The session for the voice and way of speaking chosen now, opened if need be. A new one
+  // The session for the voice chosen now, opened if need be. A new one
   // is handed the reply from the board's sentence on.
   // `standby` opens one while paused: it is handed nothing until the student goes on.
   function current(standby = false) {
-    const want = settings();
+    const want = voice();
     // A system voice was chosen meanwhile: what was still on its way here isn't said.
-    if (!want.voice) {
+    if (!want) {
       close();
       return Promise.reject(new NotNow());
     }
-    if (session && (session.voice !== want.voice || session.style !== want.style)) close();
+    if (session && session.voice !== want) close();
     if (!session) {
       if ((paused && !standby) || now() - failedAt < 15_000) return Promise.reject(new NotNow());
       // What wasn't finished is handed to the new session again.
@@ -357,7 +344,7 @@ export function codexVoice(
       numbered = 0;
       numbers.clear();
       for (const id of script) if (!done.has(id)) words.delete(id);
-      session = open(want.voice, want.style);
+      session = open(want);
       ticker ||= setInterval(tick, 150);
       queueMicrotask(hand);
     }
@@ -470,7 +457,6 @@ export function codexVoice(
   let shown = 0;
   function voiceSaid(piece: string) {
     lastWord = lastUse = now();
-    sounding = true;
     saying += piece;
     // The caption follows the voice, a few times a second.
     if (now() - shown > 150) {
@@ -486,11 +472,6 @@ export function codexVoice(
     while (at < given.length - 1 && (at < 0 || done.has(given[at]))) at++;
     const id = given[at];
     if (!id) return;
-    // Reading again after the student asked something: this is the new text.
-    if (muted) {
-      muted = false;
-      if (session) session.audio.muted = paused;
-    }
     const text = (words.get(id) || '') + piece;
     words.set(id, text);
     begin(id);
@@ -541,17 +522,7 @@ export function codexVoice(
     if (student && t - studentAt > 2500) studentDone();
     if (!paused) {
       const quiet = t - Math.max(lastLoud, lastWord);
-      if (!free()) {
-        // Reading: a pause long enough is the end of what it was reading.
-        if (sounding && quiet > 1200) {
-          sounding = false;
-          if (given[at]) finish(given[at]);
-        }
-        if (turnDone && t - turnDone > 2500 && quiet > 2500) {
-          turnDone = 0;
-          finishAll();
-        }
-      } else if (
+      if (
         thinkingSince &&
         !owed() &&
         !studentTalking &&
@@ -569,7 +540,7 @@ export function codexVoice(
         !studentTalking &&
         (at >= given.length - 1 || quiet > 10_000)
       ) {
-        // In its own words: it has told everything it was given and the reply is complete.
+        // It has told everything it was given and the reply is complete.
         turnDone = 0;
         finishAll();
       }
@@ -586,47 +557,30 @@ export function codexVoice(
     }
   }
 
-  // Hands the voice the reply as it comes: in its own words the sentence it is on and the
-  // next two, enough to tell them as one explanation without a backlog to hurry through;
-  // word for word the board's sentence, and the one after once it has started on it.
+  // Hands the voice the reply as it comes: the sentence it is on and the next two, enough
+  // to tell them as one explanation without a backlog to hurry through.
   function hand() {
-    if (free()) {
-      const on = Math.max(0, script.indexOf(given[at] ?? board));
-      return script
-        .slice(0, on + 3)
-        .filter((id) => !done.has(id))
-        .forEach(give);
-    }
-    const k = script.indexOf(board);
-    if (k < 0) return;
-    const started = at >= 0 && given[at] && script.indexOf(given[at]) >= k;
-    script.slice(k, started ? k + 2 : k + 1).forEach(give);
+    const on = Math.max(0, script.indexOf(given[at] ?? board));
+    script
+      .slice(0, on + 3)
+      .filter((id) => !done.has(id))
+      .forEach(give);
   }
   function give(id: string) {
-    if (given.includes(id) || (paused && !free())) return;
+    if (given.includes(id)) return;
     given.push(id);
     thinkingSince = 0;
     lastGiven = now();
-    const style = settings().style;
-    const text = speakable(texts.get(id) || '', style);
-    if (style === 'free') {
-      const n = ++numbered;
-      numbers.set(id, n);
-      const shown = notes.get(id);
-      notes.delete(id);
-      post(
-        (n === 1 ? '新的讲解要点（会陆续补充，按顺序讲）：\n' : '') +
-          `${n}. ${text}` +
-          (shown?.length ? `\n（第 ${n} 点的板书：${shown.join('；')}）` : ''),
-      );
-      return;
-    }
-    // Paused, it is handed over again on resume.
-    if (paused) return;
-    handing = handing
-      .then(() => current())
-      .then((s) => invoke('codex-voice', { type: 'say', id: s.id, text }))
-      .catch((e) => e instanceof NotNow || fail(errorText(e)));
+    const text = speakable(texts.get(id) || '');
+    const n = ++numbered;
+    numbers.set(id, n);
+    const shown = notes.get(id);
+    notes.delete(id);
+    post(
+      (n === 1 ? '新的讲解要点（会陆续补充，按顺序讲）：\n' : '') +
+        `${n}. ${text}` +
+        (shown?.length ? `\n（第 ${n} 点的板书：${shown.join('；')}）` : ''),
+    );
   }
   function reset() {
     for (const resolve of waiting.values()) resolve();
@@ -673,7 +627,7 @@ export function codexVoice(
       });
     },
     note(id, text) {
-      if (!free() || !text) return;
+      if (!text) return;
       const n = numbers.get(id);
       if (n) post(`（第 ${n} 点的板书：${text}）`, false);
       else notes.set(id, [...(notes.get(id) || []), text]);
@@ -682,12 +636,6 @@ export function codexVoice(
       thinkingSince = now();
       thoughtAloud = 0;
       pausedAt = '';
-      if (!free()) {
-        // What it was reading is cut off.
-        muted = true;
-        if (session) session.audio.muted = true;
-        return;
-      }
       const q = question.trim();
       post(
         how === 'start'
@@ -700,7 +648,7 @@ export function codexVoice(
     ended() {
       complete = true;
       thinkingSince = 0;
-      if (free() && numbered) post('（这一轮的要点就这些。讲完以后，可以问问学生哪里还不清楚。）');
+      if (numbered) post('（这一轮的要点就这些。讲完以后，可以问问学生哪里还不清楚。）');
     },
     // The voice can't be stopped in the middle of what it is saying: its session ends at
     // once. A new one stands by, told where the student stopped it, and when they go on it
@@ -720,11 +668,11 @@ export function codexVoice(
     resume() {
       paused = false;
       resumed = now();
-      if (session) session.audio.muted = muted;
+      if (session) session.audio.muted = false;
       const heard = pausedAt;
       pausedAt = '';
       // Going on with what it was saying; after a question asked meanwhile, it answers that.
-      if (free() && (heard || owed())) post(resumedNote(heard), true, true);
+      if (heard || owed()) post(resumedNote(heard), true, true);
       else if (outbox.length) outboxTimer ||= setTimeout(flush, 120);
       void current()
         .then(() => hand())
@@ -736,7 +684,7 @@ export function codexVoice(
     speed(r) {
       if (r === rate) return;
       rate = r;
-      if (free()) post(r > 1 ? '（学生希望你讲得快一些。）' : '（学生希望你按平常的速度讲。）');
+      post(r > 1 ? '（学生希望你讲得快一些。）' : '（学生希望你按平常的速度讲。）');
     },
     onSpeech(listener) {
       speech.add(listener);
@@ -786,7 +734,7 @@ export function codexVoice(
       connectMic();
       if (session && session.talk !== on) {
         session.talk = on;
-        if (free()) post(`（${on ? modes.talk : modes.type}）`);
+        post(`（${on ? modes.talk : modes.type}）`);
       }
       emit({ type: 'listening', on });
     },

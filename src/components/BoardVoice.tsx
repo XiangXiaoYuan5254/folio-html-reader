@@ -16,7 +16,6 @@ import {
   voicesFor,
 } from '../ai/voice';
 import type { Support, VoiceMode, VoiceOption } from '../ai/voice';
-import type { CodexStyle } from '../ai/codex-voice';
 
 const modes: { mode: VoiceMode; icon: typeof Mic; name: string; short: string; about: string }[] = [
   { mode: 'off', icon: VolumeX, name: '静音讲解', short: '静音', about: '只看字幕和板书' },
@@ -44,17 +43,12 @@ function voiceLabel(v: VoiceOption) {
   return notes ? `${name}（${notes}）` : name;
 }
 
-const styles: { style: CodexStyle; name: string; about: string }[] = [
-  { style: 'free', name: '自由发挥', about: '用自己的话讲，像真人上课；字幕是他实际说的话' },
-  { style: 'read', name: '照着念', about: '一字不差地念讲稿' },
-];
 const codexName = (name: string) => name.charAt(0).toUpperCase() + name.slice(1);
 
 // The button that says how the teacher talks, and the panel to change it.
 export function VoiceButton({
   mode,
   voice,
-  style,
   ears,
   support,
   busy,
@@ -62,7 +56,6 @@ export function VoiceButton({
 }: {
   mode: VoiceMode;
   voice: string;
-  style: CodexStyle;
   // Who writes down what the student says, where the page listens.
   ears: string;
   support: Support | null;
@@ -218,28 +211,8 @@ export function VoiceButton({
             <p className="wb-voice-note">这台电脑上没有中文语音，页老师会用默认声音。</p>
           ) : null}
           {usingCodex ? (
-            <div className="wb-voice-style" role="radiogroup" aria-label="怎么讲">
-              {styles.map((s) => (
-                <button
-                  key={s.style}
-                  type="button"
-                  role="radio"
-                  aria-checked={s.style === style}
-                  title={s.about}
-                  onClick={() => {
-                    if (s.style === style) return;
-                    setVoiceSettings({ style: s.style });
-                    void sample(chosen);
-                  }}
-                >
-                  {s.name}
-                </button>
-              ))}
-            </div>
-          ) : null}
-          {usingCodex ? (
             <p className="wb-voice-note">
-              {styles.find((s) => s.style === style)?.about}。
+              他按讲稿的要点用自己的话讲，像真人上课，字幕是他实际说的话。
               {mode === 'talk'
                 ? '他直接听你说话，你随时开口打断就行；你说的话会发给 ChatGPT。外放也能用，戴耳机更清楚。'
                 : '声音由 ChatGPT 生成，用的是你 Codex 账号的额度。'}

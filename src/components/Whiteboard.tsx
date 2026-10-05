@@ -1272,7 +1272,6 @@ export default function Whiteboard({
               <VoiceButton
                 mode={mode}
                 voice={voice.voice}
-                style={voice.style}
                 ears={voice.ears}
                 support={support}
                 busy={state.phase === 'teaching' && !state.paused}
