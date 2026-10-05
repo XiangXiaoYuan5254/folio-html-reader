@@ -1,5 +1,6 @@
-import { Fragment } from 'react';
+import { Fragment, useState } from 'react';
 import type { ReactNode } from 'react';
+import { Check, Copy } from 'lucide-react';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 
@@ -86,6 +87,29 @@ function math(tex: string, display: boolean, key: number) {
   );
 }
 
+function CodeBlock({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="md-code">
+      <pre>
+        <code>{code}</code>
+      </pre>
+      <button
+        className="md-code-copy"
+        title="复制代码"
+        onClick={() => {
+          void navigator.clipboard.writeText(code);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        }}
+      >
+        {copied ? <Check size={12} /> : <Copy size={12} />}
+        {copied ? '已复制' : '复制'}
+      </button>
+    </div>
+  );
+}
+
 function blocks(source: string, ctx: Inline): ReactNode[] {
   const lines = source.replace(/\r\n?/g, '\n').split('\n');
   const out: ReactNode[] = [];
@@ -103,11 +127,7 @@ function blocks(source: string, ctx: Inline): ReactNode[] {
       i++;
       while (i < lines.length && !lines[i].trim().startsWith(fence[1])) body.push(lines[i++]);
       i++;
-      out.push(
-        <pre key={key()}>
-          <code>{body.join('\n')}</code>
-        </pre>,
-      );
+      out.push(<CodeBlock key={key()} code={body.join('\n')} />);
       continue;
     }
     // $$ … $$ or \[ … \] on a line of its own, or over several lines.

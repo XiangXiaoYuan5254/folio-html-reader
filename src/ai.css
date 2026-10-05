@@ -643,6 +643,7 @@
   line-height: 1.65;
   white-space: pre-wrap;
   word-break: break-word;
+  user-select: text;
 }
 .chat-bubble.task {
   background: var(--ai-soft);
@@ -690,6 +691,7 @@
   background: var(--fill);
 }
 .chat-reasoning div {
+  user-select: text;
   margin: 4px 0 0 4px;
   padding: 6px 10px;
   border-left: 2px solid var(--line);
@@ -732,6 +734,7 @@
 }
 .chat-error span {
   flex: 1;
+  user-select: text;
 }
 .chat-error button {
   display: flex;
@@ -780,6 +783,7 @@
 /* Markdown from the model */
 .ai-markdown {
   word-break: break-word;
+  user-select: text;
 }
 .ai-markdown > :first-child {
   margin-top: 0;
@@ -826,8 +830,12 @@
   border-radius: 3px;
   padding: 1px 4px;
 }
-.ai-markdown pre {
+.md-code {
+  position: relative;
   margin: 0 0 9px;
+}
+.ai-markdown pre {
+  margin: 0;
   padding: 9px 11px;
   background: var(--surface-3);
   border-radius: 6px;
@@ -838,6 +846,29 @@
 .ai-markdown pre code {
   background: none;
   padding: 0;
+}
+.md-code-copy {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  color: var(--muted);
+  background: var(--surface-3);
+  opacity: 0;
+  transition: opacity 0.12s;
+  user-select: none;
+}
+.md-code:hover .md-code-copy,
+.md-code-copy:focus-visible {
+  opacity: 1;
+}
+.md-code-copy:hover {
+  color: var(--accent);
 }
 .ai-markdown hr {
   border: 0;

@@ -416,19 +416,20 @@ app
     session.defaultSession.setPermissionRequestHandler((contents, permission, cb, details) =>
       cb(
         contents === win?.webContents &&
-          permission === 'media' &&
           !!details.isMainFrame &&
           isUiUrl(details.requestingUrl || '') &&
-          !!details.mediaTypes?.length &&
-          details.mediaTypes.every((t) => t === 'audio'),
+          (permission === 'clipboard-sanitized-write' ||
+            (permission === 'media' &&
+              !!details.mediaTypes?.length &&
+              details.mediaTypes.every((t) => t === 'audio'))),
       ),
     );
     session.defaultSession.setPermissionCheckHandler(
       (contents, permission, _, details) =>
         contents === win?.webContents &&
-        permission === 'media' &&
-        details.mediaType === 'audio' &&
-        isUiUrl(details.requestingUrl || ''),
+        isUiUrl(details.requestingUrl || '') &&
+        (permission === 'clipboard-sanitized-write' ||
+          (permission === 'media' && details.mediaType === 'audio')),
     );
     ipcMain.handle('folio:invoke', async (event, action, payload, token) => {
       uiSender(event);
