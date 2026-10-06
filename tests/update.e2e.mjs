@@ -1,6 +1,7 @@
-// End-to-end test of automatic updates. Packages 页间 as version 0.0.1 and 0.0.2, serves 0.0.2's
-// update files from a local server, and lets an installed 0.0.1 update itself: on a normal quit
-// (installs quietly) and with “立即重启” (installs and reopens). Then 0.0.2 finds nothing newer.
+// End-to-end test of automatic updates. Packages 页间 as version 0.0.1, 0.0.2 and 0.0.3, serves
+// 0.0.2's update files from a local server, and lets an installed 0.0.1 update itself: on a normal
+// quit (installs quietly) and with “立即重启” (installs and reopens). Then 0.0.2 finds nothing
+// newer. When 0.0.3 comes out while 0.0.2 waits to be installed, 0.0.1 goes straight to 0.0.3.
 // On macOS a copy in a folder it cannot write to must link to the website instead. Runs on macOS
 // and on Windows (.github/workflows/windows.yml); screenshots and the log go to FOLIO_EVIDENCE.
 import { _electron as electron } from 'playwright';
@@ -45,16 +46,21 @@ const pack = (version) =>
     ],
     { maxBuffer: 1 << 26 },
   );
-console.log('Packaging 0.0.1 and 0.0.2…');
+console.log('Packaging 0.0.1, 0.0.2 and 0.0.3…');
 await pack('0.0.1');
 await pack('0.0.2');
-const update = mac ? 'Folio-0.0.2-mac-arm64.zip' : 'Folio-0.0.2-win-x64-setup.exe';
+await pack('0.0.3');
+const updateFile = (version) =>
+  mac ? `Folio-${version}-mac-arm64.zip` : `Folio-${version}-win-x64-setup.exe`;
+const update = updateFile('0.0.2');
 
 const requests = [];
+// The version on the “website”.
+let published = '0.0.2';
 const server = http.createServer((req, res) => {
   const name = path.basename(decodeURIComponent(new URL(req.url, 'http://local').pathname));
   requests.push(name);
-  const file = path.join(temp, '0.0.2', name);
+  const file = path.join(temp, published, name);
   fs.stat(file).then(
     (stat) => {
       res.writeHead(200, { 'Content-Length': stat.size });
@@ -243,6 +249,31 @@ try {
   assert.equal(await card().count(), 0);
   await quit();
   console.log('PASS: checking by hand reports the newest version');
+
+  // A release that comes out while 0.0.2 waits to be installed takes its place.
+  await install();
+  await launch();
+  await card().getByText('页间 0.0.2 已准备好').waitFor();
+  await card().getByRole('button', { name: '稍后', exact: true }).click();
+  await card().waitFor({ state: 'detached' });
+  // Checking again while 0.0.2 is still the newest shows it again and downloads nothing more.
+  const fetched = requests.length;
+  await win.locator('button.brand').click();
+  await card().getByText('页间 0.0.2 已准备好').waitFor();
+  assert.deepEqual(
+    requests.slice(fetched).filter((name) => name !== `latest${mac ? '-mac' : ''}.yml`),
+    [],
+    'nothing downloaded again',
+  );
+  published = '0.0.3';
+  await win.locator('button.brand').click();
+  await win.locator('.toast').getByText('发现新版本 0.0.3').waitFor();
+  await card().getByText('页间 0.0.3 已准备好').waitFor();
+  assert.ok(requests.includes(updateFile('0.0.3')), '0.0.3 downloaded');
+  await win.screenshot({ path: path.join(evidence, 'update-newer.png') });
+  await quit();
+  await waitFor(async () => (await installedVersion()) === '0.0.3', 'installed 0.0.3', 120000);
+  console.log('PASS: a newer release replaces the one waiting to be installed');
   assert.deepEqual(errors, []);
   passed = true;
 } finally {
@@ -259,8 +290,8 @@ try {
   server.close();
   await fs.writeFile(path.join(evidence, 'update-main.log'), log.join(''));
   console.log(`Screenshots and log: ${evidence}`);
-  // The two packaged versions take about 1 GB; they are kept only to look into a failure.
+  // The three packaged versions take about 1.5 GB; they are kept only to look into a failure.
   if (passed)
-    for (const dir of ['0.0.1', '0.0.2', 'Applications', 'home'])
+    for (const dir of ['0.0.1', '0.0.2', '0.0.3', 'Applications', 'home'])
       await fs.rm(path.join(temp, dir), { recursive: true, force: true });
 }

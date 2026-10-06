@@ -1,11 +1,14 @@
 // Automatic updates from the website's downloads folder (the `publish` setting in package.json).
 // A new version downloads in the background and installs when 页间 quits, or right away with
-// “立即重启”. Windows uses electron-updater's NSIS updater. macOS's own updater only installs
-// Developer ID-signed apps and 页间 is signed ad hoc, so there electron-updater downloads the zip
-// and the app bundle is swapped for the new one after 页间 quits.
+// “立即重启”. A release that comes out before then replaces the downloaded one, so two releases in
+// a row install once. Windows uses electron-updater's NSIS updater. macOS's own updater only
+// installs Developer ID-signed apps and 页间 is signed ad hoc, so there electron-updater downloads
+// the zip and the app bundle is swapped for the new one after 页间 quits.
 const { app } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
+// Electron's fs reads app.asar as a folder, so only the original one can delete an unpacked app.
+const realFs = require('original-fs');
 const { execFile, spawn } = require('node:child_process');
 const { promisify } = require('node:util');
 const { BaseUpdater, MacUpdater, NsisUpdater } = require('electron-updater');
@@ -49,6 +52,10 @@ fi
 `;
 
 class MacBundleUpdater extends BaseUpdater {
+  // What install() needs to go ahead: the checked bundle, even while a newer zip downloads.
+  get installerPath() {
+    return this.staged?.bundle ?? null;
+  }
   async doDownloadUpdate(options) {
     const { provider, info } = options.updateInfoAndProvider;
     const files = MacUpdater.filterFilesForArch(
@@ -84,7 +91,8 @@ class MacBundleUpdater extends BaseUpdater {
     this.staged = null;
     const cache = this.downloadedUpdateHelper.cacheDir;
     const dir = path.join(cache, 'staged');
-    await fs.promises.rm(dir, { recursive: true, force: true });
+    // An update downloaded earlier may still be unpacked here.
+    await realFs.promises.rm(dir, { recursive: true, force: true });
     await fs.promises.mkdir(dir, { recursive: true });
     await run('/usr/bin/ditto', ['-x', '-k', event.downloadedFile, dir]);
     const bundles = (await fs.promises.readdir(dir)).filter((name) => name.endsWith('.app'));
@@ -160,7 +168,8 @@ function createUpdates(send) {
       updater.forceDevUpdateConfig = !app.isPackaged;
       updater.setFeedURL({ provider: 'generic', url: process.env.FOLIO_UPDATE_URL });
     }
-    updater.on('update-available', (info) =>
+    updater.on('update-available', (info) => {
+      if (state.status === 'ready' && state.version === info.version) return;
       publish(
         installs
           ? { status: 'downloading', version: info.version }
@@ -170,8 +179,8 @@ function createUpdates(send) {
               notes: releaseNotes(info),
               url: downloadPage,
             },
-      ),
-    );
+      );
+    });
     updater.on('update-downloaded', (info) =>
       publish({ status: 'ready', version: info.version, notes: releaseNotes(info) }),
     );
@@ -182,16 +191,24 @@ function createUpdates(send) {
   }
 
   // Resolves to the state after checking, or { status: 'latest' } when this is the newest version.
+  // A downloaded update keeps being checked against the website: a newer release downloads in
+  // its place, and the same one isn't downloaded again.
   async function check() {
     if (!updater) throw Error('这个系统不支持自动更新');
-    if (state.status === 'ready' || state.status === 'manual') return state;
+    if (state.status === 'manual') return state;
+    const ready = state.status === 'ready' ? state.version : null;
+    updater.autoDownload = installs && !ready;
     let result;
     try {
       result = await updater.checkForUpdates();
     } catch (e) {
       throw Error(`检查更新失败，请检查网络后重试（${e.code || e.message}）`);
+    } finally {
+      updater.autoDownload = installs;
     }
     if (!result) throw Error('开发版本不检查更新');
+    if (ready && result.isUpdateAvailable && result.updateInfo.version !== ready)
+      result.downloadPromise = updater.downloadUpdate();
     result.downloadPromise?.catch(() => {});
     return result.isUpdateAvailable ? state : { status: 'latest', version: app.getVersion() };
   }
