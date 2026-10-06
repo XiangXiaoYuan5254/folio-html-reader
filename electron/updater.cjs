@@ -2,8 +2,8 @@
 // A new version downloads in the background and installs when 页间 quits, or right away with
 // “立即重启”. A release that comes out before then replaces the downloaded one, so two releases in
 // a row install once. Windows uses electron-updater's NSIS updater. macOS's own updater only
-// installs Developer ID-signed apps and 页间 is signed ad hoc, so there electron-updater downloads
-// the zip and the app bundle is swapped for the new one after 页间 quits.
+// installed Developer ID-signed apps and 页间 used to be signed ad hoc, so there electron-updater
+// downloads the zip and the app bundle is swapped for the new one after 页间 quits.
 const { app } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');

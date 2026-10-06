@@ -71,9 +71,8 @@ GitHub Actions 的 `Windows` 工作流（`.github/workflows/windows.yml`）在 W
 **两个平台的做法不同**
 
 - Windows 用 electron-updater 的标准流程：下载新的安装程序，退出时以 `--updated /S` 静默运行。有上一版的 `.exe.blockmap` 时只下载变化的部分。
-- macOS 的系统更新机制只安装 Developer ID 签名的应用，页间是 ad-hoc 签名，所以另写了一套：下载 zip，解压后核对应用 ID、版本号和签名完整性（`codesign --verify`），页间退出后用新的 `页间.app` 替换旧的。之后的更新会用缓存的上一个 zip 只下载变化的部分。
+- macOS 不用 electron-updater 自带的 Squirrel.Mac（早期的页间是 ad-hoc 签名，它装不了），而是另写了一套：下载 zip，解压后核对应用 ID、版本号和签名完整性（`codesign --verify`），页间退出后用新的 `页间.app` 替换旧的。之后的更新会用缓存的上一个 zip 只下载变化的部分。ad-hoc 签名的旧版也能这样直接升级到 Developer ID 签名的新版。
 - macOS 上只有页间所在的文件夹可写时才能替换，一般就是“应用程序”文件夹。直接从 DMG 或“下载”文件夹里运行时做不到，这时提示卡片改为“去官网下载”。
-- 如果以后做了 Developer ID 签名与公证，这套做法照样可用。
 
 `MacBundleUpdater` 用到了 electron-updater 的内部方法，所以 `package.json` 里把 electron-updater 锁在确切版本。升级它之后要重新运行下面的测试。
 
@@ -106,45 +105,28 @@ Windows 的同一测试在 GitHub Actions 的 `Windows` 工作流里运行（「
 
 ## 签名与公证
 
-当前配置采用 ad-hoc 本地签名，`mac.identity` 为 `-`、`mac.notarize` 为 `false`。签名完整性校验通过不表示经过 Apple 公证。
+macOS 版用 Developer ID 签名，并经过 Apple 公证（2026-10 起）。`npm run dist:mac` 会自动完成：
 
-`build/entitlements.notarize.plist` 已备好，尚未接入配置。启用 Developer ID 签名与公证的步骤如下。
+1. 用钥匙串里的 `Developer ID Application: Li Ming wang (46AL7LQ9T8)` 签名（`mac.identity`），开启 hardened runtime，entitlements 见 `build/entitlements.mac.plist`。
+2. 用钥匙串里名为 `helloxxy-notary` 的公证凭据（`APPLE_KEYCHAIN_PROFILE`，写在 `dist:mac` 里）把 `页间.app` 交给 Apple 公证，通过后把票据贴进应用，再打 DMG 和 zip。
+3. 用 `spctl` 和 `stapler validate` 检查 `release/mac-arm64/页间.app`。没有公证上（例如凭据缺失时 electron-builder 只会警告并跳过公证）就直接失败，不会出包。
 
-**一、取得证书**
+**换一台 Mac 打包前**
 
-加入 Apple Developer Program 后，申请 **Developer ID Application** 证书（不是 Mac App Store 证书），下载安装到钥匙串。用 `security find-identity -v -p codesigning` 确认证书名称与 Team ID。
+- 证书：双击备份的 `.p12` 导入钥匙串，用 `security find-identity -v -p codesigning` 确认能看到上面的证书。证书在 2031-09-17 到期（G2 中间证书）。
+- 公证凭据：在 account.apple.com 生成 App 专用密码，然后运行 `xcrun notarytool store-credentials "helloxxy-notary" --apple-id <开发者 Apple ID> --team-id 46AL7LQ9T8`，按提示输入密码。
+- 第一次签名时 macOS 会问 codesign 能否使用钥匙串里的私钥，输入登录密码并选“始终允许”。
+- 公证凭据只有在 Mac 解锁时才读得到。锁屏后 notarytool 会报 `No Keychain password item found for profile`，看起来像凭据丢了，其实解锁就好。打包时别让 Mac 锁屏。
 
-**二、准备公证凭据**
+证书、私钥、App 专用密码都不写进源码、脚本或 Release 附件。Developer ID 证书不要吊销，吊销后已经发出去的版本会打不开。
 
-electron-builder 26 支持三组环境变量，优先使用 App Store Connect API 密钥，避免账号密码落在环境里：
-
-1. `APPLE_API_KEY`、`APPLE_API_KEY_ID`、`APPLE_API_ISSUER`（推荐）
-2. `APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID`
-3. `APPLE_KEYCHAIN`、`APPLE_KEYCHAIN_PROFILE`
-
-凭据通过受保护的环境变量传入，不写入源码、脚本或 Release 附件。
-
-**三、改 `package.json` 的 `mac` 段**
-
-```json
-"identity": "Developer ID Application: 姓名 (TEAMID)",
-"notarize": true,
-"entitlements": "build/entitlements.notarize.plist",
-"entitlementsInherit": "build/entitlements.notarize.plist"
-```
-
-`hardenedRuntime` 默认为 `true`，无需显式声明。entitlements 中的 `com.apple.security.cs.allow-jit` 对 arm64 上的 Electron 20+ 是必需的，缺失会导致启动崩溃。
-
-**四、验证**
-
-打包后依次执行：
+**手动检查**
 
 ```
 codesign -dv --verbose=4 "release/mac-arm64/页间.app"
 spctl -a -vvv -t install "release/mac-arm64/页间.app"
-xcrun stapler validate "release/页间-<版本>-mac-arm64.dmg"
 ```
 
-`spctl` 输出应为 `source=Notarized Developer ID`。公证通过后，发布说明与 DMG 内的安装说明中的首次打开提示即可移除。
+`spctl` 输出应为 `source=Notarized Developer ID`，只看这一行：打包用的 Mac 关掉了 Gatekeeper（`override=security disabled`），没公证的包在它上面也显示 accepted。公证一般几分钟，偶尔排队更久；`xcrun notarytool history --keychain-profile helloxxy-notary` 可以看提交记录。
 
-目前发布说明必须保留首次打开提示，并链接 [Apple 官方说明](https://support.apple.com/zh-cn/102445)。不修改用户的 Gatekeeper 设置，不附带关闭系统安全保护的脚本。
+Windows 版仍未签名，见上文“Windows 签名”。
