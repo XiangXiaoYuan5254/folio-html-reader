@@ -508,6 +508,7 @@ function when(time: number) {
 }
 
 function UserMessage({ message, onView }: { message: ChatMessage; onView: (src: string) => void }) {
+  const [copied, setCopied] = useState(false);
   return (
     <div className="chat-user">
       {message.selection ? (
@@ -526,6 +527,20 @@ function UserMessage({ message, onView }: { message: ChatMessage; onView: (src: 
         <div className={`chat-bubble ${message.label ? 'task' : ''}`}>
           {message.label || message.text}
         </div>
+      ) : null}
+      {message.text && !message.label ? (
+        <button
+          className="chat-user-copy"
+          title="复制这条消息"
+          onClick={() => {
+            void navigator.clipboard.writeText(message.text);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          }}
+        >
+          {copied ? <Check size={12} /> : <Copy size={12} />}
+          {copied ? '已复制' : '复制'}
+        </button>
       ) : null}
     </div>
   );

@@ -3,8 +3,8 @@ export const isMac = window.folio
   ? window.folio.platform === 'darwin'
   : /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 const keyNames: Record<string, string> = isMac
-  ? { mod: '⌘', shift: '⇧' }
-  : { mod: 'Ctrl', shift: 'Shift' };
+  ? { mod: '⌘', shift: '⇧', alt: '⌥' }
+  : { mod: 'Ctrl', shift: 'Shift', alt: 'Alt' };
 // shortcut('mod', 'shift', 'F') is "⌘ ⇧ F" on macOS and "Ctrl+Shift+F" on Windows.
 export function shortcut(...keys: string[]) {
   return keys.map((key) => keyNames[key] ?? key).join(isMac ? ' ' : '+');

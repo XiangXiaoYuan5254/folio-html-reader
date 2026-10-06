@@ -18,17 +18,15 @@ import {
   Type,
   Sparkle,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Annotation, OutlineItem, OpenDocument } from '../types';
 import { IconButton } from './IconButton';
 import { PenIcon } from './PenIcon';
 import { InkThumbnail } from './InkThumbnail';
 import { SidebarResizer } from './SidebarResizer';
-import { Markdown } from '../ai/Markdown';
 import { invoke, isDesktop } from '../api';
 import { ImageViewer } from './ImageViewer';
-import { isImageFile, prepareImage } from '../ai/images';
 // Pictures in the note: where one is shown from, and keeping a new one in the project.
 export type NoteImages = { url: (name: string) => string; save: (data: string) => Promise<string> };
 export type InspectorTab = 'annotations' | 'note' | 'outline' | 'assistant';
@@ -178,6 +176,7 @@ export function Inspector(p: {
       {p.tab === 'note' ? (
         <DocumentNote
           key={p.doc?.id || ''}
+          id={p.doc?.id || ''}
           note={p.doc?.data.note || ''}
           disabled={!p.doc}
           saving={p.saving}
@@ -216,9 +215,14 @@ export function Inspector(p: {
     </aside>
   );
 }
-const noteViewKey = 'folio.note-view';
-// The document note, shown as rendered Markdown or as its source for editing.
+const NoteEditor = lazy(() => import('./NoteEditor'));
+// Text size of the document note, kept for all documents.
+const noteSizeKey = 'folio.document-note-size';
+const minNoteSize = 11;
+const maxNoteSize = 24;
+// The document note: read and written in one place, formatted as it's written.
 function DocumentNote(p: {
+  id: string;
   note: string;
   disabled: boolean;
   saving: boolean;
@@ -231,118 +235,72 @@ function DocumentNote(p: {
 }) {
   const [viewing, setViewing] = useState('');
   const [adding, setAdding] = useState(false);
-  // Pasted or dropped pictures are kept in the project and written in where the cursor is.
-  async function addImages(files: File[]) {
-    const images = files.filter(isImageFile);
-    const box = input.current;
-    if (!images.length || !p.images || !box) return;
-    setAdding(true);
+  const [size, setSize] = useState(() => {
     try {
-      const names = [];
-      for (const file of images) names.push(await p.images.save(await prepareImage(file)));
-      const text = names.map((n) => `![图片](note-image:${n})`).join('\n\n');
-      const { selectionStart: a, selectionEnd: b, value } = box;
-      const before = value.slice(0, a);
-      const insert =
-        (before && !before.endsWith('\n') ? '\n\n' : before && !before.endsWith('\n\n') ? '\n' : '') +
-        text +
-        '\n';
-      p.onChange(before + insert + value.slice(b));
-      requestAnimationFrame(() => box.setSelectionRange(a + insert.length, a + insert.length));
-    } catch (e) {
-      p.onError('图片没有存上：' + (e as Error).message);
-    } finally {
-      setAdding(false);
-    }
-  }
-  // An empty note opens ready to write; otherwise the last chosen view.
-  const [editing, setEditing] = useState(() => {
-    if (!p.note.trim()) return true;
-    try {
-      return localStorage.getItem(noteViewKey) === 'edit';
+      const saved = Number(localStorage.getItem(noteSizeKey));
+      return saved >= minNoteSize && saved <= maxNoteSize ? saved : 13;
     } catch {
-      return false;
+      return 13;
     }
   });
-  const chosen = useRef(false);
-  const input = useRef<HTMLTextAreaElement>(null);
-  const view = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!p.reveal) return;
-    const box = input.current || view.current;
-    if (box) box.scrollTop = box.scrollHeight;
-    p.onRevealed();
-  }, [p.reveal]);
-  function show(edit: boolean) {
-    chosen.current = true;
-    setEditing(edit);
+  function resize(by: number) {
+    const next = Math.max(minNoteSize, Math.min(maxNoteSize, size + by));
+    setSize(next);
     try {
-      localStorage.setItem(noteViewKey, edit ? 'edit' : 'preview');
+      localStorage.setItem(noteSizeKey, String(next));
     } catch {}
   }
   const openLink = (url: string) =>
     isDesktop ? void invoke('external', { url }) : window.open(url, '_blank', 'noopener');
   return (
-    <div className="document-note">
-      <div className="note-caption">
-        <span>文档笔记</span>
-        <div className="note-view" role="group" aria-label="笔记显示方式">
-          <button aria-pressed={!editing} onClick={() => show(false)}>
-            预览
-          </button>
-          <button aria-pressed={editing} onClick={() => show(true)}>
-            编辑
-          </button>
-        </div>
+    <div className="document-note" style={{ '--note-size': `${size}px` } as React.CSSProperties}>
+      <Suspense fallback={<div className="note-editor" />}>
+        <NoteEditor
+          id={p.id}
+          value={p.note}
+          disabled={p.disabled}
+          onChange={p.onChange}
+          reveal={p.reveal}
+          onRevealed={p.onRevealed}
+          onBoard={p.onBoard}
+          onLink={openLink}
+          onImage={setViewing}
+          images={p.images}
+          onError={p.onError}
+          onBusy={setAdding}
+          size={size}
+        />
+      </Suspense>
+      <div className="note-footer">
         <span>
           <Check size={12} />
           {p.saving ? '保存中…' : '自动保存'}
         </span>
+        <span className="note-footer-end">
+          <span className="note-size" role="group" aria-label="笔记字号">
+            <button
+              type="button"
+              aria-label="缩小笔记字号"
+              title="缩小字号"
+              disabled={size <= minNoteSize}
+              onClick={() => resize(-1)}
+            >
+              A−
+            </button>
+            <span title="笔记字号">{size}</span>
+            <button
+              type="button"
+              aria-label="放大笔记字号"
+              title="放大字号"
+              disabled={size >= maxNoteSize}
+              onClick={() => resize(1)}
+            >
+              A+
+            </button>
+          </span>
+          <span>{adding ? '正在存图片…' : `${p.note.length} 字`}</span>
+        </span>
       </div>
-      {editing ? (
-        <textarea
-          ref={input}
-          aria-label="文档笔记"
-          autoFocus={chosen.current}
-          placeholder={
-            '读到这里，你想到了什么？\n\n记下总结、疑问，或下次要继续探索的线索。\n支持 Markdown 和 $公式$' +
-            (p.images ? '，可以直接粘贴或拖入图片。' : '。')
-          }
-          value={p.note}
-          disabled={p.disabled || adding}
-          onChange={(e) => p.onChange(e.target.value)}
-          onPaste={(e) => {
-            const files = [...e.clipboardData.files];
-            if (!p.images || !files.some(isImageFile)) return;
-            e.preventDefault();
-            void addImages(files);
-          }}
-          onDragOver={(e) => {
-            if (p.images && e.dataTransfer.types.includes('Files')) e.preventDefault();
-          }}
-          onDrop={(e) => {
-            const files = [...e.dataTransfer.files];
-            if (!p.images || !files.some(isImageFile)) return;
-            e.preventDefault();
-            void addImages(files);
-          }}
-        />
-      ) : (
-        <div className="note-preview" ref={view} aria-label="文档笔记预览">
-          {p.note.trim() ? (
-            <Markdown
-              text={p.note}
-              onLink={openLink}
-              onBoard={p.onBoard}
-              image={p.images?.url}
-              onImage={setViewing}
-            />
-          ) : (
-            <p className="note-preview-empty">还没有笔记，点「编辑」开始写。</p>
-          )}
-        </div>
-      )}
-      <div className="note-count">{adding ? '正在存图片…' : `${p.note.length} 字`}</div>
       {viewing ? <ImageViewer src={viewing} onClose={() => setViewing('')} /> : null}
     </div>
   );

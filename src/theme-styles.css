@@ -106,7 +106,7 @@
   font-weight: var(--control-weight);
 }
 :root[data-style='bold']
-  :is(.note-view, .history-view-switch, .assistant-mode, .eraser-mode-switch, .model-menu-levels) {
+  :is(.history-view-switch, .assistant-mode, .eraser-mode-switch, .model-menu-levels) {
   border: var(--control-edge);
   border-radius: var(--radius-control);
 }

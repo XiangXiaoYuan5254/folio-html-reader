@@ -426,9 +426,9 @@ try {
     .click();
   await rendered();
   await page.getByRole('button', { name: '笔记', exact: true }).click();
-  // A saved note opens rendered: "# 核心想法" shows as a heading.
+  // A saved note opens formatted: "# 核心想法" shows as a heading.
   assert.equal(
-    await page.getByLabel('文档笔记预览', { exact: true }).locator('h3').innerText(),
+    await page.getByLabel('文档笔记', { exact: true }).locator('.cm-note-h1').innerText(),
     '核心想法',
   );
   console.log('PASS: app restart restores saved notes in moved file');

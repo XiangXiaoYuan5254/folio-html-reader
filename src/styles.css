@@ -1510,100 +1510,6 @@ button.brand {
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  padding: 20px 18px 12px;
-}
-.note-caption {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--muted);
-  font-size: 10px;
-  margin-bottom: 16px;
-}
-.note-view {
-  display: flex;
-  margin-left: auto;
-  padding: 2px;
-  border-radius: 6px;
-  background: var(--fill);
-}
-.note-view button {
-  padding: 2px 9px;
-  border-radius: 4px;
-  font-size: 10px;
-  color: var(--text-4);
-}
-.note-view button[aria-pressed='true'] {
-  background: var(--raised);
-  color: var(--text-strong);
-  box-shadow: 0 1px 2px rgb(var(--shadow-rgb) / calc(0.078 * var(--shadow-k)));
-}
-.note-caption > span:last-child {
-  font-size: 9px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--accent-muted);
-}
-.document-note textarea {
-  flex: 1;
-  resize: none;
-  border: 0;
-  outline: none;
-  font-size: 12px;
-  line-height: 1.95;
-  padding: 0;
-  color: var(--text-3);
-  background: transparent;
-}
-.document-note textarea::placeholder {
-  font-size: 11px;
-  line-height: 2;
-  color: var(--fainter);
-}
-.note-preview {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  scrollbar-width: thin;
-  font-size: 12.5px;
-  line-height: 1.85;
-  color: var(--text-2);
-  user-select: text;
-}
-/* The shared Markdown styles are sized for chat; a note needs clearer headings. */
-.note-preview .ai-markdown h3 {
-  font-size: 16px;
-  margin: 20px 0 8px;
-}
-.note-preview .ai-markdown h4 {
-  font-size: 14.5px;
-  margin: 22px 0 8px;
-  padding-bottom: 5px;
-  border-bottom: 1px solid var(--line);
-}
-.note-preview .ai-markdown h5 {
-  font-size: 13px;
-  margin: 16px 0 6px;
-}
-.note-preview .ai-markdown h6 {
-  font-size: 12.5px;
-  margin: 14px 0 4px;
-  color: var(--text-3);
-}
-.note-preview .ai-markdown > :first-child {
-  margin-top: 0;
-}
-.note-preview-empty {
-  margin: 0;
-  color: var(--fainter);
-  font-size: 11px;
-}
-.note-count {
-  color: var(--fainter);
-  font-size: 9px;
-  text-align: right;
-  padding-top: 12px;
 }
 .outline-list {
   padding: 15px 10px;
@@ -2747,7 +2653,7 @@ button.brand {
 .ai-settings-heading h2,
 .update-card-heading h2,
 .theme-picker h2,
-.note-preview .ai-markdown :is(h3, h4, h5) {
+.note-editor :is(.cm-note-h1, .cm-note-h2, .cm-note-h3) {
   font-family: var(--font-display);
 }
 

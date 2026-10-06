@@ -32,15 +32,7 @@ function stable(text: string, streaming?: boolean) {
   return tail && '<cite'.startsWith(tail[0].slice(0, 5)) ? text.slice(0, tail.index) : text;
 }
 
-export function Markdown({
-  text,
-  streaming,
-  renderCite,
-  onLink,
-  onBoard,
-  image,
-  onImage,
-}: Props) {
+export function Markdown({ text, streaming, renderCite, onLink, onBoard, image, onImage }: Props) {
   const cites: { n: number; doc: string; quote: string }[] = [];
   const numbers = new Map<string, number>();
   const source = stable(text, streaming).replace(
@@ -67,7 +59,7 @@ type Inline = {
 
 // Formulas already drawn, as streaming answers draw the same ones over and over.
 const drawn = new Map<string, string>();
-function math(tex: string, display: boolean, key: number) {
+export function mathHtml(tex: string, display: boolean) {
   const id = (display ? 'D' : 'I') + tex;
   let html = drawn.get(id);
   if (html === undefined) {
@@ -80,6 +72,10 @@ function math(tex: string, display: boolean, key: number) {
     if (drawn.size > 400) drawn.clear();
     drawn.set(id, html);
   }
+  return html;
+}
+function math(tex: string, display: boolean, key: number) {
+  const html = mathHtml(tex, display);
   return display ? (
     <div key={key} className="md-math" dangerouslySetInnerHTML={{ __html: html }} />
   ) : (
@@ -271,7 +267,11 @@ function inline(text: string, ctx: Inline): ReactNode[] {
     else if (tex)
       out.push(
         math(
-          tex.startsWith('$$') ? tex.slice(2, -2) : tex.startsWith('$') ? tex.slice(1, -1) : tex.slice(2, -2),
+          tex.startsWith('$$')
+            ? tex.slice(2, -2)
+            : tex.startsWith('$')
+              ? tex.slice(1, -1)
+              : tex.slice(2, -2),
           false,
           k,
         ),

@@ -628,11 +628,14 @@
 
 /* Messages */
 .chat-user {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 5px;
-  margin: 4px 0 14px 28px;
+  margin: 4px 0 0 28px;
+  /* Room for the copy button, inside the area that shows it. */
+  padding-bottom: 19px;
 }
 .chat-bubble {
   background: var(--accent-soft);
@@ -644,6 +647,28 @@
   white-space: pre-wrap;
   word-break: break-word;
   user-select: text;
+}
+/* Shows under your own message while the pointer is over it. */
+.chat-user-copy {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  color: var(--muted);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.chat-user:hover .chat-user-copy,
+.chat-user-copy:focus-visible {
+  opacity: 1;
+}
+.chat-user-copy:hover {
+  color: var(--accent);
 }
 .chat-bubble.task {
   background: var(--ai-soft);
@@ -1216,6 +1241,14 @@
   gap: 9px;
   padding: 8px 8px 8px 14px;
   border-bottom: 1px solid var(--ai-soft);
+  cursor: grab;
+  touch-action: none;
+}
+.ai-card-head:active {
+  cursor: grabbing;
+}
+.card-drag-shield {
+  cursor: grabbing;
 }
 .ai-card-head strong {
   flex-shrink: 0;
@@ -1296,11 +1329,65 @@
 /* Source mode panel */
 .ai-source {
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
   border-bottom: 1px solid var(--line);
   background: var(--ai-tint);
   padding: 10px 12px 12px;
   max-height: 62%;
   overflow: auto;
+}
+.ai-source > * {
+  flex-shrink: 0;
+}
+/* The rounds so far scroll on their own, so the box to keep talking stays in view. */
+.ai-source > .ai-source-thread {
+  flex-shrink: 1;
+  min-height: 90px;
+  overflow: auto;
+  margin-top: 8px;
+}
+.ai-source-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.ai-source-ask {
+  align-self: flex-end;
+  max-width: 88%;
+  padding: 5px 10px;
+  border-radius: 10px 10px 3px 10px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+.ai-source-ask span {
+  color: var(--muted);
+  font-size: 11px;
+}
+.ai-source-reply {
+  font-size: 12px;
+  line-height: 1.65;
+}
+.ai-source-reply .ai-markdown > :last-child {
+  margin-bottom: 0;
+}
+.ai-source-turn.discarded .ai-source-reply {
+  color: var(--muted);
+}
+.ai-source-outcome {
+  display: inline-block;
+  margin-top: 2px;
+  font-size: 10.5px;
+  color: var(--fainter);
+}
+.ai-source-turn.applied .ai-source-outcome {
+  color: var(--ai-text);
 }
 .ai-source-head {
   display: flex;
@@ -1387,9 +1474,11 @@
   background: var(--surface);
 }
 .ai-source-proposal {
-  margin-top: 8px;
   font-size: 12px;
   line-height: 1.65;
+}
+.ai-source-proposal > .chat-error {
+  margin: 0 0 6px;
 }
 .ai-source-actions {
   display: flex;

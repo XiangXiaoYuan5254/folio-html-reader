@@ -1093,6 +1093,7 @@ export default function App() {
         break;
       case 'pointerdown':
         window.getSelection()?.removeAllRanges();
+        if (assistant.get().card) assistant.closeCard();
         if (model.active !== id) selectDocument(id);
         setInkSettingsOpen(false);
         focus.setToolsVisible(false);
@@ -1698,6 +1699,7 @@ export default function App() {
                   </div>
                   {aiSourceOpen ? (
                     <AiSourceEdit
+                      key={doc.id}
                       doc={doc}
                       store={assistant}
                       editorSelection={() => sourceEditor.current?.selection() || ''}

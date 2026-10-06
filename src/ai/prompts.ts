@@ -210,15 +210,34 @@ export function sourceEditSystem() {
     '- 如果改动涉及大半个文件，可以改为输出完整的新文件，放在 ```html 代码块中。',
     '- 块之外用一两句中文说明改了什么，不要输出其他内容。',
     '- 保持页面能直接打开：不要引入外部脚本；保留原有的内容，除非用户要求删除。',
+    '- 用户可能对你之前的修改不满意，接着提意见。这时按意见在给出的文件上继续改；要撤回之前的某处修改，就把它改回去。',
   ].join('\n');
 }
+// An earlier round of the same conversation about the file.
+export type EditTurn = {
+  request: string;
+  explanation: string;
+  outcome: 'pending' | 'applied' | 'discarded';
+};
+const outcomes = {
+  applied: '已写入源码',
+  discarded: '用户没有采用，源码里没有这处修改',
+  pending: '还没写入源码，下面的文件里已经包含这处修改',
+};
 export function sourceEditPrompt(
   path: string,
   source: string,
   request: string,
   selection?: string,
   images = 0,
+  earlier: EditTurn[] = [],
+  // What the changes still waiting for the user did, when the file shown already has them.
+  pending?: string,
 ) {
+  const rounds = earlier.slice(-8).map((t, i) => {
+    const said = t.explanation.replace(/\s+/g, ' ').slice(0, 400) || '（只给出了修改）';
+    return `${i + 1}. 用户：${t.request || '按图片修改'}\n   你：${said}（${outcomes[t.outcome]}）`;
+  });
   return [
     `文件：${path}`,
     '```html',
@@ -228,8 +247,12 @@ export function sourceEditPrompt(
       ? `\n用户在编辑器中选中了这段代码，修改应围绕它：\n\`\`\`html\n${selection}\n\`\`\``
       : '',
     images ? `\n用户附了 ${images} 张图片（可能是页面截图，或想要的样子），修改时参照图片。` : '',
+    rounds.length ? `\n之前关于这个文件的对话（从早到晚）：\n${rounds.join('\n')}` : '',
+    pending
+      ? `\n上面的文件已经包含你最近给出、用户还没采用的修改，相对源码的改动如下（+ 是加上的行，- 是去掉的行）：\n\`\`\`diff\n${pending}\n\`\`\`\n用户看了效果，想接着调整。SEARCH 要与上面这份文件逐字一致。`
+      : '',
     '',
-    `修改要求：${request || '按图片修改'}`,
+    pending ? `用户的意见：${request || '按图片修改'}` : `修改要求：${request || '按图片修改'}`,
   ].join('\n');
 }
 export const fileLabel = fileName;

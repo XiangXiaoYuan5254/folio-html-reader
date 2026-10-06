@@ -114,3 +114,14 @@ export function diffStats(lines: DiffLine[]) {
     removed: lines.filter((l) => l.type === 'del').length,
   };
 }
+// The changed lines with a little context as plain text, shortened past `limit` characters.
+export function diffText(before: string, after: string, limit = 8000) {
+  const text = hunks(diffLines(before, after), 2)
+    .map((g) =>
+      g.lines
+        .map((l) => (l.type === 'add' ? '+' : l.type === 'del' ? '-' : ' ') + l.text)
+        .join('\n'),
+    )
+    .join('\n⋯\n');
+  return text.length > limit ? text.slice(0, limit) + '\n⋯（后面的改动略）' : text;
+}

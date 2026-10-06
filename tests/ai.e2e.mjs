@@ -368,11 +368,19 @@ try {
   );
   // The saved answer is one click away: the note tab, scrolled to where it was appended.
   await panel().getByRole('button', { name: '已存入 · 查看笔记' }).click();
-  const noteBox = page.getByLabel('文档笔记预览', { exact: true });
+  const noteBox = page.getByLabel('文档笔记', { exact: true });
   await noteBox.waitFor();
   assert.ok((await noteBox.innerText()).includes('注意力机制的核心是「'));
   await waitFor(
-    () => noteBox.evaluate((t) => t.scrollHeight <= t.clientHeight || t.scrollTop > 0),
+    () =>
+      noteBox.evaluate((t) => {
+        const view = t.closest('.cm-scroller').getBoundingClientRect();
+        const line = [...t.querySelectorAll('.cm-line')].findLast((l) =>
+          l.textContent.includes('注意力机制的核心是'),
+        );
+        const r = line?.getBoundingClientRect();
+        return !!r && r.top >= view.top && r.bottom <= view.bottom;
+      }),
     'note scrolled to the saved answer',
   );
   await page.screenshot({ path: path.join(evidence, 'ai-saved-note.png') });

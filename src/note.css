@@ -1,0 +1,438 @@
+/* The document note: one page, formatted as it's written. */
+.note-toolbar {
+  display: flex;
+  align-items: center;
+  padding: 0.45em 0.5em;
+  border-bottom: 1px solid var(--line-soft);
+  flex-shrink: 0;
+  overflow: hidden;
+  /* The toolbar grows and shrinks with the note's text size (A− / A+). */
+  font-size: var(--note-size, 13px);
+}
+.note-toolbar .icon-button {
+  flex-shrink: 0;
+  width: 2em;
+  height: 2.2em;
+}
+.note-toolbar svg {
+  width: 1.25em;
+  height: 1.25em;
+}
+.note-toolbar [data-overflow] {
+  display: none;
+}
+.note-toolbar-gap {
+  flex-shrink: 0;
+  width: 1px;
+  height: 1.1em;
+  margin: 0 0.2em;
+  background: var(--line);
+}
+.note-style-button {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.2em;
+  height: 2.25em;
+  padding: 0 0.3em 0 0.5em;
+  border-radius: 5px;
+  font-size: 0.97em;
+  color: var(--text-3);
+}
+.note-style-button svg {
+  width: 0.95em;
+  height: 0.95em;
+}
+.note-style-button:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+.note-style-option.h1 {
+  font-size: 15px;
+  font-weight: 650;
+}
+.note-style-option.h2 {
+  font-size: 13.5px;
+  font-weight: 650;
+}
+.note-size-option.current {
+  color: var(--accent);
+  font-weight: 600;
+}
+.note-style-option.h3 {
+  font-size: 12.5px;
+  font-weight: 650;
+}
+.note-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 18px 9px;
+  font-size: 9px;
+  color: var(--fainter);
+  flex-shrink: 0;
+}
+.note-footer > span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent-muted);
+}
+.note-footer-end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.note-size {
+  display: flex;
+  align-items: center;
+  border-radius: 5px;
+  background: var(--fill);
+}
+.note-size button {
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  color: var(--text-4);
+}
+.note-size button:hover:not(:disabled) {
+  color: var(--accent);
+}
+.note-size button:disabled {
+  opacity: 0.4;
+}
+.note-size span {
+  min-width: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.note-editor {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  /* The note scrolls on past its end by a share of the panel's height. */
+  container-type: size;
+}
+.note-editor .cm-editor {
+  height: 100%;
+  background: transparent;
+  color: var(--text-2);
+  /* Everything in the note is sized from this, set with A− / A+ under it. */
+  font-size: var(--note-size, 13px);
+}
+.note-editor .cm-editor.cm-focused {
+  outline: none;
+}
+.note-editor .cm-scroller {
+  font-family: inherit;
+  line-height: 1.85;
+  scrollbar-width: thin;
+}
+.note-editor .cm-content {
+  /* Wide formulas and tables scroll in their own box, not the whole note. */
+  min-width: 0;
+  padding: 14px 18px 60cqh;
+  caret-color: var(--accent);
+}
+.note-editor .cm-line {
+  padding: 0;
+}
+.note-editor .cm-note-blank {
+  line-height: 0.95;
+}
+.note-editor .cm-placeholder {
+  color: var(--fainter);
+  font-size: 0.92em;
+  line-height: 2;
+  white-space: pre-wrap;
+}
+.note-editor .cm-cursor,
+.note-editor .cm-dropCursor {
+  border-left: 1.5px solid var(--accent);
+}
+.note-editor .cm-selectionBackground {
+  background: color-mix(in srgb, var(--accent) 14%, transparent) !important;
+}
+.note-editor .cm-focused .cm-selectionBackground {
+  background: color-mix(in srgb, var(--accent) 24%, transparent) !important;
+}
+
+.note-editor .cm-note-h1,
+.note-editor .cm-note-h2,
+.note-editor .cm-note-h3,
+.note-editor .cm-note-h4,
+.note-editor .cm-note-h5,
+.note-editor .cm-note-h6 {
+  font-weight: 650;
+  color: var(--text-strong);
+  line-height: 1.55;
+}
+.note-editor .cm-note-h1 {
+  font-size: 1.32em;
+  padding-top: 12px;
+  padding-bottom: 2px;
+}
+.note-editor .cm-note-h2 {
+  font-size: 1.16em;
+  padding-top: 12px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+}
+.note-editor .cm-note-h3 {
+  font-size: 1.04em;
+  padding-top: 8px;
+}
+.note-editor :is(.cm-note-h4, .cm-note-h5, .cm-note-h6) {
+  font-size: 1em;
+  color: var(--text-3);
+  padding-top: 6px;
+}
+.note-editor .cm-line:first-child:is(.cm-note-h1, .cm-note-h2, .cm-note-h3) {
+  padding-top: 0;
+}
+
+.note-editor .cm-note-quote {
+  border-left: 3px solid var(--line-strong);
+  padding-left: 0.85em;
+  color: var(--text-3);
+}
+.note-editor .cm-note-marker {
+  display: inline-block;
+  box-sizing: border-box;
+  text-indent: 0;
+  text-align: right;
+  padding-right: 0.5em;
+  color: var(--accent-muted);
+  user-select: none;
+}
+.note-editor .cm-note-marker.ordered {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.94em;
+}
+.note-editor .cm-note-check {
+  display: inline-block;
+  position: relative;
+  width: 1.04em;
+  height: 1.04em;
+  box-sizing: border-box;
+  border: 1.5px solid var(--faint);
+  border-radius: 3.5px;
+  vertical-align: -2px;
+  cursor: pointer;
+}
+.note-editor .cm-note-check:hover {
+  border-color: var(--accent);
+}
+.note-editor .cm-note-check[aria-checked='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.note-editor .cm-note-check[aria-checked='true']::after {
+  content: '';
+  position: absolute;
+  left: 3.5px;
+  top: 0.5px;
+  width: 3px;
+  height: 7px;
+  border: solid var(--on-accent, #fff);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+.note-editor .cm-note-li.done {
+  color: var(--text-4);
+  text-decoration: line-through;
+  text-decoration-color: var(--faint);
+}
+
+.note-editor .cm-note-code {
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.88em;
+  background: var(--fill);
+  border-radius: 3px;
+  padding: 1px 3px;
+}
+.note-editor .cm-note-pre {
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.88em;
+  line-height: 1.65;
+  background: var(--code-bg, var(--surface-3));
+  padding: 0 10px;
+}
+.note-editor .cm-note-pre.first {
+  border-radius: 6px 6px 0 0;
+  padding-top: 4px;
+}
+.note-editor .cm-note-pre.last {
+  border-radius: 0 0 6px 6px;
+  padding-bottom: 4px;
+}
+.note-editor .cm-note-pre-end {
+  line-height: 6px;
+}
+.note-editor .cm-note-code-head {
+  display: inline-flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  text-indent: 0;
+  font-family: var(--font-sans);
+  font-size: 0.8em;
+  color: var(--muted);
+}
+.note-editor .cm-note-code-copy {
+  font-size: 1em;
+  color: var(--muted);
+  padding: 0 2px;
+}
+.note-editor .cm-note-code-copy:hover {
+  color: var(--accent);
+}
+
+.note-editor .cm-note-math-inline {
+  cursor: pointer;
+  text-indent: 0;
+}
+.note-editor .cm-note-math-block {
+  display: block;
+  text-align: center;
+  padding: 6px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  cursor: pointer;
+}
+.note-editor .cm-note-math-block.preview {
+  cursor: default;
+  border: 1px dashed var(--line);
+  border-top: 0;
+  border-radius: 0 0 6px 6px;
+}
+.note-editor .cm-note-math-block .katex-display {
+  margin: 0;
+}
+.note-editor .cm-note-math-empty {
+  color: var(--fainter);
+  font-size: 0.88em;
+}
+.note-editor .cm-note-math-source {
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.9em;
+  color: var(--accent-deep);
+}
+.note-editor .cm-note-math-lines {
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.88em;
+  color: var(--accent-deep);
+  background: var(--fill);
+  padding: 0 10px;
+}
+
+.note-editor .cm-note-image {
+  display: inline-block;
+  position: relative;
+  max-width: 100%;
+  margin: 4px 0;
+  vertical-align: top;
+  text-indent: 0;
+}
+.note-editor .cm-note-image img {
+  display: block;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: zoom-in;
+}
+.note-editor .cm-note-image-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 0.55);
+  color: #fff;
+  font-size: 15px;
+  line-height: 20px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.note-editor .cm-note-image:hover .cm-note-image-remove {
+  opacity: 1;
+}
+.note-editor .cm-note-image-missing {
+  color: var(--faint);
+}
+.note-editor .cm-note-hr {
+  display: inline-block;
+  width: 100%;
+  height: 1px;
+  vertical-align: middle;
+  background: var(--line);
+}
+.note-editor .cm-note-block {
+  padding: 4px 0;
+  cursor: text;
+}
+.note-editor .cm-note-block .ai-table {
+  margin: 0;
+}
+.note-editor .cm-note-block .ai-table table {
+  font-size: 0.92em;
+}
+.note-editor .cm-note-table-lines {
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.88em;
+  color: var(--text-3);
+}
+.note-editor .cm-note-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: var(--accent-line, currentColor);
+  text-underline-offset: 2px;
+}
+.note-editor .cm-note-link[data-href] {
+  cursor: pointer;
+}
+.note-editor .cm-note-faded {
+  color: var(--fainter);
+}
+
+/* The / menu */
+.cm-tooltip.note-slash {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 10px 30px rgb(var(--shadow-rgb) / calc(0.149 * var(--shadow-k)));
+  padding: 4px;
+  overflow: hidden;
+}
+.cm-tooltip.note-slash.cm-tooltip-autocomplete > ul {
+  font-family: var(--font-sans);
+  max-height: 290px;
+  min-width: 190px;
+}
+.cm-tooltip.note-slash.cm-tooltip-autocomplete > ul > li.note-slash-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 9px;
+  border-radius: 5px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.cm-tooltip.note-slash.cm-tooltip-autocomplete > ul > li.note-slash-option[aria-selected] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.cm-tooltip.note-slash .cm-completionDetail {
+  margin-left: 18px;
+  font-size: 10.5px;
+  font-style: normal;
+  color: var(--faint);
+}
+.cm-tooltip.note-slash .cm-completionMatchedText {
+  text-decoration: none;
+}

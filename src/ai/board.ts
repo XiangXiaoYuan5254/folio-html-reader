@@ -58,6 +58,11 @@ const colorNames: Record<string, InkColor> = {
   黄: 'yellow',
 };
 const idPattern = /^[A-Za-z][\w-]*(\.\d+)?$/;
+// Two words on a canvas written in the same place.
+const sameSpot = (a: ShapeSpec, b: ShapeSpec) =>
+  (a.attrs.transform || '') === (b.attrs.transform || '') &&
+  Math.abs(Number(a.attrs.x) - Number(b.attrs.x)) <= 4 &&
+  Math.abs(Number(a.attrs.y) - Number(b.attrs.y)) <= 4;
 const validId = (s: string | undefined) => (s && idPattern.test(s) ? s : '');
 // A line that is a command, rather than code or TeX the model went on with: a command's
 // name at the start of the line, then an id or the bar (or, for say and pause, anything).
@@ -604,7 +609,7 @@ export function tutorSystem(config: AiConfig, kind: LessonKind = 'text', voice: 
     '- 边说边画：每句 say 后面只 draw 这句话说到的一两个元素（一行 draw 可以写几个元素），一张图分几句话画完。',
     '- 颜色写 stroke="red|blue|green|orange"（文字写 fill），不写就是粉笔色；形状默认空心。<text> 里只写纯文字，不能写 LaTeX。',
     '- 画之前先想好布局，元素之间留出空隙，文字不要压在线上。',
-    '- 以后要指着讲的元素加 id，例如 <rect id="n1" …/>，之后可以 circle n1、arrow n1 n2。',
+    '- 以后要指着讲的元素加 id，例如 <rect id="n1" …/>，之后可以 circle n1、arrow n1 n2。之后要擦掉换新的元素（指针、会变的数值）也加 id，换的时候先 erase 旧的，再画新的。',
     '',
     '数学图像（写表达式就行，不用自己算点）：',
     'axes 画布编号 | x 最小 最大 y 最小 最大 [equal]      二维坐标轴；equal 让 x、y 等比例（画圆、几何时用）',
@@ -682,13 +687,16 @@ export function tutorSystem(config: AiConfig, kind: LessonKind = 'text', voice: 
     'math m1 | \\bar v = \\frac{1}{n}\\sum_{i=1}^{n} v_i',
     'say 我们画一个数组，看指针怎么走。',
     'figure g1 | 420 130',
-    'draw g1 | <rect id="c0" x="20" y="20" width="60" height="60"/><text x="50" y="58" text-anchor="middle">3</text><rect x="80" y="20" width="60" height="60"/><text x="110" y="58" text-anchor="middle">7</text>',
+    'draw g1 | <rect id="c0" x="20" y="20" width="60" height="60"/><text id="v0" x="50" y="58" text-anchor="middle">3</text><rect x="80" y="20" width="60" height="60"/><text id="v1" x="110" y="58" text-anchor="middle">7</text>',
     'say 指针 i 从最左边开始。',
     'draw g1 | <arrow id="i0" x1="50" y1="120" x2="50" y2="88" stroke="red"/><text id="i0t" x="58" y="120" fill="red">i</text>',
     'circle c0',
     'say i 往右走一格。',
     'erase i0 i0t',
     'draw g1 | <arrow id="i1" x1="110" y1="120" x2="110" y2="88" stroke="red"/><text id="i1t" x="118" y="120" fill="red">i</text>',
+    'say 把这两个数交换一下。',
+    'erase v0 v1',
+    'draw g1 | <text id="v2" x="50" y="58" text-anchor="middle">7</text><text id="v3" x="110" y="58" text-anchor="middle">3</text>',
   ].join('\n');
 }
 type Spot = { opening: string; around: string };
@@ -1445,9 +1453,10 @@ export class Tutor {
       );
       if (run !== this.run) return;
       this.feed(run, '\n');
-      // A fence the model never closed, and a formula at the very end.
+      // A fence the model never closed, and a formula or a `code` line at the very end.
       this.closeFence();
       this.release();
+      this.dropHead();
       if (!result.text.trim()) throw Error('没有收到回答');
       this.speaker?.ended?.();
     } catch (e) {
@@ -1481,8 +1490,10 @@ export class Tutor {
   // Code arrives as a `code` line and then a ``` fence whose lines keep their indentation.
   // A fence with a language is code even without the `code` line; a bare one, which some
   // models wrap their whole reply in, is ignored. Some models leave the fence out: then the
-  // code after the `code` line (`bare`) goes on until the commands start again.
-  private codeHead: { id: string; lang: string; raw: string } | null = null;
+  // code after the `code` line (`bare`) goes on until the commands start again. Some put the
+  // language after the bar, as in “code c1 | python”: it is taken as the language, unless
+  // no code comes after it, and then it was the code (`word`).
+  private codeHead: { id: string; lang: string; raw: string; word?: string } | null = null;
   private fence: {
     id: string;
     lang: string;
@@ -1543,7 +1554,11 @@ export class Tutor {
       this.codeHead = { id: cmd.id, lang: cmd.lang, raw: raw.trim() };
       return;
     }
-    this.codeHead = null;
+    if (cmd.op === 'code' && !cmd.lang && /^[A-Za-z][\w+#.-]*$/.test(cmd.code)) {
+      this.codeHead = { id: cmd.id, lang: cmd.code, raw: raw.trim(), word: cmd.code };
+      return;
+    }
+    this.dropHead();
     if (cmd.op === 'math') {
       this.held = { cmd, lines: [cmd.tex], raw: [raw.trim()] };
       return;
@@ -1674,6 +1689,12 @@ export class Tutor {
     while (run === this.run && !over && (this.state.paused || this.vnow() < limit))
       await this.nap(this.state.paused ? 1000 : 120);
     if (this.voiceDone === done) this.voiceDone = null;
+  }
+  // A `code` line no code came after.
+  private dropHead() {
+    const head = this.codeHead;
+    this.codeHead = null;
+    if (head?.word) this.push({ op: 'code', id: head.id, lang: '', code: head.word }, head.raw);
   }
   private closeFence() {
     const f = this.fence;
@@ -1835,10 +1856,15 @@ export class Tutor {
     }
   }
 
+  // An id stays taken after what had it is erased: the board hides everything under an
+  // erased id, so something drawn again under it gets an id of its own.
+  private taken(id: string) {
+    return this.refs.has(id) || this.state.erased.includes(id);
+  }
   private nextId(prefix: string) {
     let id: string;
     do id = `${prefix}${++this.counter}`;
-    while (this.refs.has(id));
+    while (this.taken(id));
     return id;
   }
   private resolve(ref: string) {
@@ -1849,7 +1875,7 @@ export class Tutor {
   // Puts one command on the board. False when it points at something that isn't there.
   private figure(wanted: string, w: number, h: number, dur: number): FigureBlock {
     let id = wanted || this.nextId('g');
-    if (this.refs.has(id)) {
+    if (this.taken(id)) {
       const fresh = this.nextId(`${id}_`);
       this.alias.set(id, fresh);
       id = fresh;
@@ -1938,7 +1964,7 @@ export class Tutor {
       case 'math':
       case 'flow': {
         let id = cmd.id || this.nextId(cmd.op[0]);
-        if (this.refs.has(id)) {
+        if (this.taken(id)) {
           const fresh = this.nextId(`${id}_`);
           this.alias.set(id, fresh);
           id = fresh;
@@ -2003,7 +2029,7 @@ export class Tutor {
         if (!pic || !this.pictures.includes(pic)) return false;
         const [l, t, r, b] = cmd.box.map(Math.round);
         let id = cmd.id || this.nextId('a');
-        if (this.refs.has(id)) id = this.nextId(`${id}_`);
+        if (this.taken(id)) id = this.nextId(`${id}_`);
         this.refs.set(id, {
           label: '图中区域',
           text: `左 ${l}% 上 ${t}% 右 ${r}% 下 ${b}%`,
@@ -2015,7 +2041,7 @@ export class Tutor {
       }
       case 'code': {
         let id = cmd.id || this.nextId('c');
-        if (this.refs.has(id)) {
+        if (this.taken(id)) {
           const fresh = this.nextId(`${id}_`);
           this.alias.set(id, fresh);
           id = fresh;
@@ -2072,10 +2098,26 @@ export class Tutor {
           return false;
         }
         if (!specs.length) return false;
+        // Words written where the canvas already has words replace them, as a teacher wipes
+        // a number before writing the new one there: the old ones may have no id to erase.
+        let before = existing?.shapes || [];
+        if (cmd.op === 'draw') {
+          const words = specs.filter((s) => s.tag === 'text');
+          const wiped: string[] = [];
+          before = before.map((old) => {
+            if (old.tag !== 'text' || (old.ref && this.state.erased.includes(old.ref))) return old;
+            if (!words.some((w) => sameSpot(w, old))) return old;
+            const ref = old.ref || this.nextId('w');
+            this.refs.delete(ref);
+            wiped.push(ref);
+            return { ...old, ref };
+          });
+          if (wiped.length) this.set((s) => ({ ...s, erased: [...s.erased, ...wiped] }));
+        }
         for (const spec of specs) {
           if (!spec.ref) continue;
           let ref = spec.ref;
-          if (this.refs.has(ref)) {
+          if (this.taken(ref)) {
             const fresh = this.nextId(`${ref}_`);
             this.alias.set(ref, fresh);
             ref = spec.ref = fresh;
@@ -2101,7 +2143,7 @@ export class Tutor {
           });
         }
         const shapes = this.timed(specs, dur, key);
-        if (existing) grown = { ...existing, shapes: [...existing.shapes, ...shapes] };
+        if (existing) grown = { ...existing, shapes: [...before, ...shapes] };
         else block = { ...fig, shapes };
         focus = shapes.find((s) => s.ref)?.ref || fig.id;
         break;

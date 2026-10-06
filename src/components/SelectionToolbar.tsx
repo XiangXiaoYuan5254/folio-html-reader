@@ -3,8 +3,9 @@ import type { HTMLAttributes } from 'react';
 
 export type ScreenBox = { left: number; top: number; right: number; bottom: number };
 
-// The toolbar for selected text sits just above the selection, or below it when there is
-// no room, and stays inside the reading area while the page scrolls. Without a box it
+// The toolbar for selected text sits just below the selection, near where the pointer let
+// go, or above it when there is no room, and stays inside the reading area while the page
+// scrolls. Without a box it
 // falls back to the bottom of the pane.
 export function SelectionToolbar({
   box,
@@ -28,8 +29,8 @@ export function SelectionToolbar({
         height = el.offsetHeight,
         gap = 10,
         edge = 6;
-      let top = box.top - height - gap;
-      if (top < area.top + edge) top = box.bottom + gap;
+      let top = box.bottom + gap;
+      if (top + height > area.bottom - edge) top = box.top - height - gap;
       top = Math.max(area.top + edge, Math.min(top, area.bottom - height - edge));
       const left = Math.max(
         p.left + edge,
