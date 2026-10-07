@@ -88,11 +88,8 @@ export function Inspector(p: {
       (rank.get(a.id) ?? rank.size) - (rank.get(b.id) ?? rank.size) || a.createdAt - b.createdAt,
   );
   return (
-    <aside id="inspector-panel" className={`inspector${p.tab === 'assistant' ? ' wide' : ''}`}>
-      <SidebarResizer
-        side="right"
-        storageKey={p.tab === 'assistant' ? 'folio.assistant-width' : 'folio.inspector-width'}
-      />
+    <aside id="inspector-panel" className="inspector">
+      <SidebarResizer side="right" />
       <div className="inspector-heading">
         <span>批注与笔记</span>
         <IconButton className="inspector-drawer-close" label="收起批注栏" onClick={p.onClose}>

@@ -420,7 +420,7 @@ try {
   assert.equal(saved.providers[0].effort, 'low');
   console.log('PASS: model and reasoning level switched in the chat box and used by requests');
 
-  // The right panel is resized by dragging its edge; chat and annotations keep their widths.
+  // The right panel is resized by dragging its edge; every tab shares that width.
   const inspector = page.locator('.inspector');
   const narrow = (await inspector.boundingBox()).width;
   const edge = await page.locator('.sidebar-resizer.right').boundingBox();
@@ -431,11 +431,11 @@ try {
   const wider = (await inspector.boundingBox()).width;
   assert.ok(Math.abs(wider - narrow - 120) < 6, `${narrow} -> ${wider}`);
   await page.locator('.inspector-tabs button', { hasText: '笔记' }).click();
-  assert.ok((await inspector.boundingBox()).width < wider - 60, 'notes keep their own width');
+  assert.ok(Math.abs((await inspector.boundingBox()).width - wider) < 2, 'notes share the width');
   await page.locator('.inspector-tabs button', { hasText: '助手' }).click();
   assert.ok(Math.abs((await inspector.boundingBox()).width - wider) < 2, 'chat width remembered');
   assert.equal(
-    await page.evaluate(() => localStorage.getItem('folio.assistant-width')),
+    await page.evaluate(() => localStorage.getItem('folio.inspector-width')),
     String(Math.round(wider)),
   );
   // At its narrowest the panel still shows every quick action in full.
@@ -455,7 +455,7 @@ try {
   }
   await page.screenshot({ path: path.join(evidence, 'ai-narrow-panel.png') });
   await page.locator('.sidebar-resizer.right').dblclick();
-  console.log('PASS: right panel resized by dragging, width remembered per tab');
+  console.log('PASS: right panel resized by dragging, width shared by every tab');
 
   // AI highlights land as one undo step.
   await panel().locator('.assistant-chips').getByRole('button', { name: 'AI 划重点' }).click();

@@ -37,16 +37,9 @@ function stored(key: string, min: number, max: number) {
   }
 }
 
-export function SidebarResizer({
-  side = 'left',
-  storageKey: key,
-}: {
-  side?: 'left' | 'right';
-  // Where the width is remembered, when one panel keeps several (e.g. per tab).
-  storageKey?: string;
-}) {
+export function SidebarResizer({ side = 'left' }: { side?: 'left' | 'right' }) {
   const config = sides[side];
-  const storageKey = key || config.storageKey;
+  const { storageKey } = config;
   const { min: minWidth, max: maxWidth } = config;
   const clamp = (width: number, max: number) => Math.max(minWidth, Math.min(max, width));
   const [initialWidth] = useState(() => stored(storageKey, minWidth, maxWidth));
@@ -108,15 +101,6 @@ export function SidebarResizer({
       else localStorage.setItem(storageKey, String(preferred.current));
     } catch {}
   }, [storageKey]);
-  // Switching to a panel that keeps its own width (another tab) loads that width.
-  const loadedKey = useRef(storageKey);
-  useLayoutEffect(() => {
-    if (loadedKey.current === storageKey) return;
-    loadedKey.current = storageKey;
-    preferred.current = stored(storageKey, minWidth, maxWidth);
-    layout();
-  }, [storageKey, layout]);
-
   const finish = useCallback(
     (cancel = false) => {
       const gesture = drag.current;

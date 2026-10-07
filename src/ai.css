@@ -70,20 +70,6 @@
   }
 }
 
-/* Inspector: wider while the assistant is open */
-.inspector.wide {
-  --inspector: 384px;
-}
-@media (max-width: 1180px) {
-  .inspector.wide {
-    --inspector: 340px;
-  }
-}
-@media (max-width: 950px) {
-  .inspector.wide {
-    --inspector: 300px;
-  }
-}
 .annotation-ai-badge {
   font-size: 9px;
   font-weight: 600;
