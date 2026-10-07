@@ -1,7 +1,8 @@
 // End-to-end test of automatic updates. Packages 页间 as version 0.0.1, 0.0.2 and 0.0.3, serves
 // 0.0.2's update files from a local server, and lets an installed 0.0.1 update itself: on a normal
 // quit (installs quietly) and with “立即重启” (installs and reopens). Then 0.0.2 finds nothing
-// newer. When 0.0.3 comes out while 0.0.2 waits to be installed, 0.0.1 goes straight to 0.0.3.
+// newer. When 0.0.3 comes out while 0.0.2 waits to be installed, 0.0.1 goes straight to 0.0.3,
+// and its card lists what changed in 0.0.2 too.
 // On macOS a copy in a folder it cannot write to must link to the website instead. Runs on macOS
 // and on Windows (.github/workflows/windows.yml); screenshots and the log go to FOLIO_EVIDENCE.
 import { _electron as electron } from 'playwright';
@@ -53,6 +54,11 @@ await pack('0.0.3');
 const updateFile = (version) =>
   mac ? `Folio-${version}-mac-arm64.zip` : `Folio-${version}-win-x64-setup.exe`;
 const update = updateFile('0.0.2');
+// Every release's notes, as scripts/website-downloads.mjs publishes them with 0.0.3.
+await fs.writeFile(
+  path.join(temp, '0.0.3', 'release-notes.json'),
+  JSON.stringify(['0.0.3', '0.0.2', '0.0.1'].map((v) => ({ version: v, notes: `- ${v} 的改动` }))),
+);
 
 const requests = [];
 // The version on the “website”.
@@ -270,10 +276,14 @@ try {
   await win.locator('.toast').getByText('发现新版本 0.0.3').waitFor();
   await card().getByText('页间 0.0.3 已准备好').waitFor();
   assert.ok(requests.includes(updateFile('0.0.3')), '0.0.3 downloaded');
+  // The card also lists 0.0.2's changes, which 0.0.1 never had, under each version.
+  assert.deepEqual(await card().locator('h3').allInnerTexts(), ['0.0.3', '0.0.2']);
+  const listed = await card().innerText();
+  assert.ok(listed.includes('0.0.2 的改动') && !listed.includes('0.0.1 的改动'), listed);
   await win.screenshot({ path: path.join(evidence, 'update-newer.png') });
   await quit();
   await waitFor(async () => (await installedVersion()) === '0.0.3', 'installed 0.0.3', 120000);
-  console.log('PASS: a newer release replaces the one waiting to be installed');
+  console.log('PASS: a newer release replaces the one waiting, and the card lists both');
   assert.deepEqual(errors, []);
   passed = true;
 } finally {

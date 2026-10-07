@@ -64,6 +64,8 @@ GitHub Actions 的 `Windows` 工作流（`.github/workflows/windows.yml`）在 W
 - **立即重启**：先像关窗口一样保存，再退出、安装、重新打开。
 - **稍后**：标题栏右侧留一个“重启以更新”，下次退出页间时静默安装，不重新打开。
 
+提示卡片列出从已安装的版本以来每一版的更新内容：最新一版的来自 `.yml`，中间几版的来自同一目录下的 `release-notes.json`（读不到时只列最新一版）。
+
 下载好、还没安装时仍按时检查：这期间又发了新版本，就改下新版本，安装时直接装最新的，不会先装上一版、重开后再更新一次。
 
 点标题栏中间的“页间”可以手动检查更新（Windows 没有菜单栏，只能从这里检查），macOS 的“页间”菜单里也有“检查更新…”。实现在 `electron/updater.cjs`。
@@ -84,7 +86,7 @@ GitHub Actions 的 `Windows` 工作流（`.github/workflows/windows.yml`）在 W
 1. 改 `package.json` 的版本号，必须比线上版本大。
 2. 在 `build/release-notes.md` 写这次更新了什么，每行一条，会显示在提示卡片里。它会写进更新清单，所以要在打包前改好。
 3. `npm run dist:mac` 和 `npm run dist:win`。
-4. `npm run website:downloads`：核对 `release/` 里的更新清单与版本号一致，再把两个安装包、mac zip、两个 `.blockmap` 和两个 `.yml` 复制到 `website/downloads/`。
+4. `npm run website:downloads`：核对 `release/` 里的更新清单与版本号一致，再把两个安装包、mac zip、两个 `.blockmap` 和两个 `.yml` 复制到 `website/downloads/`，并写出 `release-notes.json`：这一版的说明取自 `build/release-notes.md`，之前各版的取自它们发布标签里的同一文件，所以每次发版都要打 `v版本号` 标签。
 5. 上传到服务器：**先传安装包，最后传两个 `.yml`**。`.yml` 一上线，用户的页间就会开始下载它列出的文件。
 6. 旧版本的 `.blockmap` 留在服务器上，更新时靠它只下载变化的部分；旧版本的安装包和 zip 可以删。
 
@@ -94,7 +96,7 @@ GitHub Actions 的 `Windows` 工作流（`.github/workflows/windows.yml`）在 W
 npm run test:update
 ```
 
-在 Mac 上打包 0.0.1、0.0.2、0.0.3 三个版本，用本地服务器提供 0.0.2 的更新文件，依次检查：页间所在文件夹不可写时只提示去官网；选“稍后”后退出时静默安装且不重新打开；“立即重启”安装后重新打开；装好的 0.0.2 手动检查时提示已是最新版本；0.0.2 下载好、还没安装时再检查，不会重复下载；这时服务器换成 0.0.3，再检查会改下 0.0.3，退出后直接装上 0.0.3。约 5 分钟。`FOLIO_UPDATE_URL` 环境变量可以把更新地址换成测试服务器。
+在 Mac 上打包 0.0.1、0.0.2、0.0.3 三个版本，用本地服务器提供 0.0.2 的更新文件，依次检查：页间所在文件夹不可写时只提示去官网；选“稍后”后退出时静默安装且不重新打开；“立即重启”安装后重新打开；装好的 0.0.2 手动检查时提示已是最新版本；0.0.2 下载好、还没安装时再检查，不会重复下载；这时服务器换成 0.0.3，再检查会改下 0.0.3，提示卡片同时列出 0.0.3 和 0.0.2 的更新内容，退出后直接装上 0.0.3。约 5 分钟。`FOLIO_UPDATE_URL` 环境变量可以把更新地址换成测试服务器。
 
 Windows 的同一测试在 GitHub Actions 的 `Windows` 工作流里运行（「Test automatic update」一步）。
 

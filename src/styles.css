@@ -1823,8 +1823,23 @@ button.brand {
   font-weight: 600;
   color: var(--text);
 }
+.update-card-notes {
+  max-height: min(42vh, 340px);
+  margin-top: 8px;
+  overflow-y: auto;
+}
+.update-card-notes h3 {
+  margin: 10px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.update-card-notes section:first-child h3 {
+  margin-top: 0;
+}
 .update-card ul {
-  margin: 8px 0 0;
+  margin: 2px 0 0;
   padding-left: 18px;
   line-height: 1.7;
 }

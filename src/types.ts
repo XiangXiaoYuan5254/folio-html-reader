@@ -78,12 +78,14 @@ export type OpenDocument = {
 export type BackupEntry = { name: string; time: number; size: number; restore: boolean };
 export type OutlineItem = { id: string; text: string; level: number };
 // A newer version of 页间, as electron/updater.cjs reports it. `manual` is a version this copy
-// cannot install by itself, so it links to the website instead.
+// cannot install by itself, so it links to the website instead. `releases` holds the notes of
+// every release since the installed one, newest first.
+export type ReleaseNotes = { version: string; notes: string };
 export type UpdateState =
   | { status: 'idle' }
   | { status: 'downloading'; version: string }
-  | { status: 'ready'; version: string; notes: string }
-  | { status: 'manual'; version: string; notes: string; url: string };
+  | { status: 'ready'; version: string; releases: ReleaseNotes[] }
+  | { status: 'manual'; version: string; releases: ReleaseNotes[]; url: string };
 export type FrameEvent = { type: string; [key: string]: any };
 export interface FolioBridge {
   platform: string;

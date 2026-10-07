@@ -4,7 +4,7 @@
 // a row install once. Windows uses electron-updater's NSIS updater. macOS's own updater only
 // installs Developer ID-signed apps and 页间 is signed ad hoc, so there electron-updater downloads
 // the zip and the app bundle is swapped for the new one after 页间 quits.
-const { app } = require('electron');
+const { app, net } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 // Electron's fs reads app.asar as a folder, so only the original one can delete an unpacked app.
@@ -143,16 +143,59 @@ const releaseNotes = (info) =>
     : Array.isArray(info.releaseNotes)
       ? info.releaseNotes.map((entry) => entry.note || '').join('\n')
       : '';
+// Whether version a (x.y.z) comes after b.
+const newer = (a, b) => {
+  const [x, y] = [a, b].map((v) => String(v).split('.').map(Number));
+  for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0);
+  return false;
+};
+
+// What changed in every release since the installed one, newest first: the update's own notes
+// and, from release-notes.json next to the update files (scripts/website-downloads.mjs), the
+// releases in between. Just the update's own when that list can't be read.
+async function releasesSince(info, provider) {
+  const own = { version: info.version, notes: releaseNotes(info) };
+  try {
+    const [file] = provider.resolveFiles(info);
+    const response = await net.fetch(new URL('release-notes.json', file.url).href, {
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) return [own];
+    const listed = await response.json();
+    const between = (Array.isArray(listed) ? listed : []).filter(
+      (r) =>
+        typeof r?.version === 'string' &&
+        typeof r.notes === 'string' &&
+        newer(r.version, app.getVersion()) &&
+        newer(info.version, r.version),
+    );
+    return [own, ...between.sort((a, b) => (newer(a.version, b.version) ? -1 : 1))];
+  } catch {
+    return [own];
+  }
+}
 
 // State sent to the window:
-//   idle · downloading { version } · ready { version, notes }
-//   manual { version, notes, url }: a new version this copy cannot install by itself
+//   idle · downloading { version } · ready { version, releases }
+//   manual { version, releases, url }: a new version this copy cannot install by itself
+// releases: [{ version, notes }], newest first, every release since the installed one.
 function createUpdates(send) {
   let state = { status: 'idle' };
   let restart = false;
+  // Counts what was published, so notes still being read don't replace a newer state.
+  let published = 0;
+  let settling = Promise.resolve();
   const publish = (next) => {
+    published++;
     state = next;
     send(state);
+  };
+  // Publishes a state that shows the releases' notes once they are read.
+  const withNotes = (info, make) => {
+    const turn = ++published;
+    settling = releasesSince(info, updater.updateInfoAndProvider?.provider).then((releases) => {
+      if (turn === published) publish(make(releases));
+    });
   };
   const updater =
     process.platform === 'win32'
@@ -170,19 +213,17 @@ function createUpdates(send) {
     }
     updater.on('update-available', (info) => {
       if (state.status === 'ready' && state.version === info.version) return;
-      publish(
-        installs
-          ? { status: 'downloading', version: info.version }
-          : {
-              status: 'manual',
-              version: info.version,
-              notes: releaseNotes(info),
-              url: downloadPage,
-            },
-      );
+      if (installs) publish({ status: 'downloading', version: info.version });
+      else
+        withNotes(info, (releases) => ({
+          status: 'manual',
+          version: info.version,
+          releases,
+          url: downloadPage,
+        }));
     });
     updater.on('update-downloaded', (info) =>
-      publish({ status: 'ready', version: info.version, notes: releaseNotes(info) }),
+      withNotes(info, (releases) => ({ status: 'ready', version: info.version, releases })),
     );
     // Offline or a failed download: stay quiet and try again at the next check.
     updater.on('error', () => {
@@ -207,6 +248,7 @@ function createUpdates(send) {
       updater.autoDownload = installs;
     }
     if (!result) throw Error('开发版本不检查更新');
+    await settling;
     if (ready && result.isUpdateAvailable && result.updateInfo.version !== ready)
       result.downloadPromise = updater.downloadUpdate();
     result.downloadPromise?.catch(() => {});

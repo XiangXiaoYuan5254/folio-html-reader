@@ -5,6 +5,7 @@ import { IconButton } from './IconButton';
 type Available = Extract<UpdateState, { status: 'ready' | 'manual' }>;
 
 // Release notes come from build/release-notes.md as plain text; each line becomes a list item.
+// An update that skips releases lists theirs too, under each version.
 const noteLines = (notes: string) =>
   notes
     .split('\n')
@@ -24,7 +25,11 @@ export function UpdateCard({
   onLater: () => void;
 }) {
   const ready = update.status === 'ready';
-  const lines = noteLines(update.notes);
+  // Each release since the installed one, under its version when there are several.
+  const releases = update.releases
+    .map((r) => ({ version: r.version, lines: noteLines(r.notes) }))
+    .filter((r) => r.lines.length);
+  const several = releases.length > 1;
   return (
     <section className="update-card" aria-labelledby="update-card-title">
       <div className="update-card-heading">
@@ -36,12 +41,19 @@ export function UpdateCard({
           <X size={15} />
         </IconButton>
       </div>
-      {lines.length ? (
-        <ul>
-          {lines.map((line, i) => (
-            <li key={i}>{line}</li>
+      {releases.length ? (
+        <div className="update-card-notes">
+          {releases.map((r) => (
+            <section key={r.version} aria-label={several ? `${r.version} 更新了什么` : undefined}>
+              {several ? <h3>{r.version}</h3> : null}
+              <ul>
+                {r.lines.map((line, i) => (
+                  <li key={i}>{line}</li>
+                ))}
+              </ul>
+            </section>
           ))}
-        </ul>
+        </div>
       ) : null}
       <p>
         {ready
