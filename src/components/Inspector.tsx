@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { lazy, Suspense, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { Annotation, OutlineItem, OpenDocument } from '../types';
+import type { Annotation, NoteReveal, OutlineItem, OpenDocument } from '../types';
 import { IconButton } from './IconButton';
 import { PenIcon } from './PenIcon';
 import { InkThumbnail } from './InkThumbnail';
@@ -53,7 +53,7 @@ export function Inspector(p: {
   doc?: OpenDocument;
   tab: InspectorTab;
   onTab: (tab: InspectorTab) => void;
-  noteReveal: boolean;
+  noteReveal: NoteReveal | null;
   onNoteRevealed: () => void;
   outline: OutlineItem[];
   // Annotation ids in reading order; ones not in it yet go last, oldest first.
@@ -226,7 +226,7 @@ function DocumentNote(p: {
   disabled: boolean;
   saving: boolean;
   onChange: (note: string) => void;
-  reveal: boolean;
+  reveal: NoteReveal | null;
   onRevealed: () => void;
   onBoard: (id: string) => void;
   images?: NoteImages;

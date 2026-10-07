@@ -361,12 +361,29 @@ try {
   let f = await frame();
   await f.locator('[data-folio-cite] rect').first().waitFor({ state: 'attached' });
   await page.screenshot({ path: path.join(evidence, 'ai-answer-citation.png') });
+  // A note longer than the panel, looked at from its top, so the saved answer lands out of view.
+  await page.locator('.inspector-tabs').getByRole('button', { name: '笔记' }).click();
+  await page.getByLabel('文档笔记', { exact: true }).click();
+  await page.keyboard.insertText(
+    Array.from({ length: 60 }, (_, i) => `早先的笔记第 ${i + 1} 段。`).join('\n\n'),
+  );
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+ArrowUp' : 'Control+Home');
+  await waitFor(
+    () =>
+      page
+        .locator('.note-editor .cm-scroller')
+        .evaluate((s) => s.scrollTop + s.clientHeight < s.scrollHeight - 200),
+    'the end of the note out of view',
+  );
+  await page.locator('.inspector-tabs').getByRole('button', { name: '助手' }).click();
   await panel().getByRole('button', { name: '存入笔记' }).click();
   await waitFor(
     async () => (await dataFor('01_注意力.html')).data.note.includes('注意力机制的核心是「'),
     'answer saved to the note',
   );
-  // The saved answer is one click away: the note tab, scrolled to where it was appended.
+  // Under the question it answers, not a bare “AI 回答”.
+  assert.ok((await dataFor('01_注意力.html')).data.note.includes('## 注意力机制的核心是什么？（'));
+  // The saved answer is one click away: the note tab, scrolled to that answer.
   await panel().getByRole('button', { name: '已存入 · 查看笔记' }).click();
   const noteBox = page.getByLabel('文档笔记', { exact: true });
   await noteBox.waitFor();
@@ -384,6 +401,26 @@ try {
     'note scrolled to the saved answer',
   );
   await page.screenshot({ path: path.join(evidence, 'ai-saved-note.png') });
+  // With more notes written after it, 查看笔记 still goes to this answer, its heading on top.
+  await noteBox.click();
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+ArrowDown' : 'Control+End');
+  await page.keyboard.insertText(
+    '\n\n' + Array.from({ length: 40 }, (_, i) => `后来的笔记第 ${i + 1} 段。`).join('\n\n'),
+  );
+  await page.locator('.inspector-tabs').getByRole('button', { name: '助手' }).click();
+  await panel().getByRole('button', { name: '已存入 · 查看笔记' }).click();
+  await waitFor(
+    () =>
+      noteBox.evaluate((t) => {
+        const scroller = t.closest('.cm-scroller');
+        const view = scroller.getBoundingClientRect();
+        const r = t.querySelector('.cm-note-h2')?.getBoundingClientRect();
+        const end = scroller.scrollTop + scroller.clientHeight < scroller.scrollHeight - 200;
+        return !!r && r.top >= view.top && r.top < view.top + 80 && end;
+      }),
+    "the answer's heading at the top of the note",
+  );
+  await page.screenshot({ path: path.join(evidence, 'ai-saved-note-later.png') });
   await page.locator('.inspector-tabs').getByRole('button', { name: '助手' }).click();
   await panel().getByRole('button', { name: '已存入 · 查看笔记' }).waitFor();
   console.log(
@@ -811,6 +848,21 @@ try {
   await page.screenshot({ path: path.join(evidence, 'ai-image-viewer.png') });
   await page.keyboard.press('Escape');
   await page.locator('.image-viewer').waitFor({ state: 'detached' });
+  // Kept in the note, the answer comes with its question and both pictures.
+  const pictured = panel().locator('.chat-answer.done').first();
+  await pictured.getByRole('button', { name: '存入笔记' }).click();
+  const viewNote = pictured.getByRole('button', { name: '已存入 · 查看笔记' });
+  await viewNote.waitFor();
+  const savedIn = (await viewNote.getAttribute('title')).match(/「(.+?)」/)[1];
+  await waitFor(
+    async () => (await dataFor(savedIn)).data.note.includes('## 图里是什么？（'),
+    'question saved with the answer',
+  );
+  const pictures = [
+    ...(await dataFor(savedIn)).data.note.matchAll(/note-image:(ask-[\w.-]+)/g),
+  ].map((m) => m[1]);
+  assert.equal(pictures.length, 2, 'both pictures in the note');
+  for (const name of pictures) await fs.stat(path.join(project, '.html-reader/note-images', name));
   // A follow-up carries the earlier pictures; a question of only pictures still asks something.
   await composer.fill('再说详细点');
   await composer.press('Enter');

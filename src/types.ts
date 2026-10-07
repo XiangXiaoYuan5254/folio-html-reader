@@ -86,6 +86,9 @@ export type UpdateState =
   | { status: 'downloading'; version: string }
   | { status: 'ready'; version: string; releases: ReleaseNotes[] }
   | { status: 'manual'; version: string; releases: ReleaseNotes[]; url: string };
+// Where to take the document note when it is shown: the section with this text in it (a saved
+// answer, a board's link, what the agent added), or the top when it's empty or gone.
+export type NoteReveal = { find: string };
 export type FrameEvent = { type: string; [key: string]: any };
 export interface FolioBridge {
   platform: string;

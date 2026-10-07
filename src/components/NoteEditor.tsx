@@ -32,6 +32,7 @@ import type { LucideIcon } from 'lucide-react';
 import { noteMarkdown } from '../note/syntax';
 import { liveMarkdown, noteHost } from '../note/live';
 import { plainClipboard } from '../note/plain';
+import { sectionAt } from '../note/reveal';
 import { setTextSize, sizeAt, stepTextSize, textSizes } from '../note/size';
 import {
   formatsAt,
@@ -50,6 +51,7 @@ import type { BlockStyle, Formats } from '../note/format';
 import { IconButton } from './IconButton';
 import { PopupMenu, belowButton } from './PopupMenu';
 import type { MenuAnchor, MenuItem } from './PopupMenu';
+import type { NoteReveal } from '../types';
 import { isImageFile, prepareImage } from '../ai/images';
 import { shortcut } from '../platform';
 import type { NoteImages } from './Inspector';
@@ -83,8 +85,8 @@ export default function NoteEditor(p: {
   value: string;
   disabled: boolean;
   onChange: (note: string) => void;
-  // Shows the end of the note, where saved answers and whiteboards land.
-  reveal: boolean;
+  // A section of the note to show: a saved answer, a board, what the agent added.
+  reveal: NoteReveal | null;
   onRevealed: () => void;
   onBoard: (id: string) => void;
   onLink: (url: string) => void;
@@ -296,18 +298,15 @@ export default function NoteEditor(p: {
 
   useEffect(() => viewRef.current?.requestMeasure(), [p.size]);
 
+  // Scrolls the section asked for to the top of the panel, or to the top of the note when the
+  // note no longer has it. Dispatched here rather than from a measure request: CodeMirror
+  // refuses an update while it measures, and the note would stay where it was.
   useEffect(() => {
     const view = viewRef.current;
     if (!p.reveal || !view) return;
-    view.requestMeasure({
-      read: () => view.scrollDOM.clientHeight,
-      write: (height) =>
-        view.dispatch({
-          effects: EditorView.scrollIntoView(view.state.doc.length, {
-            y: 'end',
-            yMargin: Math.round(height * 0.5),
-          }),
-        }),
+    const at = sectionAt(view.state.doc.toString(), p.reveal.find);
+    view.dispatch({
+      effects: EditorView.scrollIntoView(Math.max(0, at), { y: 'start', yMargin: 28 }),
     });
     p.onRevealed();
   }, [p.reveal]);

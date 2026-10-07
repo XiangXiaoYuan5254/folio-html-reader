@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { answerNote } from './note-block';
 import { invoke } from '../api';
 import type { Anchor, Annotation } from '../types';
 import type { AiHost } from './host';
@@ -628,18 +629,30 @@ export class Assistant {
     ]);
     this.host.notify('已添加高亮');
   }
-  async saveToNote(scope: Scope, threadId: string, message: ChatMessage, heading: string) {
+  // Appends an answer to its document's note with the question it answers (see answerNote).
+  async saveToNote(scope: Scope, threadId: string, message: ChatMessage, question?: ChatMessage) {
     const path = message.docs?.[0]?.path || this.host.activePath();
     if (!path) return;
+    // A picture that can't be kept (an unusual format) is left out rather than failing the rest.
+    const pictures: string[] = [];
+    for (const image of question?.images || [])
+      await this.host.saveNoteImage(image).then(
+        (name) => pictures.push(name),
+        () => {},
+      );
     const { data } = await this.host.documentData(path);
-    const date = new Date().toLocaleDateString('zh-CN');
-    const block = `## ${heading}（${date}）\n\n${plainCites(message.text).trim()}`;
+    const block = answerNote({
+      question,
+      pictures,
+      answer: plainCites(message.text).trim(),
+      date: new Date().toLocaleDateString('zh-CN'),
+    });
     await this.host.setNote(path, data.note.trim() ? `${data.note.trimEnd()}\n\n${block}` : block);
     this.patchMessage(scope, threadId, message.id, (m) => ({ ...m, savedNote: path }));
     this.host.notify(`已存入「${fileName(path)}」的笔记，可在右侧“笔记”页查看`);
   }
-  showNote(path: string) {
-    return this.host.showNote(path);
+  showNote(path: string, find = '') {
+    return this.host.showNote(path, find);
   }
   // Keeps a selection card's result as part of the document's conversation.
   keepExchange(scope: Scope, docs: CiteDoc[], user: Partial<ChatMessage>, answer: string) {

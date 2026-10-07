@@ -634,7 +634,7 @@ function AnswerMessage(p: {
               autoApply={p.autoApply}
               onApprove={(ok) => p.store.approve(part.step.id, ok)}
               onAutoApply={(v) => p.store.setAutoApply(p.thread.id, v)}
-              onShowNote={(path) => void p.store.showNote(path)}
+              onShowNote={(path, find) => void p.store.showNote(path, find)}
             />
           ),
         )
@@ -699,8 +699,8 @@ function AnswerMessage(p: {
           {m.docs?.length && m.status === 'done' ? (
             m.savedNote ? (
               <button
-                title={`打开「${fileName(m.savedNote)}」的笔记`}
-                onClick={() => void p.store.showNote(m.savedNote!)}
+                title={`打开「${fileName(m.savedNote)}」的笔记，定位到这条回答`}
+                onClick={() => void p.store.showNote(m.savedNote!, plainCites(m.text).trim())}
               >
                 <Check size={12} />
                 已存入 · 查看笔记
@@ -709,7 +709,12 @@ function AnswerMessage(p: {
               <button
                 title="追加到这篇文档的笔记"
                 onClick={() =>
-                  void p.store.saveToNote(p.scope, p.thread.id, m, question?.label || 'AI 回答')
+                  void p.store.saveToNote(
+                    p.scope,
+                    p.thread.id,
+                    m,
+                    question?.role === 'user' ? question : undefined,
+                  )
                 }
               >
                 <NotebookPen size={12} />
@@ -845,15 +850,21 @@ const stepIcons = {
   error: CircleX,
   skipped: MinusCircle,
 };
+// What the agent added to the end of a note; nothing when it rewrote the whole note.
+function addedToNote({ before, after }: { before: string; after: string }) {
+  const kept = before.trimEnd();
+  return after.startsWith(kept) ? after.slice(kept.length).trim() : '';
+}
 function StepCard(p: {
   step: AgentStep;
   autoApply: boolean;
   onApprove: (ok: boolean) => void;
   onAutoApply: (value: boolean) => void;
-  onShowNote: (path: string) => void;
+  onShowNote: (path: string, find: string) => void;
 }) {
   const s = p.step;
   const Icon = stepIcons[s.status];
+  const notePreview = s.preview?.kind === 'note' ? s.preview : null;
   const waiting = s.status === 'waiting';
   return (
     <div className={`agent-step ${s.status}`}>
@@ -864,8 +875,10 @@ function StepCard(p: {
       {s.detail ? (
         <div className="agent-step-detail">
           {s.detail}
-          {s.preview?.kind === 'note' && s.status === 'done' ? (
-            <button onClick={() => p.onShowNote(s.preview!.path)}>查看笔记</button>
+          {notePreview && s.status === 'done' ? (
+            <button onClick={() => p.onShowNote(notePreview.path, addedToNote(notePreview))}>
+              查看笔记
+            </button>
           ) : null}
         </div>
       ) : null}

@@ -18,8 +18,10 @@ export type AiHost = {
   ): Promise<{ id: string; kind: 'html' | 'pdf'; data: DocumentData; source: string }>;
   addAnnotations(path: string, annotations: Annotation[]): Promise<void>;
   setNote(path: string, note: string): Promise<void>;
-  // Opens `path` with the side panel on its document note, scrolled to the end.
-  showNote(path: string): Promise<void>;
+  // Keeps a picture (a data: URL) for notes; resolves to its name for note-image: links.
+  saveNoteImage(data: string): Promise<string>;
+  // Opens `path` with the side panel on its document note, at the section holding `find`.
+  showNote(path: string, find?: string): Promise<void>;
   setSource(path: string, source: string): Promise<{ saved: boolean }>;
   createHtml(path: string, content: string): Promise<void>;
   // Papers from OpenAlex and arXiv; `notes` says which of them could not be reached.

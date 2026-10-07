@@ -28,6 +28,7 @@ import type {
   BackupEntry,
   EraserMode,
   FrameEvent,
+  NoteReveal,
   OpenDocument,
   OutlineItem,
   Tool,
@@ -274,8 +275,8 @@ export default function App() {
     } catch {}
   }, [noteFontSize]);
   const [tab, setTab] = useState<InspectorTab>('annotations');
-  // Asks the note tab to show its end, where saved AI answers land.
-  const [noteReveal, setNoteReveal] = useState(false);
+  // Asks the note tab to show a section of the note: a saved answer, a board.
+  const [noteReveal, setNoteReveal] = useState<NoteReveal | null>(null);
   const [readerStates, setReaderStates] = useState<Record<string, ReaderState>>({});
   const { selected, outline, orphans, order, selection, selectionBox, rebind, progress } =
     readerStates[doc?.id || ''] || emptyReaderState;
@@ -1047,7 +1048,7 @@ export default function App() {
       if (path === doc?.path) {
         setRight(true);
         setTab('note');
-        setNoteReveal(true);
+        setNoteReveal({ find: `(folio-board:${entry.id})` });
       }
       notify(`已存入「${fileName(path)}」的笔记`);
     } catch (e) {
@@ -1387,11 +1388,12 @@ export default function App() {
       const id = await model.open(path, false, keepPanes());
       model.data(id, { note });
     },
-    async showNote(path) {
+    saveNoteImage: (data) => invoke<string>('save-note-image', { data, prefix: 'ask' }),
+    async showNote(path, find = '') {
       await openDocument(path);
       setRight(true);
       setTab('note');
-      setNoteReveal(true);
+      setNoteReveal({ find });
     },
     async setSource(path, source) {
       const id = await model.open(path, false, keepPanes());
@@ -2022,7 +2024,7 @@ export default function App() {
           tab={tab}
           onTab={setTab}
           noteReveal={noteReveal}
-          onNoteRevealed={() => setNoteReveal(false)}
+          onNoteRevealed={() => setNoteReveal(null)}
           onBoard={(id) => void openBoard(id)}
           noteImages={
             isDesktop && workspace
