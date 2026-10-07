@@ -1177,7 +1177,7 @@ export default function Whiteboard({
               title={
                 busy
                   ? '页老师讲完再存'
-                  : `把板书和讲解整理进「${noteTarget.split('/').at(-1)}」的笔记；再存一次会更新那一段`
+                  : `把板书存进「${noteTarget.split('/').at(-1)}」的笔记；再存一次会更新那一段`
               }
               disabled={!state.transcript.length || keeping || busy}
               onClick={() => void keepInNote()}

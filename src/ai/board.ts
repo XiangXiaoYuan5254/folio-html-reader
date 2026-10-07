@@ -737,11 +737,11 @@ const teachAll = {
   picture: '请结合上下文在白板上给我讲解图里的内容。',
 };
 
-// A board as a section of a document's note: a picture of it (or, without one, what was
-// written on it), then the talk. The link at the top opens the board again.
+// A board as a section of a document's note: a picture of it, or, without one, what was
+// written on it. The talk stays with the board, which the link at the top opens again.
 export function boardNote(
   entry: BoardEntry,
-  state: Pick<TutorState, 'blocks' | 'inks' | 'transcript' | 'erased'>,
+  state: Pick<TutorState, 'blocks' | 'inks' | 'erased'>,
   picture = '',
 ) {
   const gone = new Set(state.erased);
@@ -776,14 +776,6 @@ export function boardNote(
     for (const n of notes.get(b.id) || []) written.push(`  - 旁注：${n}`);
   }
   for (const n of notes.get('') || []) written.push(`- 旁注：${n}`);
-  // The teacher's sentences run together into one paragraph per answer.
-  const talk: string[] = [];
-  for (const line of state.transcript) {
-    if (line.who === 'student') talk.push(`**我：${line.text}**`);
-    else if (talk.length && !talk[talk.length - 1].startsWith('**'))
-      talk[talk.length - 1] += line.text;
-    else talk.push(line.text);
-  }
   const date = new Date(entry.updatedAt).toLocaleDateString('zh-CN');
   const from = entry.source
     ? `来自 ${fileName(entry.source)}${entry.page ? ` 第 ${entry.page} 页` : ''} · `
@@ -795,9 +787,8 @@ export function boardNote(
     ...(picture
       ? ['', `![白板：${entry.title.replace(/[[\]]/g, '')}](note-image:${picture})`]
       : written.length
-        ? ['', '### 板书', '', ...written]
+        ? ['', ...written]
         : []),
-    ...(talk.length ? ['', '### 讲解', '', talk.join('\n\n')] : []),
   ].join('\n');
 }
 // The note with a board's section in it: replacing the one saved from the same board
@@ -965,7 +956,8 @@ export class Tutor {
       ),
       inks: still.inks.map((i) => ({ ...i, dur: 0 })),
       strokes: still.strokes.map((x) => ({ ...x, sent: true })),
-      caption: said ? { key: ++this.counter, text: said.text, dur: 0 } : null,
+      // As it ended: a live voice's whole answer is one line, of which the caption shows the end.
+      caption: said ? { key: ++this.counter, text: captionTail(said.text), dur: 0 } : null,
       phase: 'idle',
       // Kept before its first lesson (for the marks on it): it still waits.
       waiting: this.kind !== 'blank' && !board.turns.length,

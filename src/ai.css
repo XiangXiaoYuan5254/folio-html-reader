@@ -1260,6 +1260,10 @@
   gap: 6px;
   padding: 10px 12px 0;
 }
+/* Before anything is asked, the box is the card's last line: room under it as at its sides. */
+.ai-card-ask:last-child {
+  padding-bottom: 12px;
+}
 .ai-card-ask input {
   flex: 1;
   border: 1px solid var(--line-strong);
@@ -2248,8 +2252,11 @@
   inset: 0;
   z-index: 400;
   display: grid;
+  /* Fixed tracks, so the picture's max-height has the window to go by. */
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   place-items: center;
   padding: 36px;
+  overflow: auto;
   background: #0f161ccc;
   cursor: zoom-out;
 }
@@ -2261,8 +2268,8 @@
   box-shadow: 0 18px 60px #0006;
 }
 .image-viewer.tall {
+  grid-template-rows: auto;
   place-items: start center;
-  overflow: auto;
 }
 .image-viewer.tall img {
   max-height: none;
