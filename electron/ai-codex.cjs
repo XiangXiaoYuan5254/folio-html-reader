@@ -7,7 +7,7 @@
 // only answers, or calls the tools Folio passes in (the project agent's tools), which the
 // server hands back as `item/tool/call` requests. Chat alone turns web search back on.
 const { execFile, spawn } = require('node:child_process');
-const { levelFor } = require('./ai-providers.cjs');
+const { levelFor, webNote } = require('./ai-providers.cjs');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -567,9 +567,7 @@ async function streamCodex({ provider, request, signal, onDelta, version }) {
       '你是「页间」阅读器里的助手。回答用户关于文档的问题。用简体中文，使用 Markdown。',
     developerInstructions:
       '你在一个阅读器应用里运行，不能执行命令，也不能读写文件。只根据对话中提供的内容和可用的工具工作。' +
-      (request.web
-        ? '\n\n你可以联网搜索，但只在需要时才搜：问题涉及最新的信息（新闻、版本、价格、近期发生的事），或者要核实你没把握的具体事实（数字、日期、出处）。关于文档本身的问题，直接根据文档回答，不要搜索。用了搜索结果时，注明来源。'
-        : ''),
+      (request.web ? `\n\n${webNote}` : ''),
     // Codex's own web search, for chat only; everything else stays offline.
     ...(request.web ? { config: { web_search: 'live' } } : {}),
     ...(request.tools?.length

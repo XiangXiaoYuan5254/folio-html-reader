@@ -381,7 +381,7 @@ function createAi({
       messages: Array.isArray(payload.messages) ? payload.messages.map(withValidImages) : [],
       tools: Array.isArray(payload.tools) ? payload.tools : undefined,
       json: !!payload.json,
-      // Web search, which only Codex has; asked for by chat.
+      // Web search, for the services that have it (presets' `web`, and Codex); asked for by chat.
       web: !!payload.web,
       maxTokens: number(payload.maxTokens, 1_000, 200_000),
     };

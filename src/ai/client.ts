@@ -95,7 +95,7 @@ export type ChatRequest = {
   maxTokens?: number;
   // The part of the app asking, which picks the service and model; chat by default.
   use?: AiUse;
-  // Lets the model search the web when it decides to (Codex only).
+  // Lets the model search the web when it decides to, where the service can.
   web?: boolean;
 };
 export type ChatHandlers = {

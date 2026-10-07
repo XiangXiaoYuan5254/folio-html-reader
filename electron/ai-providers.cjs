@@ -24,6 +24,17 @@
 // a model with no levels is sent none.
 // `echo` providers require reasoning_content back on assistant turns once tools are used.
 // `balance` services tell what's left on the account through the same key (readBalance).
+// `web` says how the service searches the web when chat asks for it; the model decides when:
+//   claude     -> Anthropic's web_search and web_fetch server tools
+//   anthropic  -> Anthropic's web_search tool through the service's Anthropic-compatible API,
+//                 at /anthropic beside its own (DeepSeek searches only there)
+//   mimo       -> MiMo's web_search tool
+//   openrouter -> OpenRouter's openrouter:web_search server tool
+//   qwen       -> enable_search; the compatible API doesn't say when it searched
+//   kimi, glm  -> web_search and web_fetch functions this app answers through the service's
+//                 own search and page reading, with the same key. (Kimi's built-in
+//                 $web_search can't be answered on kimi-k3; GLM's built-in search decides by
+//                 itself and skips questions that need it.)
 const presets = [
   {
     id: 'deepseek',
@@ -39,6 +50,7 @@ const presets = [
     echo: true,
     usage: true,
     balance: true,
+    web: 'anthropic',
     keyUrl: 'https://platform.deepseek.com/api_keys',
     region: 'cn',
   },
@@ -63,6 +75,7 @@ const presets = [
     ],
     usage: true,
     keyUrl: 'https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key',
+    web: 'qwen',
     region: 'cn',
   },
   {
@@ -83,6 +96,7 @@ const presets = [
     echo: true,
     balance: true,
     keyUrl: 'https://platform.moonshot.cn/console/api-keys',
+    web: 'kimi',
     region: 'cn',
   },
   // A Kimi membership through the Kimi Code CLI on this computer; no API key.
@@ -124,6 +138,7 @@ const presets = [
     ],
     balance: true,
     keyUrl: 'https://open.bigmodel.cn/apikey/platform',
+    web: 'glm',
     region: 'cn',
   },
   {
@@ -160,6 +175,7 @@ const presets = [
     effort: 'on',
     echo: true,
     keyUrl: 'https://platform.xiaomimimo.com/#/console/api-keys',
+    web: 'mimo',
     region: 'cn',
   },
   {
@@ -234,6 +250,7 @@ const presets = [
       ['^claude-opus-4-5', ['low', 'medium', 'high'], 'high'],
     ],
     keyUrl: 'https://console.anthropic.com/settings/keys',
+    web: 'claude',
     region: 'global',
   },
   {
@@ -266,6 +283,7 @@ const presets = [
     efforts: [],
     balance: true,
     keyUrl: 'https://openrouter.ai/keys',
+    web: 'openrouter',
     region: 'global',
   },
   {
@@ -457,10 +475,117 @@ function thinkSplitter() {
   };
 }
 
+// When to search, for every service chat lets search (Codex too).
+const webNote =
+  '你可以联网搜索，但只在需要时才搜：问题涉及最新的信息（新闻、版本、价格、近期发生的事），或者要核实你没把握的具体事实（数字、日期、出处）。关于文档本身的问题，直接根据文档回答，不要搜索。用了搜索结果时，注明来源。';
+const withWebNote = (system) => [system, webNote].filter(Boolean).join('\n\n');
+// A search step's title: what was searched for, or the page opened.
+const webTitle = (fetching, what) =>
+  `${fetching ? '打开网页' : '联网搜索'}${what ? `：${what}` : ''}`;
+
+// Functions the model searches and reads pages with, where this app runs them through the
+// service's own search with the same key (`web: 'kimi'` and `'glm'`).
+const webTools = [
+  {
+    name: 'web_search',
+    description: '联网搜索，返回相关网页的标题、链接和摘要。',
+    parameters: {
+      type: 'object',
+      properties: { query: { type: 'string', description: '搜索词' } },
+      required: ['query'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'web_fetch',
+    description: '打开一个网页，读取它的正文。搜索结果的摘要不够用时再打开。',
+    parameters: {
+      type: 'object',
+      properties: { url: { type: 'string', description: '网页地址' } },
+      required: ['url'],
+      additionalProperties: false,
+    },
+  },
+];
+const webToolNames = new Set(webTools.map((t) => t.name));
+// Each service's search and page reading: the path and body asked, and what comes back.
+const webBackends = {
+  kimi: {
+    search: (query) => ['/tools/search', { text_query: query, limit: 8 }],
+    results: (v) =>
+      (v?.search_results || []).map((r) => ({
+        title: r.title,
+        url: r.url,
+        source: [r.site_name, r.date],
+        text: r.snippet,
+      })),
+    fetch: (url) => ['/tools/fetch', { url }],
+    page: (v) => v?.markdown,
+  },
+  glm: {
+    search: (query) => [
+      '/web_search',
+      { search_query: query, search_engine: 'search_pro', search_intent: false, count: 8 },
+    ],
+    results: (v) =>
+      (v?.search_result || []).map((r) => ({
+        title: r.title,
+        url: r.link,
+        source: [r.media, r.publish_date],
+        text: String(r.content || '').slice(0, 1500),
+      })),
+    fetch: (url) => ['/reader', { url }],
+    page: (v) => v?.reader_result?.content,
+  },
+};
+// Runs one of webTools; what comes back is the tool result the model reads.
+async function runWebTool({ provider, key, call, signal, fetch }) {
+  const backend = webBackends[presetFor(provider.preset).web];
+  const fetching = call.name === 'web_fetch';
+  const what = String((fetching ? call.input?.url : call.input?.query) || '').trim();
+  const failed = `${fetching ? '打开网页' : '搜索'}失败`;
+  if (!what) return `${failed}：没有${fetching ? '网页地址' : '搜索词'}`;
+  const [path, body] = fetching ? backend.fetch(what) : backend.search(what);
+  let response;
+  try {
+    response = await fetch(endpoint(provider.baseUrl, path), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (e) {
+    if (signal?.aborted) throw e;
+    return `${failed}：${e?.message || e}`;
+  }
+  const text = await response.text();
+  if (!response.ok) return `${failed}：${httpError(response.status, text, provider.name).message}`;
+  let value;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return `${failed}：结果格式无法识别`;
+  }
+  if (fetching)
+    return String(backend.page(value) || '').slice(0, 30_000) || '这个网页没有可读取的正文。';
+  const results = backend.results(value);
+  if (!results.length) return '没有搜到相关网页。';
+  return results
+    .map((r, i) =>
+      [`${i + 1}. ${r.title || r.url}`, r.url, r.source.filter(Boolean).join(' · '), r.text]
+        .filter(Boolean)
+        .join('\n'),
+    )
+    .join('\n\n');
+}
+
 function toOpenAIMessages(system, messages, { echo, tools }) {
   const out = system ? [{ role: 'system', content: system }] : [];
   for (const m of messages) {
-    if (m.role === 'tool')
+    // A turn that searched through webTools goes back whole, searches included.
+    if (m.role === 'assistant' && Array.isArray(m.raw?.web))
+      out.push(...toOpenAIMessages('', m.raw.web, { echo, tools }));
+    else if (m.role === 'tool')
       out.push({ role: 'tool', tool_call_id: m.toolCallId, content: m.content || '' });
     else if (m.role === 'assistant') {
       const message = { role: 'assistant', content: m.content || '' };
@@ -554,23 +679,42 @@ function parseArguments(text) {
     return { __invalid: text };
   }
 }
+// The tools a service searches the web with itself.
+const webServerTools = {
+  mimo: [{ type: 'web_search' }],
+  openrouter: [{ type: 'openrouter:web_search' }],
+};
 async function streamOpenAI({ provider, key, request, signal, onDelta, fetch }) {
   const preset = presetFor(provider.preset);
-  const tools = request.tools?.length ? request.tools : null;
+  const web = request.web ? preset.web || '' : '';
+  const functions = [...(request.tools || []), ...(webBackends[web] ? webTools : [])];
+  const tools = functions.length ? functions : null;
+  const builtin = webServerTools[web] || [];
   const body = {
     model: provider.model,
-    messages: toOpenAIMessages(request.system, request.messages, { echo: preset.echo, tools }),
+    messages: toOpenAIMessages(
+      web ? withWebNote(request.system) : request.system,
+      request.messages,
+      {
+        echo: preset.echo,
+        tools,
+      },
+    ),
     stream: true,
     ...(preset.usage ? { stream_options: { include_usage: true } } : {}),
-    ...(tools
+    ...(tools || builtin.length
       ? {
-          tools: tools.map((t) => ({
-            type: 'function',
-            function: { name: t.name, description: t.description, parameters: t.parameters },
-          })),
+          tools: [
+            ...(tools || []).map((t) => ({
+              type: 'function',
+              function: { name: t.name, description: t.description, parameters: t.parameters },
+            })),
+            ...builtin,
+          ],
           tool_choice: 'auto',
         }
       : {}),
+    ...(web === 'qwen' ? { enable_search: true } : {}),
     ...(request.json ? { response_format: { type: 'json_object' } } : {}),
     // A long piece (a whole notes page) asks for more room than some services' default.
     ...(provider.maxOutput || request.maxTokens
@@ -631,11 +775,31 @@ async function streamOpenAI({ provider, key, request, signal, onDelta, fetch }) 
         onDelta,
         fetch,
       });
+    // A model the service can't search with (or that takes no tools) still answers, from what
+    // it knows.
+    if (web && [400, 404, 422].includes(response.status) && /search|tool|function/i.test(text))
+      return streamOpenAI({
+        provider,
+        key,
+        request: { ...request, web: false },
+        signal,
+        onDelta,
+        fetch,
+      });
     throw httpError(response.status, text, provider.name);
   }
   const split = thinkSplitter();
   const result = { text: '', reasoning: '', toolCalls: [], stopReason: '', usage: null };
   const calls = [];
+  // A service's own searches, as steps once they're done: what OpenRouter searched for, or
+  // else the pages MiMo and OpenRouter cite.
+  let queried = false;
+  const pages = new Set();
+  const found = (id, urls) => {
+    for (const url of urls) if (url) pages.add(url);
+    if (pages.size && !queried)
+      onDelta({ search: { id, title: `联网搜索：找到 ${pages.size} 个网页`, done: true } });
+  };
   for await (const data of sseData(response.body, signal, request.idleMs || 180_000)) {
     if (data === '[DONE]') break;
     let chunk;
@@ -645,6 +809,26 @@ async function streamOpenAI({ provider, key, request, signal, onDelta, fetch }) 
       continue;
     }
     if (chunk.error) throw new AiError(`${provider.name}：${detail(JSON.stringify(chunk))}`);
+    const said = chunk.choices?.[0]?.delta || {};
+    if (builtin.length) {
+      for (const r of Array.isArray(said.reasoning_details) ? said.reasoning_details : [])
+        if (r?.type === 'reasoning.server_tool_call' && /web_search/.test(r.tool_name || '')) {
+          const input = typeof r.arguments === 'string' ? parseArguments(r.arguments) : r.arguments;
+          queried = true;
+          onDelta({
+            search: {
+              id: r.tool_call_id || r.id || `${chunk.id}:${input?.query}`,
+              title: webTitle(false, input?.query),
+              done: true,
+            },
+          });
+        }
+      if (Array.isArray(said.annotations))
+        found(
+          chunk.id,
+          said.annotations.map((a) => a?.url_citation?.url || a?.url),
+        );
+    }
     if (chunk.usage) {
       const u = chunk.usage;
       result.usage = {
@@ -689,6 +873,60 @@ async function streamOpenAI({ provider, key, request, signal, onDelta, fetch }) 
     .map((c, i) => ({ id: c.id || `call_${i}`, name: c.name, input: parseArguments(c.arguments) }));
   if (result.stopReason === 'length') result.stopReason = 'max_tokens';
   return result;
+}
+const addUsage = (a, b) =>
+  a && b
+    ? { input: a.input + b.input, output: a.output + b.output, cached: a.cached + b.cached }
+    : a || b;
+// Kimi and GLM with the web: the searches and pages the model asks for are run here and its
+// reply goes on, so the caller gets one reply. Calls to the caller's own tools still go back
+// to it, with the turn's searches in `raw` for the next request.
+async function streamSearching({ provider, key, request, signal, onDelta, fetch }) {
+  const turn = [];
+  let text = '';
+  let reasoning = '';
+  let usage = null;
+  for (let round = 0; ; round++) {
+    // What it writes after a search starts a new paragraph.
+    const gap = text ? '\n\n' : '';
+    let started = false;
+    const result = await streamOpenAI({
+      provider,
+      key,
+      request: { ...request, messages: [...request.messages, ...turn] },
+      signal,
+      onDelta: (d) => {
+        if (d.text && !started) {
+          started = true;
+          onDelta({ ...d, text: gap + d.text });
+        } else onDelta(d);
+      },
+      fetch,
+    });
+    if (result.text) text += gap + result.text;
+    reasoning += result.reasoning;
+    usage = addUsage(usage, result.usage);
+    const searches = result.toolCalls.filter((c) => webToolNames.has(c.name));
+    const others = result.toolCalls.filter((c) => !webToolNames.has(c.name));
+    const reply = { ...result, text, reasoning, usage, toolCalls: others };
+    const said = { role: 'assistant', content: result.text, reasoning: result.reasoning };
+    // A cut-off call has incomplete arguments, and a model still searching after this many
+    // rounds answers with what it has.
+    if (!searches.length || result.stopReason === 'max_tokens' || round >= 10)
+      return turn.length
+        ? { ...reply, raw: { web: [...turn, { ...said, toolCalls: others }] } }
+        : reply;
+    turn.push({ ...said, toolCalls: result.toolCalls });
+    for (const call of searches) {
+      const fetching = call.name === 'web_fetch';
+      const title = webTitle(fetching, fetching ? call.input?.url : call.input?.query);
+      onDelta({ search: { id: call.id, title, done: false } });
+      const content = await runWebTool({ provider, key, call, signal, fetch });
+      onDelta({ search: { id: call.id, title, done: true } });
+      turn.push({ role: 'tool', toolCallId: call.id, content });
+    }
+    if (others.length) return { ...reply, raw: { web: turn } };
+  }
 }
 
 let Anthropic;
@@ -751,62 +989,141 @@ function anthropicError(e, provider) {
     return httpError(e.status, JSON.stringify(e.error || { message: e.message }), provider.name);
   return networkError(e, provider);
 }
+// How a request through Anthropic's API sets the reasoning level: Claude's adaptive thinking
+// and effort, or a service's own levels with its thinking switched on or off (DeepSeek's
+// Anthropic-compatible API, as effortParams does for its own).
+function anthropicEffort(provider) {
+  const effort = effortFor(provider);
+  if (presetFor(provider.preset).thinking === 'claude')
+    return {
+      ...(adaptive.test(provider.model)
+        ? { thinking: { type: 'adaptive', display: 'summarized' } }
+        : {}),
+      ...(effort ? { output_config: { effort } } : {}),
+    };
+  if (!effort) return {};
+  if (effort === 'off' || effort === 'on')
+    return { thinking: { type: effort === 'on' ? 'enabled' : 'disabled' } };
+  return { thinking: { type: 'enabled' }, output_config: { effort } };
+}
+// Claude's own web search and page reading. Models from Opus and Sonnet 4.6 on take the
+// versions that filter what they find before reading it; older ones, and DeepSeek, only search.
+function claudeWebTools(model) {
+  return adaptive.test(model)
+    ? [
+        { type: 'web_search_20260209', name: 'web_search' },
+        { type: 'web_fetch_20260209', name: 'web_fetch' },
+      ]
+    : [{ type: 'web_search_20250305', name: 'web_search' }];
+}
 async function streamAnthropic({ provider, key, request, signal, onDelta, fetch }) {
   const client = anthropicClient(provider, key, fetch);
   const model = provider.model;
-  const effort = effortFor(provider);
+  const web = request.web && ['claude', 'anthropic'].includes(presetFor(provider.preset).web);
+  const system = web ? withWebNote(request.system) : request.system;
   const params = {
     model,
     max_tokens: provider.maxOutput || Math.min(64_000, Math.max(32_000, request.maxTokens || 0)),
     cache_control: { type: 'ephemeral' },
-    messages: toAnthropicMessages(request.messages),
-    ...(request.system ? { system: request.system } : {}),
-    ...(request.tools?.length
+    ...(system ? { system } : {}),
+    ...(request.tools?.length || web
       ? {
-          tools: request.tools.map((t) => ({
-            name: t.name,
-            description: t.description,
-            input_schema: t.parameters,
-          })),
+          tools: [
+            ...(request.tools || []).map((t) => ({
+              name: t.name,
+              description: t.description,
+              input_schema: t.parameters,
+            })),
+            ...(web ? claudeWebTools(model) : []),
+          ],
         }
       : {}),
-    ...(adaptive.test(model) ? { thinking: { type: 'adaptive', display: 'summarized' } } : {}),
-    ...(effort ? { output_config: { effort } } : {}),
+    ...anthropicEffort(provider),
   };
   const withFallback = fallbackModels.test(model) && !request.noFallback;
-  let stream;
+  const result = { text: '', reasoning: '', toolCalls: [], raw: [], usage: null };
+  // Each search or page, by the id its result names: started once its query is known.
+  const searching = new Map();
+  const titles = new Map();
+  // Text after a search's result starts a new paragraph, as it streams and in the reply.
+  const isResult = (block) => /^web_(search|fetch)_tool_result$/.test(block.type);
+  let streamGap = false;
+  let streamed = false;
+  let replyGap = false;
   try {
-    stream = withFallback
-      ? client.beta.messages.stream(
-          { ...params, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' },
-          { signal },
-        )
-      : client.messages.stream(params, { signal });
-    for await (const event of stream) {
-      if (event.type === 'content_block_start' && event.content_block.type === 'tool_use')
-        onDelta({ tool: event.content_block.name });
-      if (event.type !== 'content_block_delta') continue;
-      if (event.delta.type === 'text_delta') onDelta({ text: event.delta.text });
-      if (event.delta.type === 'thinking_delta') onDelta({ reasoning: event.delta.thinking });
+    // A turn that runs long on Claude's side pauses; sent back as it is, it goes on.
+    for (let pass = 0; ; pass++) {
+      const messages = toAnthropicMessages(request.messages);
+      if (result.raw.length) messages.push({ role: 'assistant', content: result.raw });
+      const stream = withFallback
+        ? client.beta.messages.stream(
+            {
+              ...params,
+              messages,
+              betas: ['server-side-fallback-2026-07-01'],
+              fallbacks: 'default',
+            },
+            { signal },
+          )
+        : client.messages.stream({ ...params, messages }, { signal });
+      for await (const event of stream) {
+        if (event.type === 'content_block_start') {
+          const block = event.content_block;
+          if (block.type === 'tool_use') onDelta({ tool: block.name });
+          if (block.type === 'server_tool_use' && /^web_(search|fetch)$/.test(block.name))
+            searching.set(event.index, { ...block, json: '' });
+          if (isResult(block)) {
+            streamGap = true;
+            if (titles.has(block.tool_use_id))
+              onDelta({
+                search: { id: block.tool_use_id, title: titles.get(block.tool_use_id), done: true },
+              });
+          }
+        }
+        if (event.type === 'content_block_stop' && searching.has(event.index)) {
+          const block = searching.get(event.index);
+          searching.delete(event.index);
+          let input = block.input || {};
+          try {
+            if (block.json) input = JSON.parse(block.json);
+          } catch {}
+          const fetching = block.name === 'web_fetch';
+          titles.set(block.id, webTitle(fetching, fetching ? input.url : input.query));
+          onDelta({ search: { id: block.id, title: titles.get(block.id), done: false } });
+        }
+        if (event.type !== 'content_block_delta') continue;
+        if (event.delta.type === 'text_delta' && event.delta.text) {
+          onDelta({ text: (streamGap && streamed ? '\n\n' : '') + event.delta.text });
+          streamGap = false;
+          streamed = true;
+        }
+        if (event.delta.type === 'thinking_delta') onDelta({ reasoning: event.delta.thinking });
+        if (event.delta.type === 'input_json_delta' && searching.has(event.index))
+          searching.get(event.index).json += event.delta.partial_json;
+      }
+      const message = await stream.finalMessage();
+      result.raw.push(...message.content);
+      for (const block of message.content) {
+        if (isResult(block)) replyGap = true;
+        if (block.type === 'text' && block.text) {
+          result.text += (replyGap && result.text ? '\n\n' : '') + block.text;
+          replyGap = false;
+        }
+        if (block.type === 'thinking') result.reasoning += block.thinking || '';
+        if (block.type === 'tool_use')
+          result.toolCalls.push({ id: block.id, name: block.name, input: block.input ?? {} });
+      }
+      result.stopReason = message.stop_reason;
+      result.usage = addUsage(result.usage, {
+        input:
+          (message.usage.input_tokens || 0) +
+          (message.usage.cache_read_input_tokens || 0) +
+          (message.usage.cache_creation_input_tokens || 0),
+        output: message.usage.output_tokens || 0,
+        cached: message.usage.cache_read_input_tokens || 0,
+      });
+      if (message.stop_reason !== 'pause_turn' || pass >= 5) return result;
     }
-    const message = await stream.finalMessage();
-    const result = { text: '', reasoning: '', toolCalls: [], raw: message.content };
-    for (const block of message.content) {
-      if (block.type === 'text') result.text += block.text;
-      if (block.type === 'thinking') result.reasoning += block.thinking || '';
-      if (block.type === 'tool_use')
-        result.toolCalls.push({ id: block.id, name: block.name, input: block.input ?? {} });
-    }
-    result.stopReason = message.stop_reason;
-    result.usage = {
-      input:
-        (message.usage.input_tokens || 0) +
-        (message.usage.cache_read_input_tokens || 0) +
-        (message.usage.cache_creation_input_tokens || 0),
-      output: message.usage.output_tokens || 0,
-      cached: message.usage.cache_read_input_tokens || 0,
-    };
-    return result;
   } catch (e) {
     // Accounts or proxies that don't accept the fallback beta still get an answer.
     if (withFallback && e?.status === 400 && /fallback|beta/i.test(e.message || ''))
@@ -814,6 +1131,16 @@ async function streamAnthropic({ provider, key, request, signal, onDelta, fetch 
         provider,
         key,
         request: { ...request, noFallback: true },
+        signal,
+        onDelta,
+        fetch,
+      });
+    // And those without Claude's web tools answer from what the model knows.
+    if (web && e?.status === 400 && /web_(search|fetch)/i.test(e.message || ''))
+      return streamAnthropic({
+        provider,
+        key,
+        request: { ...request, web: false },
         signal,
         onDelta,
         fetch,
@@ -828,12 +1155,26 @@ async function streamChat({ provider, key, request, signal, onDelta, fetch }) {
   const preset = presetFor(provider.preset);
   if (!key && !preset.noKey && preset.id !== 'custom')
     throw new AiError(`请先在 AI 设置中填写 ${provider.name} 的 API Key`);
-  const run = provider.kind === 'anthropic' ? streamAnthropic : streamOpenAI;
+  // DeepSeek searches only through its Anthropic-compatible API, beside its own. Only at its
+  // own address: another one set in the settings (a proxy) may not have it.
+  const origin = (url) => URL.canParse(url) && new URL(url).origin;
+  const besideAnthropic =
+    request.web &&
+    preset.web === 'anthropic' &&
+    origin(provider.baseUrl) === origin(preset.baseUrl);
+  const anthropic = provider.kind === 'anthropic' || besideAnthropic;
+  const run = anthropic
+    ? streamAnthropic
+    : request.web && webBackends[preset.web]
+      ? streamSearching
+      : streamOpenAI;
   for (let attempt = 0; ; attempt++) {
     let started = false;
     try {
       return await run({
-        provider,
+        provider: besideAnthropic
+          ? { ...provider, baseUrl: `${origin(provider.baseUrl)}/anthropic` }
+          : provider,
         key,
         request,
         signal,
@@ -844,7 +1185,8 @@ async function streamChat({ provider, key, request, signal, onDelta, fetch }) {
         },
       });
     } catch (e) {
-      if (provider.kind === 'anthropic' || !e.retry || started || attempt >= 2) throw e;
+      // The Anthropic SDK retries on its own.
+      if (anthropic || !e.retry || started || attempt >= 2) throw e;
       await sleep(1200 * (attempt + 1), signal);
     }
   }
@@ -1127,4 +1469,5 @@ module.exports = {
   thinkSplitter,
   httpError,
   AiError,
+  webNote,
 };

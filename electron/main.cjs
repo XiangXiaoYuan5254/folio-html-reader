@@ -719,7 +719,7 @@ app
           const colors = appearanceColors(payload);
           if (!colors) throw Error('颜色无效');
           appearance = colors;
-          win.setBackgroundColor(colors.window);
+          if (!isMac) win.setBackgroundColor(colors.window);
           if (!isMac)
             win.setTitleBarOverlay({
               color: colors.titlebar,
@@ -758,11 +758,13 @@ app
         minWidth: 900,
         minHeight: 620,
         title: '页间 · Folio',
-        backgroundColor: appearance?.window || '#f7f8fa',
+        // On a Mac the window is see-through: the page paints its own colors and lets the
+        // system's frosted sidebar material show through the title bar and the file tree.
+        backgroundColor: isMac ? '#00000000' : appearance?.window || '#f7f8fa',
         titleBarStyle: 'hidden',
         // The title bar is drawn by the page; Windows keeps its own caption buttons on top of it.
         ...(isMac
-          ? { trafficLightPosition: { x: 18, y: 17 } }
+          ? { trafficLightPosition: { x: 18, y: 17 }, vibrancy: 'sidebar' }
           : {
               titleBarOverlay: {
                 color: appearance?.titlebar || '#ffffff',

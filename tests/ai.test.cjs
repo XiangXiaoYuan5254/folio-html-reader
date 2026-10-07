@@ -647,6 +647,399 @@ test('Claude streaming through the Anthropic SDK: thinking, text, tool use, fall
   }
 });
 
+// Chat asks with `web`; each service searches its own way, and others get nothing extra.
+const webAsk = async (server, extra, request = {}) => {
+  const deltas = [];
+  const result = await providers.streamChat({
+    provider: provider(server.url, extra),
+    key: 'k',
+    fetch,
+    onDelta: (d) => deltas.push(d),
+    request: { system: '系统', messages: [{ role: 'user', content: '问' }], web: true, ...request },
+  });
+  return { result, deltas, searches: deltas.filter((d) => d.search).map((d) => d.search) };
+};
+
+test('web search in chat: Qwen, MiMo, OpenRouter search themselves', async () => {
+  // Cited pages, and OpenRouter's record of what it searched for.
+  const server = await mockServer((req, res) =>
+    sse(res, [
+      { id: 'c1', choices: [{ delta: { content: '晴。' } }] },
+      {
+        id: 'c1',
+        choices: [
+          {
+            delta: {
+              annotations: [
+                { type: 'url_citation', url_citation: { url: 'https://a.cn' } },
+                { type: 'url_citation', url_citation: { url: 'https://a.cn' } },
+                { type: 'url_citation', url_citation: { url: 'https://b.cn' } },
+              ],
+              ...(req.body.tools?.[0]?.type === 'openrouter:web_search' && {
+                reasoning_details: [
+                  {
+                    type: 'reasoning.server_tool_call',
+                    tool_name: 'openrouter:web_search',
+                    tool_call_id: 'ws1',
+                    arguments: '{"query":"上海天气"}',
+                  },
+                ],
+              }),
+            },
+            finish_reason: 'stop',
+          },
+        ],
+      },
+    ]),
+  );
+  try {
+    await webAsk(server, { preset: 'qwen' });
+    assert.equal(server.requests[0].body.enable_search, true);
+    assert.equal(server.requests[0].body.tools, undefined);
+    assert.match(server.requests[0].body.messages[0].content, /^系统\n\n你可以联网搜索/);
+    const mimo = await webAsk(server, { preset: 'xiaomi' });
+    assert.deepEqual(server.requests[1].body.tools, [{ type: 'web_search' }]);
+    assert.deepEqual(mimo.searches, [{ id: 'c1', title: '联网搜索：找到 2 个网页', done: true }]);
+    const or = await webAsk(server, { preset: 'openrouter' });
+    assert.deepEqual(server.requests[2].body.tools, [{ type: 'openrouter:web_search' }]);
+    assert.deepEqual(or.searches, [{ id: 'ws1', title: '联网搜索：上海天气', done: true }]);
+    // No web asked for, or a service without it: the request goes out as before.
+    await webAsk(server, { preset: 'xiaomi' }, { web: false });
+    await webAsk(server, { preset: 'siliconflow' });
+    for (const r of server.requests.slice(3)) {
+      assert.equal(r.body.tools, undefined);
+      assert.equal(r.body.messages[0].content, '系统');
+    }
+  } finally {
+    await server.close();
+  }
+});
+
+test("web search in chat: a model the service can't search with answers anyway", async () => {
+  const server = await mockServer((req, res) => {
+    if (server.requests.length === 1) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: 'model does not support tool web_search' } }));
+    } else sse(res, [{ choices: [{ delta: { content: '好' }, finish_reason: 'stop' }] }]);
+  });
+  try {
+    const { result } = await webAsk(server, { preset: 'xiaomi' });
+    assert.equal(result.text, '好');
+    assert.equal(server.requests[1].body.tools, undefined);
+    // Nor do models that take no tools, where the app runs the searches.
+    server.requests.length = 0;
+    const kimi = await webAsk(server, { preset: 'moonshot' });
+    assert.equal(kimi.result.text, '好');
+    assert.equal(server.requests[1].body.tools, undefined);
+    assert.equal(server.requests[1].body.messages[0].content, '系统');
+  } finally {
+    await server.close();
+  }
+});
+
+test("web search in chat: Kimi's searches run here and the reply goes on", async () => {
+  let round = 0;
+  const call = (index, id, name, input) => ({
+    choices: [
+      {
+        delta: {
+          tool_calls: [
+            { index, id, type: 'function', function: { name, arguments: JSON.stringify(input) } },
+          ],
+        },
+      },
+    ],
+  });
+  const json = (res, value) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(value));
+  };
+  const server = await mockServer((req, res) => {
+    if (req.url === '/v1/tools/search')
+      return json(res, {
+        search_results: [
+          { title: '天气', url: 'https://w.cn', site_name: '天气网', snippet: '晴' },
+        ],
+      });
+    if (req.url === '/v1/tools/fetch') return json(res, { markdown: '# 正文' });
+    round++;
+    if (round === 1)
+      return sse(res, [
+        { choices: [{ delta: { reasoning_content: '想', content: '我查一下。' } }] },
+        call(0, 's1', 'web_search', { query: '上海天气' }),
+        { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+      ]);
+    if (round === 2)
+      // A page to open and one of the caller's own tools, in one step.
+      return sse(res, [
+        call(0, 'f1', 'web_fetch', { url: 'https://w.cn' }),
+        call(1, 'r1', 'read_document', { path: 'a.html' }),
+        { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+      ]);
+    return sse(res, [{ choices: [{ delta: { content: '晴。' }, finish_reason: 'stop' }] }]);
+  });
+  try {
+    const tools = [{ name: 'read_document', description: '读', parameters: { type: 'object' } }];
+    const first = await webAsk(server, { preset: 'moonshot' }, { tools });
+    assert.equal(first.result.text, '我查一下。');
+    assert.deepEqual(first.result.toolCalls, [
+      { id: 'r1', name: 'read_document', input: { path: 'a.html' } },
+    ]);
+    assert.deepEqual(
+      first.searches.map((s) => [s.title, s.done]),
+      [
+        ['联网搜索：上海天气', false],
+        ['联网搜索：上海天气', true],
+        ['打开网页：https://w.cn', false],
+        ['打开网页：https://w.cn', true],
+      ],
+    );
+    const search = server.requests.find((r) => r.url === '/v1/tools/search');
+    assert.deepEqual(search.body, { text_query: '上海天气', limit: 8 });
+    assert.equal(search.headers.authorization, 'Bearer k');
+    const chats = () => server.requests.filter((r) => r.url === '/v1/chat/completions');
+    assert.deepEqual(
+      chats()[0].body.tools.map((t) => t.function.name),
+      ['read_document', 'web_search', 'web_fetch'],
+    );
+    const second = chats()[1].body.messages;
+    assert.equal(second.at(-2).reasoning_content, '想');
+    assert.match(second.at(-1).content, /^1\. 天气\nhttps:\/\/w\.cn\n天气网\n晴$/);
+    // The caller answers its own tool; the next request carries the turn's searches.
+    const after = await webAsk(
+      server,
+      { preset: 'moonshot' },
+      {
+        tools,
+        messages: [
+          { role: 'user', content: '问' },
+          { role: 'assistant', ...first.result, content: first.result.text },
+          { role: 'tool', toolCallId: 'r1', content: '文档' },
+        ],
+      },
+    );
+    assert.deepEqual(
+      chats()[2].body.messages.map(
+        (m) => `${m.role}:${m.tool_call_id || (m.tool_calls || []).map((c) => c.id).join(',')}`,
+      ),
+      ['system:', 'user:', 'assistant:s1', 'tool:s1', 'assistant:f1,r1', 'tool:f1', 'tool:r1'],
+    );
+    assert.equal(after.result.text, '晴。');
+  } finally {
+    await server.close();
+  }
+});
+
+test("web search in chat: GLM searches and reads pages through Zhipu's own APIs", async () => {
+  const server = await mockServer((req, res) => {
+    const json = (value) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(value));
+    };
+    if (req.url === '/v1/web_search')
+      return json({
+        search_result: [
+          { title: '论文', link: 'https://p.cn', media: '新智元', content: '被引 18 万次' },
+        ],
+      });
+    if (req.url === '/v1/reader') return json({ reader_result: { content: '页面正文' } });
+    if (server.requests.filter((r) => r.url === '/v1/chat/completions').length > 1)
+      return sse(res, [
+        { choices: [{ delta: { content: '约 18 万次。' }, finish_reason: 'stop' }] },
+      ]);
+    sse(res, [
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: 's1',
+                  function: { name: 'web_search', arguments: '{"query":"引用"}' },
+                },
+                {
+                  index: 1,
+                  id: 'f1',
+                  function: { name: 'web_fetch', arguments: '{"url":"https://p.cn"}' },
+                },
+              ],
+            },
+            finish_reason: 'tool_calls',
+          },
+        ],
+      },
+    ]);
+  });
+  try {
+    const { result, searches } = await webAsk(server, { preset: 'zhipu' });
+    assert.equal(result.text, '约 18 万次。');
+    assert.deepEqual(
+      searches.filter((s) => s.done).map((s) => s.title),
+      ['联网搜索：引用', '打开网页：https://p.cn'],
+    );
+    const body = (url) => server.requests.find((r) => r.url === url).body;
+    assert.deepEqual(body('/v1/web_search'), {
+      search_query: '引用',
+      search_engine: 'search_pro',
+      search_intent: false,
+      count: 8,
+    });
+    assert.deepEqual(body('/v1/reader'), { url: 'https://p.cn' });
+    const second = server.requests.filter((r) => r.url === '/v1/chat/completions')[1].body;
+    assert.deepEqual(
+      second.messages.slice(-2).map((m) => m.content),
+      ['1. 论文\nhttps://p.cn\n新智元\n被引 18 万次', '页面正文'],
+    );
+    // GLM's own built-in search isn't asked for.
+    assert.ok(second.tools.every((t) => t.type === 'function'));
+  } finally {
+    await server.close();
+  }
+});
+
+test("web search in chat: Claude's server tools, shown as steps; a paused turn goes on", async () => {
+  const ev = (type, data = {}) => `event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`;
+  const start = (id) =>
+    ev('message_start', {
+      message: {
+        id,
+        type: 'message',
+        role: 'assistant',
+        model: 'claude-opus-5',
+        content: [],
+        stop_reason: null,
+        usage: { input_tokens: 10, output_tokens: 0 },
+      },
+    });
+  const text = (index, t) =>
+    ev('content_block_start', { index, content_block: { type: 'text', text: '' } }) +
+    ev('content_block_delta', { index, delta: { type: 'text_delta', text: t } }) +
+    ev('content_block_stop', { index });
+  const end = (reason) =>
+    ev('message_delta', { delta: { stop_reason: reason }, usage: { output_tokens: 5 } }) +
+    ev('message_stop');
+  const server = await mockServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+    if (server.requests.length > 1) return res.end(start('m2') + text(0, '晴。') + end('end_turn'));
+    res.end(
+      start('m1') +
+        text(0, '我查一下。') +
+        ev('content_block_start', {
+          index: 1,
+          content_block: { type: 'server_tool_use', id: 'srv1', name: 'web_search', input: {} },
+        }) +
+        ev('content_block_delta', {
+          index: 1,
+          delta: { type: 'input_json_delta', partial_json: '{"query":"上海天气"}' },
+        }) +
+        ev('content_block_stop', { index: 1 }) +
+        ev('content_block_start', {
+          index: 2,
+          content_block: { type: 'web_search_tool_result', tool_use_id: 'srv1', content: [] },
+        }) +
+        ev('content_block_stop', { index: 2 }) +
+        end('pause_turn'),
+    );
+  });
+  try {
+    const { result, deltas, searches } = await webAsk(
+      { url: server.url.replace(/\/v1$/, '') },
+      { preset: 'anthropic', kind: 'anthropic', model: 'claude-opus-5' },
+    );
+    // What it writes after the search starts a new paragraph, as it streams and in the reply.
+    assert.equal(result.text, '我查一下。\n\n晴。');
+    assert.equal(deltas.map((d) => d.text || '').join(''), result.text);
+    assert.equal(result.stopReason, 'end_turn');
+    assert.deepEqual(
+      searches.map((s) => [s.id, s.title, s.done]),
+      [
+        ['srv1', '联网搜索：上海天气', false],
+        ['srv1', '联网搜索：上海天气', true],
+      ],
+    );
+    const [one, two] = server.requests.map((r) => r.body);
+    assert.deepEqual(one.tools, [
+      { type: 'web_search_20260209', name: 'web_search' },
+      { type: 'web_fetch_20260209', name: 'web_fetch' },
+    ]);
+    assert.match(one.system, /^系统\n\n你可以联网搜索/);
+    assert.deepEqual(
+      two.messages[1].content.map((b) => b.type),
+      ['text', 'server_tool_use', 'web_search_tool_result'],
+    );
+    assert.deepEqual(two.messages[1].content[1].input, { query: '上海天气' });
+  } finally {
+    await server.close();
+  }
+});
+
+test('web search in chat: DeepSeek goes through its Anthropic-compatible API', async () => {
+  const ev = (type, data = {}) => `event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`;
+  const server = await mockServer((req, res) => {
+    if (req.url.endsWith('/chat/completions'))
+      return sse(res, [{ choices: [{ delta: { content: '好' }, finish_reason: 'stop' }] }]);
+    res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+    res.end(
+      ev('message_start', {
+        message: {
+          id: 'm1',
+          type: 'message',
+          role: 'assistant',
+          model: 'deepseek-flash',
+          content: [],
+          stop_reason: null,
+          usage: { input_tokens: 10, output_tokens: 0 },
+        },
+      }) +
+        ev('content_block_start', { index: 0, content_block: { type: 'text', text: '' } }) +
+        ev('content_block_delta', { index: 0, delta: { type: 'text_delta', text: '晴。' } }) +
+        ev('content_block_stop', { index: 0 }) +
+        ev('message_delta', { delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 3 } }) +
+        ev('message_stop'),
+    );
+  });
+  // DeepSeek's own address, answered by the mock.
+  const mock = new URL(server.url).origin;
+  const ask = (extra, request = {}) =>
+    providers.streamChat({
+      provider: provider('https://api.deepseek.com', { preset: 'deepseek', ...extra }),
+      key: 'k',
+      fetch: (url, init) => fetch(String(url).replace('https://api.deepseek.com', mock), init),
+      onDelta: () => {},
+      request: {
+        system: '系统',
+        messages: [{ role: 'user', content: '问' }],
+        web: true,
+        ...request,
+      },
+    });
+  try {
+    const deepseek = { model: 'deepseek-flash' };
+    const result = await ask(deepseek);
+    assert.equal(result.text, '晴。');
+    const sent = server.requests[0];
+    assert.equal(sent.url.split('?')[0], '/anthropic/v1/messages');
+    assert.equal(sent.headers['x-api-key'], 'k');
+    assert.deepEqual(sent.body.tools, [{ type: 'web_search_20250305', name: 'web_search' }]);
+    assert.match(sent.body.system, /^系统\n\n你可以联网搜索/);
+    // DeepSeek's own level, with its thinking switched on, or off.
+    assert.deepEqual(sent.body.thinking, { type: 'enabled' });
+    assert.deepEqual(sent.body.output_config, { effort: 'high' });
+    await ask({ ...deepseek, effort: 'off' });
+    assert.deepEqual(server.requests[1].body.thinking, { type: 'disabled' });
+    assert.equal(server.requests[1].body.output_config, undefined);
+    // Without the web, or at another address (a proxy), its own API as before.
+    await ask(deepseek, { web: false });
+    assert.equal(server.requests[2].url, '/chat/completions');
+    await webAsk(server, { preset: 'deepseek' });
+    assert.equal(server.requests[3].url, '/v1/chat/completions');
+    assert.equal(server.requests[3].body.tools, undefined);
+  } finally {
+    await server.close();
+  }
+});
+
 // A stand-in for `codex app-server`: the same JSON-RPC lines, scripted replies.
 const fakeCodex = `#!/usr/bin/env node
 const fs = require('node:fs');
