@@ -1,7 +1,7 @@
 {
   "name": "folio-html-reader",
   "productName": "页间",
-  "version": "0.17.0",
+  "version": "0.17.1",
   "description": "本地 HTML / PDF 阅读、批注与项目管理",
   "type": "module",
   "main": "electron/main.cjs",
