@@ -7,6 +7,62 @@
   font-weight: 400;
   --sidebar: 236px;
   --inspector: 292px;
+  /* Motion. Things arrive quickly and settle softly, and leave faster than they came. */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  /* Side panels: a quick start and a long, gentle landing. */
+  --ease-panel: cubic-bezier(0.32, 0.72, 0, 1);
+  /* A lightly damped spring (about 1.5% overshoot) for things that pop up or slide into place. */
+  --ease-spring: linear(
+    0,
+    0.027,
+    0.096,
+    0.188,
+    0.292,
+    0.398,
+    0.5,
+    0.594,
+    0.678,
+    0.75,
+    0.812,
+    0.863,
+    0.904,
+    0.937,
+    0.962,
+    0.98,
+    0.994,
+    1.003,
+    1.009,
+    1.013,
+    1.015,
+    1.015,
+    1.015,
+    1.014,
+    1.012,
+    1.011,
+    1.009,
+    1.007,
+    1
+  );
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-pop: 320ms;
+  --dur-panel: 360ms;
+  /* Matches exitMs in motion.ts. */
+  --dur-exit: 160ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur-base: 0ms;
+    --dur-pop: 0ms;
+    --dur-panel: 0ms;
+    --dur-exit: 0ms;
+  }
+}
+/* Mac apps draw text with grayscale antialiasing, which is lighter and crisper. */
+:root[data-platform='darwin'] {
+  -webkit-font-smoothing: antialiased;
 }
 * {
   box-sizing: border-box;
@@ -50,11 +106,19 @@ textarea {
 }
 button {
   transition:
-    background 0.12s,
-    color 0.12s;
+    background-color var(--dur-fast) ease-out,
+    color var(--dur-fast) ease-out,
+    opacity var(--dur-fast) ease-out;
 }
 button:hover:not(:disabled) {
   background-color: var(--hover);
+}
+/* A press darkens at once and lets go softly. */
+button:active:not(:disabled) {
+  transition-duration: 0s;
+}
+.icon-button:active:not(:disabled) {
+  background-color: color-mix(in srgb, var(--hover), var(--text) 8%);
 }
 input,
 textarea {
@@ -71,7 +135,7 @@ svg {
 kbd {
   font-family: inherit;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   white-space: nowrap;
 }
 .app-shell {
@@ -110,7 +174,7 @@ kbd {
   font-weight: 600;
 }
 .brand > span {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-4);
   margin-left: 2px;
 }
@@ -126,7 +190,7 @@ button.brand {
   gap: 12px;
 }
 .titlebar-document {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--faint);
 }
 /* Windows draws its minimize / maximize / close buttons over the right end of the title bar. */
@@ -160,6 +224,24 @@ button.brand {
   display: flex;
   flex: 1;
   min-height: 0;
+  /* A hidden side panel waits just outside, ready to slide back in. */
+  overflow-x: clip;
+  /* Space between the panels, for themes that float them apart. */
+  --layout-gap: 0px;
+}
+/* The side panels slide in and out at their full width instead of being squeezed:
+   the reading area widens as a panel leaves, like a Mac app's sidebar. */
+.file-sidebar,
+.inspector {
+  transition:
+    margin var(--dur-panel) var(--ease-panel),
+    transform var(--dur-panel) var(--ease-panel),
+    box-shadow var(--dur-panel) var(--ease-panel),
+    visibility 0s;
+}
+.file-sidebar:has(> .sidebar-resizer.dragging),
+.inspector:has(> .sidebar-resizer.dragging) {
+  transition: none;
 }
 .file-sidebar {
   width: var(--sidebar-user-width, var(--sidebar));
@@ -251,7 +333,7 @@ button.brand {
   background: var(--tooltip-bg);
   color: var(--tooltip-text);
   box-shadow: 0 4px 14px rgb(var(--shadow-rgb) / calc(0.149 * var(--shadow-k)));
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.6;
   pointer-events: none;
 }
@@ -260,14 +342,14 @@ button.brand {
 }
 .tool-tooltip strong {
   display: block;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 550;
 }
 .tool-tooltip span {
   display: block;
   margin-top: 3px;
   color: var(--tooltip-muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 .ink-settings {
   flex-shrink: 0;
@@ -288,7 +370,7 @@ button.brand {
 .ink-settings-popover label {
   display: block;
   color: var(--text);
-  font-size: 12px;
+  font-size: 13px;
   margin-bottom: 15px;
 }
 .ink-settings-popover output {
@@ -304,12 +386,12 @@ button.brand {
 }
 .ink-settings-popover p {
   margin: 0;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
 }
 .eraser-mode-setting {
   margin: 0 0 15px;
-  font-size: 12px;
+  font-size: 13px;
 }
 .eraser-mode-switch {
   display: flex;
@@ -324,12 +406,11 @@ button.brand {
   flex: 1;
   padding: 7px 3px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: 12px;
   background: transparent;
 }
 .eraser-mode-switch button[aria-checked='true'] {
   color: var(--on-accent);
-  background: var(--accent-fill);
 }
 .eraser-mode-switch button:focus-visible {
   outline: 2px solid var(--accent);
@@ -381,7 +462,7 @@ button.brand {
   border: 0;
   background: transparent;
   width: 100%;
-  font-size: 11px;
+  font-size: 12px;
   outline: none;
 }
 .project-picker-backdrop {
@@ -400,7 +481,7 @@ button.brand {
 .project-picker-hint {
   margin: -5px 0 14px;
   color: var(--text-4);
-  font-size: 12px;
+  font-size: 13px;
 }
 .recent-projects {
   display: grid;
@@ -443,12 +524,12 @@ button.brand {
 }
 .recent-project small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 .recent-projects-empty {
   padding: 18px 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   text-align: center;
 }
 .project-picker-new {
@@ -461,7 +542,7 @@ button.brand {
   gap: 7px;
   padding: 0 7px;
   height: 34px;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 550;
   color: var(--text-2);
 }
@@ -492,7 +573,7 @@ button.brand {
   border-radius: 5px;
   margin: 3px 0;
   color: var(--text-3);
-  font-size: 11px;
+  font-size: 12px;
 }
 .tree-row.selected {
   background: var(--accent-soft);
@@ -549,7 +630,7 @@ button.brand {
   z-index: 2;
   pointer-events: none;
   padding: 8px;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
   color: var(--accent);
   background: var(--accent-soft);
@@ -596,7 +677,7 @@ button.brand {
 .tree-empty {
   color: var(--muted);
   padding: 25px 12px;
-  font-size: 12px;
+  font-size: 13px;
 }
 /* A ⋯ or right-click menu, floating over the window (PopupMenu). */
 .popup-menu {
@@ -616,7 +697,7 @@ button.brand {
   gap: 16px;
   width: 100%;
   text-align: left;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text);
   padding: 6px 9px;
   border-radius: 5px;
@@ -644,7 +725,7 @@ button.brand {
   display: flex;
   align-items: center;
   gap: 9px;
-  font-size: 11px;
+  font-size: 12px;
 }
 .connection-dot {
   margin-left: auto;
@@ -659,7 +740,7 @@ button.brand {
   gap: 7px;
   margin: 10px 0 0 25px;
   color: var(--faint);
-  font-size: 10px;
+  font-size: 11px;
 }
 .main-panel {
   display: flex;
@@ -699,7 +780,7 @@ button.brand {
   color: var(--text-3);
   border-left: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
-  font-size: 11px;
+  font-size: 12px;
 }
 .split-reading-toggle.active {
   color: var(--accent);
@@ -713,7 +794,7 @@ button.brand {
   border: 1px solid transparent;
   border-radius: 6px;
   color: var(--text-3);
-  font-size: 11px;
+  font-size: 12px;
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -746,7 +827,7 @@ button.brand {
   align-items: center;
   gap: 5px;
   padding: 4px 0;
-  font-size: 10px;
+  font-size: 11px;
   flex-shrink: 0;
 }
 .reading-column-header select {
@@ -756,7 +837,7 @@ button.brand {
   background: transparent;
   text-overflow: ellipsis;
   padding: 5px 2px;
-  font-size: 11px;
+  font-size: 12px;
 }
 .pane-document-title {
   flex: 1;
@@ -766,7 +847,7 @@ button.brand {
   white-space: nowrap;
   text-align: left;
   padding: 5px 2px;
-  font-size: 11px;
+  font-size: 12px;
 }
 .reading-column-header > .icon-button {
   width: 24px;
@@ -776,7 +857,7 @@ button.brand {
 .pane-active-label {
   width: 24px;
   flex-shrink: 0;
-  font-size: 9px;
+  font-size: 10px;
 }
 .reading-column-empty {
   display: flex;
@@ -789,7 +870,7 @@ button.brand {
   padding: 24px;
   color: var(--muted);
   background: var(--surface-2);
-  font-size: 12px;
+  font-size: 13px;
 }
 .reading-column-empty strong {
   color: var(--accent-deep);
@@ -856,7 +937,7 @@ button.brand {
   min-width: 0;
   flex: 1;
   height: 100%;
-  font-size: 11px;
+  font-size: 12px;
   padding: 0 7px;
 }
 .document-tab > button:first-child > span:not(.dirty-dot) {
@@ -914,10 +995,9 @@ button.brand {
 .mode-switch > button {
   padding: 0 12px;
   min-width: 47px;
-  font-size: 11px;
+  font-size: 12px;
 }
 .mode-switch > button.active {
-  background: var(--accent-fill);
   color: var(--on-accent);
 }
 .toolbar-divider {
@@ -967,7 +1047,7 @@ button.brand {
 .reader-toolbar select {
   background: transparent;
   border: 0;
-  font-size: 10px;
+  font-size: 11px;
   max-width: 89px;
   padding: 4px 0;
   outline: none;
@@ -992,7 +1072,7 @@ button.brand {
   padding-right: 2px;
 }
 .source-hint {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
 }
 .save-button {
@@ -1003,7 +1083,7 @@ button.brand {
   color: var(--accent);
   border-radius: 5px;
   padding: 7px 10px;
-  font-size: 11px;
+  font-size: 12px;
 }
 .save-button kbd {
   color: var(--accent-muted);
@@ -1014,7 +1094,7 @@ button.brand {
   gap: 7px;
   padding: 6px 9px;
   border-radius: 5px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
 }
 .autosave-toggle:hover {
@@ -1054,7 +1134,7 @@ button.brand {
   gap: 6px;
   padding: 6px 9px;
   border-radius: 5px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-4);
 }
 .history-button:hover {
@@ -1100,7 +1180,7 @@ button.brand {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: 13px;
 }
 .reader-pane {
   flex: 1;
@@ -1140,7 +1220,7 @@ button.brand {
   border: 1px solid var(--line-strong);
   box-shadow: 0 3px 10px rgb(var(--shadow-rgb) / calc(0.02 * var(--shadow-k)));
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 13px;
   white-space: nowrap;
 }
 .split-editor .editor-pane {
@@ -1157,14 +1237,14 @@ button.brand {
   align-items: center;
   gap: 6px;
   padding: 0 14px;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
   background: var(--surface-2);
   border-bottom: 1px solid var(--line);
 }
 .pane-caption > span {
   margin-left: auto;
-  font-size: 9px;
+  font-size: 10px;
 }
 .source-editor {
   flex: 1;
@@ -1195,20 +1275,9 @@ button.brand {
   top: 0;
   left: 0;
   bottom: auto;
-  animation: selection-toolbar-in 0.12s ease-out;
-}
-@keyframes selection-toolbar-in {
-  from {
-    opacity: 0;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .selection-toolbar.beside-selection {
-    animation: none;
-  }
 }
 .selection-toolbar > span {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
   padding: 0 8px 0 3px;
   border-right: 1px solid var(--line);
@@ -1220,7 +1289,7 @@ button.brand {
   gap: 6px;
   padding: 8px;
   color: var(--accent-deep);
-  font-size: 11px;
+  font-size: 12px;
   border-radius: 4px;
 }
 .inspector {
@@ -1255,7 +1324,7 @@ button.brand {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   position: relative;
   flex: 1;
@@ -1264,18 +1333,8 @@ button.brand {
 .inspector-tabs button.active {
   color: var(--accent);
 }
-.inspector-tabs button.active:after {
-  content: '';
-  position: absolute;
-  bottom: -1px;
-  height: 2px;
-  left: 12px;
-  right: 12px;
-  background: var(--accent);
-  border-radius: 2px;
-}
 .inspector-tabs button > span {
-  font-size: 9px;
+  font-size: 10px;
   color: var(--accent-muted);
   padding: 1px 4px;
   border-radius: 3px;
@@ -1292,7 +1351,7 @@ button.brand {
 .annotation-search input {
   border: 0;
   outline: none;
-  font-size: 10px;
+  font-size: 11px;
   flex: 1;
 }
 .annotations-list {
@@ -1319,7 +1378,7 @@ button.brand {
 }
 .annotation-selected-label {
   color: var(--ai-text);
-  font-size: 8px;
+  font-size: 9px;
   white-space: nowrap;
 }
 .drawing-preview {
@@ -1339,7 +1398,7 @@ button.brand {
   align-items: center;
   gap: 4px;
   color: var(--text-3);
-  font-size: 10px;
+  font-size: 11px;
 }
 .ink-thumbnail {
   display: block;
@@ -1356,14 +1415,14 @@ button.brand {
   align-items: center;
   gap: 4px;
   color: var(--faint);
-  font-size: 9px;
+  font-size: 10px;
   height: 20px;
 }
 .annotation-meta > button:first-child {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-4);
   padding: 0;
   text-align: left;
@@ -1373,7 +1432,7 @@ button.brand {
 }
 .annotation-meta time {
   margin-left: auto;
-  font-size: 8px;
+  font-size: 9px;
 }
 .annotation-meta > .icon-button {
   width: 20px;
@@ -1392,7 +1451,7 @@ button.brand {
   text-align: left;
   margin: 12px 0 7px;
   padding: 0;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.9;
   color: var(--text-3);
   word-break: break-word;
@@ -1411,7 +1470,7 @@ button.brand {
   border-radius: 4px;
   padding: 8px;
   margin: 5px 0;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.7;
   min-height: 48px;
 }
@@ -1425,7 +1484,7 @@ button.brand {
   margin: 6px 0 0 -4px;
   padding: 4px 6px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--faint);
 }
 .annotation-add-note:hover:not(:disabled) {
@@ -1436,14 +1495,14 @@ button.brand {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--accent-muted);
   padding: 12px 0 3px;
 }
 .orphan-warning {
   display: flex;
   gap: 5px;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--warn);
   align-items: center;
   margin: 9px 0;
@@ -1476,7 +1535,7 @@ button.brand {
   margin: 15px 0 10px;
 }
 .inspector-empty p {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.9;
   margin: 0;
   color: var(--fainter);
@@ -1486,7 +1545,7 @@ button.brand {
   display: flex;
   gap: 10px;
   align-items: center;
-  font-size: 9px;
+  font-size: 10px;
   color: var(--fainter);
 }
 .empty-shortcut > span:first-child {
@@ -1503,7 +1562,7 @@ button.brand {
   border-top: 1px solid var(--line-soft);
   height: 44px;
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: 12px;
 }
 .document-note {
   display: flex;
@@ -1523,7 +1582,7 @@ button.brand {
   gap: 9px;
   text-align: left;
   width: 100%;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.6;
   padding: 8px 10px;
   border-radius: 4px;
@@ -1536,7 +1595,7 @@ button.brand {
 }
 .outline-list > button.outline-level-3 {
   padding-left: 28px;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--faint);
 }
 .outline-marker {
@@ -1558,7 +1617,7 @@ button.brand {
   gap: 10px;
   padding: 0 12px;
   margin: 0 -12px;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
   user-select: none;
 }
@@ -1586,7 +1645,7 @@ button.brand {
   background: var(--danger);
 }
 .status-hint {
-  font-size: 9px;
+  font-size: 10px;
   padding-left: 1px;
 }
 .status-spacer {
@@ -1634,12 +1693,12 @@ button.brand {
   margin: 20px 0 14px;
 }
 .welcome p {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--faint);
   margin: 0 0 26px;
 }
 .welcome > span {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--fainter);
   margin-top: 30px;
   letter-spacing: 1px;
@@ -1652,7 +1711,7 @@ button.brand {
   gap: 7px;
   border-radius: 5px;
   padding: 9px 16px;
-  font-size: 12px;
+  font-size: 13px;
 }
 .primary-button {
   background: var(--accent-fill);
@@ -1692,10 +1751,10 @@ button.brand {
   width: 150px;
   border: 0;
   outline: none;
-  font-size: 11px;
+  font-size: 12px;
 }
 .find-bar > span {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--danger);
   white-space: nowrap;
 }
@@ -1719,7 +1778,7 @@ button.brand {
   gap: 10px;
   color: var(--accent-deep);
   max-width: 720px;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.6;
 }
 .toast.error {
@@ -1727,7 +1786,7 @@ button.brand {
   color: var(--danger);
 }
 .update-chip {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--accent);
   background: var(--accent-soft);
   border-radius: 999px;
@@ -1748,7 +1807,7 @@ button.brand {
   border-radius: 10px;
   box-shadow: 0 8px 32px rgb(var(--shadow-rgb) / calc(0.18 * var(--shadow-k)));
   padding: 12px 12px 14px 16px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-2);
 }
 .update-card-heading {
@@ -1772,7 +1831,7 @@ button.brand {
 .update-card p {
   margin: 8px 0 0;
   color: var(--text-4);
-  font-size: 11.5px;
+  font-size: 12.5px;
   line-height: 1.6;
 }
 .update-card-actions {
@@ -1836,7 +1895,7 @@ button.brand {
   color: var(--warn);
 }
 .dialog > p {
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.9;
   color: var(--text-4);
   margin: 15px 0;
@@ -1858,7 +1917,7 @@ button.brand {
 }
 .dialog > p.dialog-error {
   color: var(--danger);
-  font-size: 11px;
+  font-size: 12px;
 }
 .history-panel {
   display: flex;
@@ -1896,7 +1955,7 @@ button.brand {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-4);
-  font-size: 12px;
+  font-size: 13px;
 }
 .history-body {
   flex: 1;
@@ -1950,23 +2009,23 @@ button.brand {
   border-radius: 4px;
   background: var(--warn-soft);
   color: var(--warn);
-  font-size: 10px;
+  font-size: 11px;
   font-style: normal;
   font-weight: 450;
 }
 .history-item small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 .history-day {
   margin: 12px 10px 4px;
   color: var(--faint);
-  font-size: 11px;
+  font-size: 12px;
 }
 .history-empty {
   margin: 14px 10px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.8;
 }
 .history-policy {
@@ -1974,7 +2033,7 @@ button.brand {
   padding: 12px 16px 14px;
   border-top: 1px solid var(--line);
   color: var(--faint);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.7;
 }
 .history-preview {
@@ -2009,7 +2068,7 @@ button.brand {
   padding: 4px 12px;
   border-radius: 4px;
   color: var(--text-4);
-  font-size: 12px;
+  font-size: 13px;
 }
 .history-view-switch button[aria-checked='true'] {
   background: var(--raised);
@@ -2027,7 +2086,7 @@ button.brand {
   padding: 8px 18px;
   background: var(--danger-soft);
   color: var(--danger);
-  font-size: 12px;
+  font-size: 13px;
 }
 .history-stage {
   flex: 1;
@@ -2057,20 +2116,29 @@ button.brand {
 .history-loading {
   margin: auto;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 .history-hint {
   margin: 0;
   padding: 9px 18px;
   border-top: 1px solid var(--line);
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
+}
+.hide-left .file-sidebar,
+.hide-right .inspector {
+  visibility: hidden;
+  transition:
+    margin var(--dur-panel) var(--ease-panel),
+    transform var(--dur-panel) var(--ease-panel),
+    box-shadow var(--dur-panel) var(--ease-panel),
+    visibility 0s var(--dur-panel);
 }
 .hide-left .file-sidebar {
-  display: none;
+  margin-left: calc(-1 * var(--sidebar-user-width, var(--sidebar)) - var(--layout-gap));
 }
 .hide-right .inspector {
-  display: none;
+  margin-right: calc(-1 * var(--inspector-user-width, var(--inspector)) - var(--layout-gap));
 }
 ::-webkit-scrollbar {
   width: 7px;
@@ -2164,27 +2232,39 @@ button.brand {
     gap: 4px;
   }
   .tree-row {
-    font-size: 10px;
+    font-size: 11px;
   }
   .status-hint {
     max-width: 200px;
   }
   .annotation-meta time {
-    font-size: 7px;
+    font-size: 8px;
   }
 }
 @media (max-width: 950px) {
-  .file-sidebar {
-    display: none;
-  }
-  .app-shell.hide-left .file-sidebar {
-    display: flex;
+  /* The file tree becomes a drawer over the reading area; here hide-left opens it. */
+  .app-shell .file-sidebar {
     position: absolute;
     left: 0;
     top: 48px;
-    bottom: 27px;
+    bottom: 0;
     z-index: 20;
+    margin: 0;
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition:
+      transform var(--dur-panel) var(--ease-panel),
+      box-shadow var(--dur-panel) var(--ease-panel),
+      visibility 0s var(--dur-panel);
+  }
+  .app-shell.hide-left .file-sidebar {
+    transform: none;
+    visibility: visible;
     box-shadow: 5px 0 25px rgb(var(--shadow-rgb) / calc(0.102 * var(--shadow-k)));
+    transition:
+      transform var(--dur-panel) var(--ease-panel),
+      box-shadow var(--dur-panel) var(--ease-panel),
+      visibility 0s;
   }
   .inspector {
     --inspector: 245px;
@@ -2197,17 +2277,29 @@ button.brand {
   }
 }
 @media (max-width: 700px) {
-  .inspector {
-    display: none;
-  }
-  .app-shell:not(.hide-right) .inspector {
-    display: flex;
+  /* The right panel becomes a drawer too. */
+  .app-shell .inspector {
     position: absolute;
     right: 0;
     top: 48px;
-    bottom: 27px;
+    bottom: 0;
     z-index: 20;
+    margin: 0;
+    transform: translateX(100%);
+    visibility: hidden;
+    transition:
+      transform var(--dur-panel) var(--ease-panel),
+      box-shadow var(--dur-panel) var(--ease-panel),
+      visibility 0s var(--dur-panel);
+  }
+  .app-shell:not(.hide-right) .inspector {
+    transform: none;
+    visibility: visible;
     box-shadow: -5px 0 25px rgb(var(--shadow-rgb) / calc(0.102 * var(--shadow-k)));
+    transition:
+      transform var(--dur-panel) var(--ease-panel),
+      box-shadow var(--dur-panel) var(--ease-panel),
+      visibility 0s;
   }
   .history-tools {
     display: none;
@@ -2267,7 +2359,7 @@ button.brand {
     padding: 4px;
   }
   .selection-toolbar > span {
-    font-size: 9px;
+    font-size: 10px;
   }
   .toast {
     width: 90vw;
@@ -2289,7 +2381,7 @@ button.brand {
   margin-left: auto;
   color: var(--warn);
   text-decoration: underline;
-  font-size: 10px;
+  font-size: 11px;
   padding: 0 0 0 5px;
   white-space: nowrap;
 }
@@ -2347,11 +2439,11 @@ button.brand {
   background: color-mix(in srgb, var(--surface) 93%, transparent);
   backdrop-filter: blur(12px);
   white-space: nowrap;
-  font-size: 12px;
+  font-size: 13px;
 }
 .pdf-format-badge {
   font-weight: 650;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--file-pdf);
   letter-spacing: 0.4px;
   margin-right: 5px;
@@ -2390,7 +2482,7 @@ button.brand {
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .toolbar-host {
@@ -2500,7 +2592,7 @@ button.brand {
   border-radius: 12px;
   box-shadow: 0 8px 32px rgb(var(--shadow-rgb) / calc(0.141 * var(--shadow-k)));
   color: var(--text-3);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.7;
 }
 .reading-help-heading {
@@ -2527,7 +2619,7 @@ button.brand {
   color: var(--accent);
 }
 .reading-help-stats {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-4);
 }
 .focus-mode .titlebar,
@@ -2593,7 +2685,7 @@ button.brand {
   gap: 6px;
   align-items: center;
   padding: 5px 8px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-3);
   border-radius: 5px;
 }
@@ -2637,7 +2729,7 @@ button.brand {
 .popup-menu kbd {
   margin-left: auto;
   opacity: 0.55;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 /* Titles take the theme's display face. */
@@ -2686,18 +2778,7 @@ button.brand {
     0 18px 50px rgb(var(--shadow-rgb) / calc(0.18 * var(--shadow-k))),
     0 2px 6px rgb(var(--shadow-rgb) / calc(0.05 * var(--shadow-k)));
   -webkit-app-region: no-drag;
-  animation: theme-picker-in 0.14s ease-out;
-}
-@keyframes theme-picker-in {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .theme-picker {
-    animation: none;
-  }
+  transform-origin: calc(100% - 24px) top;
 }
 .theme-picker-heading {
   display: flex;
@@ -2717,7 +2798,7 @@ button.brand {
   padding: 4px 6px 4px 9px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  font-size: 11.5px;
+  font-size: 12.5px;
   color: var(--text-3);
 }
 .theme-follow .switch {
@@ -2752,12 +2833,12 @@ button.brand {
 }
 .theme-picker-hint {
   margin: 6px 0 4px;
-  font-size: 11.5px;
+  font-size: 12.5px;
   color: var(--muted);
 }
 .theme-group h3 {
   margin: 12px 2px 7px;
-  font-size: 10.5px;
+  font-size: 11.5px;
   font-weight: 600;
   letter-spacing: 1px;
   color: var(--faint);
@@ -2800,12 +2881,12 @@ button.brand {
   padding: 8px 4px 0;
 }
 .theme-card-label strong {
-  font-size: 12.5px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--text);
 }
 .theme-card-label small {
-  font-size: 10.5px;
+  font-size: 11.5px;
   color: var(--muted);
 }
 .theme-card-check {
@@ -2966,4 +3047,361 @@ button.brand {
 }
 .tp-inspector .tp-card + .tp-card {
   border-left-color: var(--ai);
+}
+
+/* ——— Frosted glass ———
+   On a Mac the window itself is the system's frosted sidebar material (main.cjs). With a
+   classic theme the title bar and the file tree are only tinted, so the desktop shows
+   through softly blurred; the reading area and the right panel stay solid. */
+:root[data-glass] {
+  --glass-mix: 64%;
+  --glass: color-mix(in srgb, var(--glass-tint) var(--glass-mix), transparent);
+  background: transparent;
+}
+/* The material follows the system's light or dark appearance; a theme of the other kind
+   tints it more heavily. */
+@media (prefers-color-scheme: dark) {
+  :root[data-glass][data-scheme='light'] {
+    --glass-mix: 90%;
+  }
+}
+@media (prefers-color-scheme: light) {
+  :root[data-glass][data-scheme='dark'] {
+    --glass-mix: 90%;
+  }
+}
+:root[data-glass] :is(.titlebar, .file-sidebar) {
+  background: var(--glass);
+}
+/* The title bar and the file tree read as one pane of glass around the page. */
+:root[data-glass] .titlebar {
+  border-bottom-color: transparent;
+}
+:root[data-glass] .main-panel {
+  background: var(--bg);
+}
+:root[data-glass] .app-shell:not(.focus-mode) :is(.main-panel, .inspector) {
+  border-top: 1px solid var(--line);
+}
+:root[data-glass] .file-sidebar .statusbar {
+  background: transparent;
+}
+/* Hover and selection let the glass through too. */
+:root[data-glass] .file-sidebar {
+  --hover: rgb(0 0 0 / 0.05);
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
+  --accent-soft-2: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+:root[data-glass][data-scheme='dark'] .file-sidebar {
+  --hover: rgb(255 255 255 / 0.06);
+}
+/* As a drawer over the page there is no desktop behind it, so it frosts the page instead. */
+@media (max-width: 950px) {
+  :root[data-glass] .file-sidebar {
+    background: color-mix(in srgb, var(--glass-tint) 84%, transparent);
+    backdrop-filter: blur(24px) saturate(1.4);
+  }
+}
+
+/* ——— Motion ———
+   Entrances use `backwards` so nothing stays transformed once it has arrived (a lasting
+   transform would trap position: fixed children). They animate the separate opacity,
+   translate and scale properties so they add to whatever transform an element already has. */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes grow-in {
+  from {
+    scale: 0.96;
+  }
+}
+@keyframes rise-in {
+  from {
+    translate: 0 10px;
+    scale: 0.985;
+  }
+}
+@keyframes drop-in {
+  from {
+    translate: 0 -6px;
+  }
+}
+@keyframes shrink-out {
+  to {
+    opacity: 0;
+    scale: 0.97;
+  }
+}
+@keyframes sink-out {
+  to {
+    opacity: 0;
+    translate: 0 6px;
+    scale: 0.985;
+  }
+}
+
+/* An overlay that is leaving (motion.ts Exit) is wrapped without changing the layout. */
+.exit-presence {
+  display: contents;
+}
+
+/* Windows over the app: the backdrop fades in and the window rises into place. */
+.modal-backdrop {
+  animation: fade-in var(--dur-base) ease-out backwards;
+}
+.modal-backdrop > * {
+  animation:
+    fade-in var(--dur-base) ease-out backwards,
+    rise-in var(--dur-pop) var(--ease-spring) backwards;
+}
+:is([data-closing] .modal-backdrop, .modal-backdrop[data-closing]) {
+  animation: fade-out var(--dur-exit) var(--ease-in) forwards;
+}
+:is([data-closing] .modal-backdrop, .modal-backdrop[data-closing]) > * {
+  animation: shrink-out var(--dur-exit) var(--ease-in) forwards;
+}
+
+/* Menus and pop-overs grow out of the control that opened them. */
+:is(
+  .popup-menu,
+  .model-menu,
+  .cite-pop,
+  .ink-settings-popover,
+  .theme-picker,
+  .selection-toolbar,
+  .ai-card
+) {
+  animation:
+    fade-in var(--dur-fast) ease-out backwards,
+    grow-in var(--dur-pop) var(--ease-spring) backwards;
+}
+.popup-menu {
+  transform-origin: var(--menu-origin, top left);
+}
+.ink-settings-popover {
+  transform-origin: top center;
+}
+[data-closing] .theme-picker {
+  animation: shrink-out var(--dur-exit) var(--ease-in) forwards;
+}
+
+/* Tooltips drift in from the button. Once one is showing, the next appears at once. */
+.tool-tooltip {
+  animation:
+    fade-in var(--dur-fast) ease-out backwards,
+    drop-in var(--dur-base) var(--ease-out) backwards;
+}
+.tool-tooltip.above {
+  animation-name: fade-in, rise-in;
+}
+.tool-tooltip.instant {
+  animation: none;
+}
+
+/* Notices rise from the bottom edge and sink back. */
+.toast,
+.update-card {
+  animation:
+    fade-in var(--dur-base) ease-out backwards,
+    rise-in var(--dur-pop) var(--ease-spring) backwards;
+}
+[data-closing] :is(.toast, .update-card) {
+  animation: sink-out var(--dur-exit) var(--ease-in) forwards;
+}
+
+/* Switching tabs in the right panel eases the new content in. */
+.inspector-tabs ~ * {
+  animation:
+    fade-in var(--dur-base) ease-out backwards,
+    drop-in var(--dur-pop) var(--ease-out) backwards;
+}
+.inspector-tabs {
+  position: relative;
+}
+.inspector-tab-indicator {
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  height: 2px;
+  width: calc(var(--tab-w, 0px) - 2 * var(--indicator-inset, 12px));
+  translate: calc(var(--tab-x, 0px) + var(--indicator-inset, 12px)) 0;
+  border-radius: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.inspector-tab-indicator.moving {
+  transition:
+    translate var(--dur-pop) var(--ease-spring),
+    width var(--dur-pop) var(--ease-spring);
+}
+
+/* The reading / source switch: a thumb slides under the chosen side. */
+.mode-switch {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.mode-switch::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 50%;
+  background: var(--accent-fill);
+  transition: translate var(--dur-pop) var(--ease-spring);
+}
+.mode-switch:has(> button:last-child.active)::before {
+  translate: 100% 0;
+}
+.mode-switch:not(:has(> button.active))::before {
+  opacity: 0;
+}
+.mode-switch > button.active:hover:not(:disabled) {
+  background: transparent;
+}
+.eraser-mode-switch {
+  position: relative;
+  isolation: isolate;
+}
+.eraser-mode-switch::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 9px) / 2);
+  border-radius: 4px;
+  background: var(--accent-fill);
+  transition: translate var(--dur-pop) var(--ease-spring);
+}
+.eraser-mode-switch:has(> button:last-child[aria-checked='true'])::before {
+  translate: calc(100% + 3px) 0;
+}
+.eraser-mode-switch button[aria-checked='true']:hover:not(:disabled) {
+  background: transparent;
+}
+
+/* Folders turn their arrow and unfold their contents. */
+.tree-chevron {
+  transition: rotate var(--dur-base) var(--ease-out);
+}
+.tree-item[aria-expanded='true'] .tree-chevron {
+  rotate: 90deg;
+}
+.tree-children {
+  interpolate-size: allow-keywords;
+}
+.tree-children.opening {
+  overflow: clip;
+  animation:
+    unfold var(--dur-panel) var(--ease-panel) backwards,
+    fade-in var(--dur-base) ease-out backwards;
+}
+.tree-children[data-closing] {
+  overflow: clip;
+  animation: fold var(--dur-base) var(--ease-out) forwards;
+}
+@keyframes unfold {
+  from {
+    height: 0;
+  }
+}
+@keyframes fold {
+  to {
+    height: 0;
+    opacity: 0;
+  }
+}
+.tree-row,
+.document-tab {
+  transition:
+    background-color var(--dur-fast) ease-out,
+    color var(--dur-fast) ease-out;
+}
+.tree-row > .icon-button,
+.document-tab > .icon-button {
+  transition:
+    opacity var(--dur-fast) ease-out,
+    background-color var(--dur-fast) ease-out;
+}
+
+/* A newly opened document's tab opens up in the strip. */
+.document-tab.fresh {
+  animation:
+    tab-open var(--dur-pop) var(--ease-out) backwards,
+    fade-in var(--dur-base) ease-out backwards;
+}
+@keyframes tab-open {
+  from {
+    min-width: 0;
+    max-width: 0;
+  }
+}
+
+/* Focus mode: the floating tools slide down from the top edge. */
+.focus-mode .toolbar-host {
+  translate: 0 -10px;
+  transition:
+    opacity var(--dur-base) ease-out,
+    translate var(--dur-pop) var(--ease-spring),
+    visibility 0s var(--dur-base);
+}
+.focus-mode.focus-tools-visible .toolbar-host {
+  translate: none;
+  transition:
+    opacity var(--dur-base) ease-out,
+    translate var(--dur-pop) var(--ease-spring),
+    visibility 0s;
+}
+.focus-controls {
+  transition: opacity var(--dur-base) ease-out;
+}
+
+/* The first screen settles in one line after another. */
+.welcome > * {
+  animation:
+    fade-in 480ms ease-out backwards,
+    rise-in 640ms var(--ease-out) backwards;
+}
+.welcome > :nth-child(2) {
+  animation-delay: 60ms;
+}
+.welcome > :nth-child(3) {
+  animation-delay: 120ms;
+}
+.welcome > :nth-child(4) {
+  animation-delay: 180ms;
+}
+.welcome > :nth-child(5) {
+  animation-delay: 240ms;
+}
+
+/* A document that loads quickly never flashes its loading label. */
+.reader-loading {
+  animation: fade-in var(--dur-base) ease-out 180ms backwards;
+}
+
+/* A new theme fades in over the old one. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 360ms;
+  animation-timing-function: var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .welcome > *,
+  .reader-loading {
+    animation: none;
+  }
 }

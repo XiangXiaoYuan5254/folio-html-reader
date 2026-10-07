@@ -71,7 +71,17 @@ export function SidebarResizer({
     const other = workspace.querySelector<HTMLElement>(
       side === 'left' ? '.inspector' : '.file-sidebar',
     );
-    const otherWidth = other?.getBoundingClientRect().width || 0;
+    // A hidden panel is pulled out of the row by a negative margin rather than removed.
+    const otherStyle = other && getComputedStyle(other);
+    const otherWidth =
+      other && otherStyle
+        ? Math.max(
+            0,
+            other.getBoundingClientRect().width +
+              parseFloat(otherStyle.marginLeft) +
+              parseFloat(otherStyle.marginRight),
+          )
+        : 0;
     // On compact windows the panel is a drawer, so it doesn't share the row.
     const available =
       innerWidth <= config.compact ? innerWidth - 48 : workspace.clientWidth - otherWidth - 520;
@@ -131,6 +141,9 @@ export function SidebarResizer({
     observer.observe(sidebar);
     const other = workspace.querySelector(side === 'left' ? '.inspector' : '.file-sidebar');
     if (other) observer.observe(other);
+    // The other panel sliding in or out only shows as the reading area changing size.
+    const main = workspace.querySelector('.main-panel');
+    if (main) observer.observe(main);
     const blur = () => finish();
     window.addEventListener('resize', schedule);
     window.addEventListener('blur', blur);

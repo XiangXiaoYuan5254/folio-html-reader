@@ -75,6 +75,7 @@ import { RegionCapture } from './components/RegionCapture';
 import { AiSourceEdit } from './components/AiSourceEdit';
 import { SelectionToolbar } from './components/SelectionToolbar';
 import { ThemePicker } from './components/ThemePicker';
+import { Exit, objectKey } from './motion';
 import type { ScreenBox } from './components/SelectionToolbar';
 const SourceEditor = lazy(() => import('./components/SourceEditor'));
 const Whiteboard = lazy(() => import('./components/Whiteboard'));
@@ -1485,7 +1486,9 @@ export default function App() {
             >
               <Palette size={16} />
             </IconButton>
-            {themePickerOpen ? <ThemePicker onClose={() => setThemePickerOpen(false)} /> : null}
+            <Exit when={themePickerOpen}>
+              {() => <ThemePicker onClose={() => setThemePickerOpen(false)} />}
+            </Exit>
           </div>
         </div>
       </header>
@@ -1591,6 +1594,8 @@ export default function App() {
           <div className="toolbar-host" inert={focus.enabled && !focus.toolsVisible}>
             <Toolbar
               focusMode={focus.enabled}
+              onLeft={() => setLeft((v) => !v)}
+              onRight={() => setRight((v) => !v)}
               onFocusMode={() => liveActions.current.focus()}
               pdf={doc?.kind === 'pdf'}
               mode={mode}
@@ -1604,8 +1609,6 @@ export default function App() {
               onLinkedScroll={() => setLinkedScroll((v) => !v)}
               zoom={doc?.data.zoom || 0}
               onZoom={(zoom) => doc && model.data(doc.id, { zoom })}
-              onLeft={() => setLeft((v) => !v)}
-              onRight={() => setRight((v) => !v)}
               onFind={startFind}
               onSave={save}
               inspecting={inspecting}
@@ -2068,56 +2071,70 @@ export default function App() {
           }
         />
       </div>
-      {notice ? (
-        <div
-          className={`toast ${notice.error ? 'error' : ''}`}
-          role={notice.error ? 'alert' : 'status'}
-        >
-          {notice.error ? <AlertCircle size={17} /> : <Check size={17} />}
-          <span>{notice.text.replace(/Error invoking remote method '[^']+': Error: /, '')}</span>
-          {notice.action ? (
-            <button
-              type="button"
-              className="toast-action"
-              onClick={() => {
-                notice.action?.run();
-                setNotice(null);
-              }}
-            >
-              {notice.action.label}
-            </button>
-          ) : null}
-          <IconButton label="关闭提示" onClick={() => setNotice(null)}>
-            <X size={15} />
-          </IconButton>
-        </div>
-      ) : null}
-      {(update.status === 'ready' || update.status === 'manual') &&
-      !updateHidden &&
-      !focus.enabled ? (
-        <UpdateCard
-          update={update}
-          onRestart={restartToUpdate}
-          onDownload={() => run(() => invoke('update-page'))}
-          onLater={() => setUpdateHidden(true)}
-        />
-      ) : null}
-      {projectPicker ? (
-        <ProjectPicker
-          projects={projectPicker}
-          onOpen={openRecentProject}
-          onNew={chooseNewProject}
-          onClose={() => setProjectPicker(null)}
-        />
-      ) : null}
-      {historyOpen && doc?.kind === 'html' ? (
-        <HistoryPanel
-          doc={doc}
-          unsaved={doc.draft !== doc.source && (!autosave || !!doc.autosavePaused)}
-          onRestore={restoreBackup}
-          onClose={() => setHistoryOpen(false)}
-        />
-      ) : null}
+      <Exit when={notice}>
+        {(notice) => (
+          <div
+            key={notice.text}
+            className={`toast ${notice.error ? 'error' : ''}`}
+            role={notice.error ? 'alert' : 'status'}
+          >
+            {notice.error ? <AlertCircle size={17} /> : <Check size={17} />}
+            <span>{notice.text.replace(/Error invoking remote method '[^']+': Error: /, '')}</span>
+            {notice.action ? (
+              <button
+                type="button"
+                className="toast-action"
+                onClick={() => {
+                  notice.action?.run();
+                  setNotice(null);
+                }}
+              >
+                {notice.action.label}
+              </button>
+            ) : null}
+            <IconButton label="关闭提示" onClick={() => setNotice(null)}>
+              <X size={15} />
+            </IconButton>
+          </div>
+        )}
+      </Exit>
+      <Exit
+        when={
+          (update.status === 'ready' || update.status === 'manual') &&
+          !updateHidden &&
+          !focus.enabled &&
+          update
+        }
+      >
+        {(update) => (
+          <UpdateCard
+            update={update}
+            onRestart={restartToUpdate}
+            onDownload={() => run(() => invoke('update-page'))}
+            onLater={() => setUpdateHidden(true)}
+          />
+        )}
+      </Exit>
+      <Exit when={projectPicker}>
+        {(projects) => (
+          <ProjectPicker
+            projects={projects}
+            onOpen={openRecentProject}
+            onNew={chooseNewProject}
+            onClose={() => setProjectPicker(null)}
+          />
+        )}
+      </Exit>
+      <Exit when={historyOpen && doc?.kind === 'html' && doc}>
+        {(doc) => (
+          <HistoryPanel
+            doc={doc}
+            unsaved={doc.draft !== doc.source && (!autosave || !!doc.autosavePaused)}
+            onRestore={restoreBackup}
+            onClose={() => setHistoryOpen(false)}
+          />
+        )}
+      </Exit>
       {boardCapture ? (
         <RegionCapture
           hint="拖动框选要讲解的公式、图表或段落 · Esc 取消"
@@ -2134,18 +2151,20 @@ export default function App() {
           }}
         />
       ) : null}
-      {boardList ? (
-        <BoardList
-          current={lesson?.tutor.id}
-          onOpen={(entry) => void openSavedBoard(entry)}
-          onBlank={() => {
-            setBoardList(false);
-            openWhiteboard({ blank: true });
-          }}
-          onClose={() => setBoardList(false)}
-          onDeleted={boardDeleted}
-        />
-      ) : null}
+      <Exit when={boardList}>
+        {() => (
+          <BoardList
+            current={lesson?.tutor.id}
+            onOpen={(entry) => void openSavedBoard(entry)}
+            onBlank={() => {
+              setBoardList(false);
+              openWhiteboard({ blank: true });
+            }}
+            onClose={() => setBoardList(false)}
+            onDeleted={boardDeleted}
+          />
+        )}
+      </Exit>
       {lesson ? (
         <Suspense fallback={null}>
           <Whiteboard
@@ -2167,18 +2186,24 @@ export default function App() {
           />
         </Suspense>
       ) : null}
-      {aiSettingsOpen ? (
-        <AiSettings
-          page={aiSettingsPage}
-          onClose={() => {
-            setAiSettingsOpen(false);
-            setAiSettingsPage('');
-          }}
-          root={workspace?.root}
-          projectName={workspace?.name}
-        />
-      ) : null}
-      {dialog ? <Dialog options={dialog} onClose={() => setDialog(null)} /> : null}
+      <Exit when={aiSettingsOpen}>
+        {() => (
+          <AiSettings
+            page={aiSettingsPage}
+            onClose={() => {
+              setAiSettingsOpen(false);
+              setAiSettingsPage('');
+            }}
+            root={workspace?.root}
+            projectName={workspace?.name}
+          />
+        )}
+      </Exit>
+      <Exit when={dialog}>
+        {(dialog) => (
+          <Dialog key={objectKey(dialog)} options={dialog} onClose={() => setDialog(null)} />
+        )}
+      </Exit>
     </div>
   );
 }

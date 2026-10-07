@@ -23,6 +23,8 @@ export function DocumentTabs({
   autosave: boolean;
 }) {
   const strip = useRef<HTMLDivElement>(null);
+  // A tab opens up in the strip once, when its document is opened.
+  const arrived = useRef(new Set<string>());
   useEffect(() => {
     const showActive = () =>
       strip.current
@@ -37,7 +39,13 @@ export function DocumentTabs({
     <div className="document-tab-row">
       <div ref={strip} className="document-tabs" role="tablist" aria-label="打开的文档">
         {docs.map((d) => (
-          <div className={`document-tab ${d.id === active ? 'selected' : ''}`} key={d.id}>
+          <div
+            className={`document-tab${d.id === active ? ' selected' : ''}${arrived.current.has(d.id) ? '' : ' fresh'}`}
+            key={d.id}
+            onAnimationEnd={(e) => {
+              if (e.target === e.currentTarget) arrived.current.add(d.id);
+            }}
+          >
             <button
               role="tab"
               aria-selected={d.id === active}

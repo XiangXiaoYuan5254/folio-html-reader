@@ -3,7 +3,6 @@ import type { DragEvent, ReactNode } from 'react';
 import {
   FolderOpen,
   Folder,
-  ChevronDown,
   ChevronRight,
   FileCode2,
   FileText,
@@ -22,6 +21,31 @@ import { atPointer, belowButton, PopupMenu, type MenuAnchor, type MenuItem } fro
 import { fileManager, isMac, shortcut, trashName } from '../platform';
 import { SidebarResizer } from './SidebarResizer';
 import { importFiles, invoke } from '../api';
+import { useExit } from '../motion';
+// A folder's contents, which unfold when it is opened and fold away when it is closed.
+// Folders that are open when the tree first shows are simply there.
+function Unfold({ open, children }: { open: boolean; children: () => ReactNode }) {
+  const [shown, closing] = useExit(open, 200);
+  const [was, setWas] = useState(open);
+  const [opening, setOpening] = useState(false);
+  if (was !== open) {
+    setWas(open);
+    setOpening(open);
+  }
+  if (!shown) return null;
+  return (
+    <div
+      className={`tree-children${opening ? ' opening' : ''}`}
+      data-closing={closing || undefined}
+      inert={closing}
+      onAnimationEnd={(e) => {
+        if (e.target === e.currentTarget && e.animationName === 'unfold') setOpening(false);
+      }}
+    >
+      {children()}
+    </div>
+  );
+}
 export type FileAction = 'create-file' | 'create-folder' | 'rename' | 'move' | 'trash' | 'reveal';
 export function FileTree({
   workspace,
@@ -272,7 +296,7 @@ export function FileTree({
           >
             {n.kind === 'folder' ? (
               <>
-                {collapsed.has(n.path) ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+                <ChevronRight className="tree-chevron" size={13} />
                 {collapsed.has(n.path) ? (
                   <Folder className="tree-icon-folder" size={17} />
                 ) : (
@@ -306,7 +330,9 @@ export function FileTree({
             <MoreHorizontal size={15} />
           </IconButton>
         </div>
-        {n.kind === 'folder' && !collapsed.has(n.path) ? rows(n.children || [], depth + 1) : null}
+        {n.kind === 'folder' ? (
+          <Unfold open={!collapsed.has(n.path)}>{() => rows(n.children || [], depth + 1)}</Unfold>
+        ) : null}
       </div>
     ));
   }

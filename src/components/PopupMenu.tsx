@@ -41,12 +41,14 @@ export function PopupMenu({
   onClose: () => void;
 }) {
   const menu = useRef<HTMLDivElement>(null);
-  const [place, setPlace] = useState<{ left: number; top: number } | null>(null);
+  const [place, setPlace] = useState<{ left: number; top: number; above: boolean } | null>(null);
   useLayoutEffect(() => {
     const { width, height } = menu.current!.getBoundingClientRect();
+    const above = at.top + height > innerHeight - 8;
     setPlace({
       left: Math.max(8, Math.min(at.x, innerWidth - width - 8)),
-      top: at.top + height <= innerHeight - 8 ? at.top : Math.max(8, at.bottom - height),
+      top: above ? Math.max(8, at.bottom - height) : at.top,
+      above,
     });
   }, [at]);
   const close = useRef(onClose);
@@ -96,7 +98,16 @@ export function PopupMenu({
       className="popup-menu"
       role="menu"
       aria-label={label}
-      style={place || { left: at.x, top: at.top, visibility: 'hidden' }}
+      style={
+        place
+          ? {
+              left: place.left,
+              top: place.top,
+              // It grows out of the button, from whichever side it opened on.
+              ['--menu-origin' as string]: `${Math.max(0, at.x - place.left)}px ${place.above ? '100%' : '0'}`,
+            }
+          : { left: at.x, top: at.top, visibility: 'hidden' }
+      }
       onContextMenu={(e) => e.preventDefault()}
     >
       {items.map((item, i) => (

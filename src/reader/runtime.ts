@@ -274,6 +274,9 @@ import { findQuote } from '../ai/quote-match';
       return anchor;
     });
   }
+  // Jumps the reader asks for (a heading, an annotation, a cited passage) glide there.
+  const glide = (): ScrollBehavior =>
+    matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
   // Briefly marks a cited passage without saving anything.
   let citeLayer: SVGGElement | null = null;
   let citeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -286,7 +289,7 @@ import { findQuote } from '../ai/quote-match';
     if (!rects.length) return false;
     const first = rects[0];
     if (first.top < 40 || first.bottom > innerHeight - 40)
-      scrollTo({ top: Math.max(0, first.top + scrollY - innerHeight / 3), behavior: 'auto' });
+      scrollTo({ top: Math.max(0, first.top + scrollY - innerHeight / 3), behavior: glide() });
     citeLayer?.remove();
     clearTimeout(citeTimer);
     const layerNode = svgEl('g', {
@@ -536,7 +539,7 @@ import { findQuote } from '../ai/quote-match';
       scrollTo({
         top: Math.max(0, r.top - Math.max(32, (innerHeight - r.height) / 2)),
         left: Math.max(0, r.left - Math.max(16, (innerWidth - r.width) / 2)),
-        behavior: 'auto',
+        behavior: glide(),
       });
   }
   function schedule() {
@@ -1275,7 +1278,7 @@ import { findQuote } from '../ai/quote-match';
     if (m.type === 'heading')
       document
         .querySelector(`[data-folio-heading="${CSS.escape(m.id)}"]`)
-        ?.scrollIntoView({ behavior: 'auto', block: 'start' });
+        ?.scrollIntoView({ behavior: glide(), block: 'start' });
     if (m.type === 'find') {
       if (document.documentElement.dataset.folioPdf) {
         document.dispatchEvent(new CustomEvent('folio:pdf-find', { detail: m }));

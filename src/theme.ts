@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { crossFade } from './motion';
 
 export type ThemeId =
   | 'default'
@@ -168,16 +169,28 @@ function update(next: ThemePrefs) {
 }
 
 function refresh() {
-  state = { prefs, active: resolve(prefs) };
-  applyTheme();
-  for (const listener of listeners) listener();
+  const active = resolve(prefs);
+  const changed = active !== state.active;
+  state = { prefs, active };
+  const show = () => {
+    applyTheme();
+    for (const listener of listeners) listener();
+  };
+  // A new theme fades in over the old one instead of flipping every color at once.
+  if (changed) crossFade(show);
+  else show();
 }
 
 /** Puts the saved theme on the page; called before the first render to avoid a flash. */
 export function applyTheme() {
   const info = byId.get(state.active)!;
-  document.documentElement.dataset.theme = info.id;
-  document.documentElement.dataset.style = info.bold ? 'bold' : 'classic';
+  const root = document.documentElement;
+  root.dataset.theme = info.id;
+  root.dataset.style = info.bold ? 'bold' : 'classic';
+  root.dataset.scheme = info.dark ? 'dark' : 'light';
+  // On a Mac the classic themes let the window's frosted material show through the title
+  // bar and the file tree; the bold themes keep their own solid surfaces.
+  root.toggleAttribute('data-glass', window.folio?.platform === 'darwin' && !info.bold);
   window.folio
     ?.invoke('appearance', { window: info.window, titlebar: info.titlebar, symbol: info.symbol })
     .catch(() => {});

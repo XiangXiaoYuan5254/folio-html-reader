@@ -69,7 +69,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 6px 18px 9px;
-  font-size: 9px;
+  font-size: 10px;
   color: var(--fainter);
   flex-shrink: 0;
 }
@@ -93,7 +93,7 @@
 .note-size button {
   padding: 1px 6px;
   border-radius: 4px;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-4);
 }
 .note-size button:hover:not(:disabled) {
@@ -429,7 +429,7 @@
 }
 .cm-tooltip.note-slash .cm-completionDetail {
   margin-left: 18px;
-  font-size: 10.5px;
+  font-size: 11.5px;
   font-style: normal;
   color: var(--faint);
 }

@@ -1318,3 +1318,25 @@
   --pop-shadow: 0 24px 60px #00000080, inset 0 1px 0 #ffffff26;
   --indicator-h: 2px;
 }
+
+/* The tint over the frosted title bar and file tree on a Mac (styles.css, data-glass).
+   Only the classic themes are frosted. */
+:root,
+[data-theme='default'] {
+  --glass-tint: #f3f5f7;
+}
+[data-theme='paper'] {
+  --glass-tint: #f2eadc;
+}
+[data-theme='sky'] {
+  --glass-tint: #edf1fb;
+}
+[data-theme='blossom'] {
+  --glass-tint: #f9eef2;
+}
+[data-theme='night'] {
+  --glass-tint: #161a20;
+}
+[data-theme='ink'] {
+  --glass-tint: #151311;
+}

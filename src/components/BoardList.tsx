@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ChevronDown,
@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { invoke } from '../api';
+import { Closing } from '../motion';
 import type { BoardEntry } from '../ai/board';
 import { fileName } from '../ai/context';
 import { backupLabel } from './HistoryPanel';
@@ -259,9 +260,13 @@ export function BoardList(p: {
   const { items, error, remove } = useBoards();
   // Deleting takes a second click on the same row.
   const [confirm, setConfirm] = useState('');
+  // Rendered into the page body, outside the Exit wrapper that marks it leaving.
+  const closing = useContext(Closing);
   return createPortal(
     <div
       className="modal-backdrop board-list-backdrop"
+      data-closing={closing || undefined}
+      inert={closing}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) p.onClose();
       }}

@@ -25,6 +25,7 @@ import { IconButton } from './IconButton';
 import { PenIcon } from './PenIcon';
 import { InkThumbnail } from './InkThumbnail';
 import { SidebarResizer } from './SidebarResizer';
+import { TabIndicator } from './TabIndicator';
 import { invoke, isDesktop } from '../api';
 import { ImageViewer } from './ImageViewer';
 // Pictures in the note: where one is shown from, and keeping a new one in the project.
@@ -122,6 +123,7 @@ export function Inspector(p: {
             ) : null}
           </button>
         ))}
+        <TabIndicator className="inspector-tab-indicator" active={p.tab} />
       </div>
       {p.tab === 'annotations' ? (
         <>
