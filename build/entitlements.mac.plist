@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  现有 ad-hoc 打包用的 entitlements（主程序和各个 helper，包括语音 helper folio-speech）。
-  前三条和 electron-builder 的默认值一样；hardened runtime 下要用麦克风还得加 audio-input，
-  否则白板的语音对话一开麦克风就被系统静默拒绝。
+  Developer ID 签名 + 公证用的 entitlements（主程序和各个 helper，包括语音 helper folio-speech）。
+  所有代码都用同一张证书签名，所以不需要 disable-library-validation；hardened runtime 下要用
+  麦克风还得加 audio-input，否则白板的语音对话一开麦克风就被系统静默拒绝。
 -->
 <plist version="1.0">
   <dict>
+    <!-- V8 需要 JIT。Electron 20+ 在 arm64 上缺这条会启动即崩溃。 -->
     <key>com.apple.security.cs.allow-jit</key>
     <true/>
+    <!-- Electron 运行时会申请可执行内存，hardened runtime 下需要放行。 -->
     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
-    <true/>
-    <key>com.apple.security.cs.disable-library-validation</key>
     <true/>
     <!-- 白板语音对话：听学生说话。 -->
     <key>com.apple.security.device.audio-input</key>
