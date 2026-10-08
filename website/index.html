@@ -695,16 +695,13 @@
                   </li>
                 </ol>
                 <details class="notice" id="first-open">
-                  <summary>第一次打开时提示“无法验证开发者”？</summary>
+                  <summary>第一次打开时会看到什么提示？</summary>
                   <div class="notice-body">
                     <p>
-                      页间目前使用本地签名，还没有经过 Apple 公证，所以 macOS 会拦一下。先尝试打开一次，然后到
-                      <strong>系统设置 → 隐私与安全性</strong>，找到页间对应的提示，点 <strong>仍要打开</strong>。只需要做一次。
+                      页间使用 Apple Developer ID 签名，并已通过 Apple 公证。第一次打开时，macOS 会确认一次“这是从互联网下载的 App，是否打开”，点
+                      <strong>打开</strong> 就行，以后不会再问。
                     </p>
-                    <p>
-                      请只对从本站下载的安装包这样操作。如果系统提示文件已损坏，请重新下载。
-                      <a href="https://support.apple.com/zh-cn/102445" target="_blank" rel="noopener">Apple 官方说明</a>
-                    </p>
+                    <p>如果系统提示无法打开或文件已损坏，多半是下载不完整，请从本站重新下载。</p>
                   </div>
                 </details>
               </div>
@@ -803,7 +800,7 @@
             <details>
               <summary>第一次打开时系统弹出安全提示怎么办？</summary>
               <p>
-                Mac 提示“无法验证开发者”：先尝试打开一次，再到「系统设置 → 隐私与安全性」点「仍要打开」。Windows 提示“Windows 已保护你的电脑”：点「更多信息」，再点「仍要运行」。原因和注意事项见
+                Mac 版已通过 Apple 公证，第一次打开时 macOS 只会确认一次是否打开从互联网下载的 App，点「打开」即可。Windows 提示“Windows 已保护你的电脑”：点「更多信息」，再点「仍要运行」。原因和注意事项见
                 <a href="#first-open" data-open-details="first-open">Mac 安装说明</a>和<a href="#first-open-win" data-open-details="first-open-win">Windows 安装说明</a>。
               </p>
             </details>

@@ -135,6 +135,6 @@ codesign -dv --verbose=4 "release/mac-arm64/页间.app"
 spctl -a -vvv -t install "release/mac-arm64/页间.app"
 ```
 
-**第一个公证版发布时**，把“无法验证开发者 → 仍要打开”的说明换成“已通过 Apple 公证，可以直接打开”：`README.md`、`docs/安装说明.txt`（DMG 里的安装说明）、`docs/verification.md`、`website/index.html`（Mac 安装步骤和常见问题两处）和这一版的发布说明。Windows 的 SmartScreen 提示照旧保留。
+0.17.3 的 macOS 安装包在 2026-10-08 换成了公证版，`README.md`、`docs/安装说明.txt`（DMG 里的安装说明）、`docs/verification.md`、`website/index.html` 里“无法验证开发者 → 仍要打开”的说明都已去掉。之后的发布说明照 0.17.3 的写 macOS 一行；Windows 的 SmartScreen 提示照旧保留。
 
 Windows 版仍未签名，见上文“Windows 签名”。

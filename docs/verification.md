@@ -17,7 +17,7 @@
 
 检查 DMG 完整性、挂载后的应用与 Applications 快捷方式、应用签名完整性、可执行文件架构、全新用户目录首次启动及示例文档。Apple Silicon 版本在本地真实 Mac 验证，当前不发布 Intel 版本。
 
-当前版本使用本地签名，没有 Developer ID 和 Apple 公证。开发机的 Gatekeeper 状态不能证明普通下载用户不会遇到安全提示；首次打开按安装说明处理。
+macOS 版使用 Developer ID 签名并经过 Apple 公证，公证票据已贴进应用。`npm run dist:mac` 用 `spctl` 确认应用来自已公证的 Developer ID（`source=Notarized Developer ID`），否则不出包；开发机关掉了 Gatekeeper，所以只看这一项，不看 accepted。
 
 ## 已知范围
 
