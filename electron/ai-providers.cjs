@@ -1149,7 +1149,73 @@ async function streamAnthropic({ provider, key, request, signal, onDelta, fetch 
   }
 }
 
-// Retries rate limits and outages, but only before anything has been shown.
+// How long thinking that comes word by word can stop before the request counts as stuck.
+// Measured pauses in it are under a second (qwen3.8-flash and glm-5.3-flash at high,
+// 2026-10, over thinking of up to six minutes).
+const stuckMs = 30_000;
+// The services that stream a model's thinking word by word, as reasoning_content.
+const steady = (preset) => preset.thinking === 'type' || preset.thinking === 'enable';
+
+// A request whose thinking stops for `ms` before its answer begins is sent again beside it.
+// Both go on until one starts answering or ends, which is kept and the other stopped, so
+// one only slow, taken for stuck, loses nothing. It is sent again at most once.
+function resendingStuck(run, args, ms) {
+  const { signal, onDelta } = args;
+  return new Promise((resolve, reject) => {
+    const tries = [];
+    let chosen = null;
+    const watch = setInterval(() => {
+      const first = tries[0];
+      if (chosen || tries.length > 1 || first.ended || !first.thought) return;
+      if (Date.now() - first.last < ms) return;
+      onDelta({ resent: true });
+      start();
+    }, 1000);
+    const choose = (t) => {
+      if (chosen) return;
+      chosen = t;
+      clearInterval(watch);
+      for (const other of tries) if (other !== t) other.controller.abort();
+    };
+    function start() {
+      const controller = new AbortController();
+      const stop = () => controller.abort();
+      signal?.addEventListener('abort', stop);
+      const t = { controller, thought: false, last: Date.now(), ended: false };
+      tries.push(t);
+      run({
+        ...args,
+        signal: controller.signal,
+        onDelta: (d) => {
+          if (chosen && chosen !== t) return;
+          t.last = Date.now();
+          if (d.reasoning) t.thought = true;
+          else choose(t);
+          onDelta(d);
+        },
+      })
+        .then(
+          (result) => {
+            if (chosen && chosen !== t) return;
+            choose(t);
+            resolve(result);
+          },
+          (e) => {
+            t.ended = true;
+            if (chosen === t || (!chosen && tries.every((x) => x.ended))) {
+              clearInterval(watch);
+              reject(e);
+            }
+          },
+        )
+        .finally(() => signal?.removeEventListener('abort', stop));
+    }
+    start();
+  });
+}
+
+// Retries rate limits and outages, but only before anything has been shown. With
+// `request.resend`, thinking that comes word by word and stops is sent again (resendingStuck).
 async function streamChat({ provider, key, request, signal, onDelta, fetch }) {
   if (!provider.model) throw new AiError('请先在 AI 设置中选择模型');
   const preset = presetFor(provider.preset);
@@ -1168,10 +1234,13 @@ async function streamChat({ provider, key, request, signal, onDelta, fetch }) {
     : request.web && webBackends[preset.web]
       ? streamSearching
       : streamOpenAI;
+  const resend = request.resend && run === streamOpenAI && steady(preset);
+  // The window learns that a pause this long means stuck here.
+  if (resend) onDelta({ watch: stuckMs });
   for (let attempt = 0; ; attempt++) {
     let started = false;
     try {
-      return await run({
+      const args = {
         provider: besideAnthropic
           ? { ...provider, baseUrl: `${origin(provider.baseUrl)}/anthropic` }
           : provider,
@@ -1183,7 +1252,8 @@ async function streamChat({ provider, key, request, signal, onDelta, fetch }) {
           started = true;
           onDelta(d);
         },
-      });
+      };
+      return await (resend ? resendingStuck(run, args, stuckMs) : run(args));
     } catch (e) {
       // The Anthropic SDK retries on its own.
       if (anthropic || !e.retry || started || attempt >= 2) throw e;
@@ -1457,6 +1527,7 @@ module.exports = {
   presets,
   presetFor,
   streamChat,
+  resendingStuck,
   listModels,
   readBalance,
   money,

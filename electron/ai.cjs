@@ -384,6 +384,9 @@ function createAi({
       // Web search, for the services that have it (presets' `web`, and Codex); asked for by chat.
       web: !!payload.web,
       maxTokens: number(payload.maxTokens, 1_000, 200_000),
+      // Sent again when its thinking stops coming in, where the service can tell; asked for by
+      // the whiteboard, which says so.
+      resend: !!payload.resend,
     };
     const controller = new AbortController();
     running.set(requestId, controller);

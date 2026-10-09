@@ -426,6 +426,92 @@ test('stopping a request resolves as stopped', async () => {
   }
 });
 
+test('thinking that stops is asked again beside it, and the first to answer is kept', async () => {
+  const stalled = (signal) =>
+    new Promise((_, reject) =>
+      signal.addEventListener('abort', () =>
+        reject(Object.assign(new Error('已停止'), { name: 'AbortError' })),
+      ),
+    );
+  const later = (ms) => new Promise((r) => setTimeout(r, ms));
+  // The first asking thinks and then stops for good; the second answers.
+  let signals = [];
+  let deltas = [];
+  let result = await providers.resendingStuck(
+    async ({ signal, onDelta }) => {
+      const n = signals.push(signal);
+      onDelta({ reasoning: `想${n}` });
+      if (n === 1) return stalled(signal);
+      onDelta({ text: '讲' });
+      return { text: '讲', n };
+    },
+    { onDelta: (d) => deltas.push(d) },
+    50,
+  );
+  assert.equal(result.n, 2);
+  assert.equal(signals[0].aborted, true);
+  assert.deepEqual(deltas, [
+    { reasoning: '想1' },
+    { resent: true },
+    { reasoning: '想2' },
+    { text: '讲' },
+  ]);
+  // One only slow goes on beside the second and is kept when it answers first.
+  signals = [];
+  deltas = [];
+  result = await providers.resendingStuck(
+    async ({ signal, onDelta }) => {
+      const n = signals.push(signal);
+      onDelta({ reasoning: `想${n}` });
+      if (n === 2) return stalled(signal);
+      await later(1400);
+      onDelta({ text: '讲' });
+      return { text: '讲', n };
+    },
+    { onDelta: (d) => deltas.push(d) },
+    50,
+  );
+  assert.equal(result.n, 1);
+  assert.equal(signals[1].aborted, true);
+  assert.deepEqual(deltas.at(-1), { text: '讲' });
+  // Nothing comes while a model thinks without showing it: that is not a stall.
+  let asked = 0;
+  await providers.resendingStuck(
+    async ({ onDelta }) => {
+      asked++;
+      await later(1400);
+      onDelta({ text: '讲' });
+      return { text: '讲' };
+    },
+    { onDelta: () => {} },
+    50,
+  );
+  assert.equal(asked, 1);
+
+  // Only services whose thinking comes word by word are watched.
+  const server = await mockServer((req, res) =>
+    sse(res, [{ choices: [{ delta: { content: '好' } }] }]),
+  );
+  try {
+    for (const [preset, watched] of [
+      ['deepseek', true],
+      ['openai', false],
+    ]) {
+      const seen = [];
+      await providers.streamChat({
+        provider: provider(server.url, { preset }),
+        key: 'test-key',
+        fetch,
+        onDelta: (d) => seen.push(d),
+        request: { messages: [{ role: 'user', content: '问题' }], resend: true },
+      });
+      assert.equal(seen[0].watch === 30_000, watched);
+    }
+  } finally {
+    await server.close();
+  }
+});
+
 test('quotes are found despite spacing, width, hyphenation and small slips', () => {
   const html = '第一段。Transformer 模型完全基于注意力机制，\n  摒弃了循环和卷积。第二段继续。';
   const found = findQuote(html, 'Transformer模型完全基于注意力机制， 摒弃了循环和卷积');

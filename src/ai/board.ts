@@ -364,6 +364,20 @@ export type TutorState = {
   // The next sentence's voice is still being made.
   voiceWait?: boolean;
 };
+// What came in for the request being answered, which the board shows while the teacher
+// thinks; it changes in place, read once a second rather than on every word.
+export type Heard = {
+  // When the service was asked, where its thinking comes word by word, so a long pause in
+  // it means stuck (0 elsewhere).
+  watched: number;
+  // When anything last came (0: nothing yet), and how many characters of thinking.
+  at: number;
+  thought: number;
+  // The thinking stopped and the question was asked again, beside the first asking.
+  resent: boolean;
+};
+const nothingHeard = (): Heard => ({ watched: 0, at: 0, thought: 0, resent: false });
+
 // What the board is to show next: things already on it, or room below the writing for a
 // block about to be written, `room` board pixels tall.
 export type Look = { refs: string[] } | { room: number };
@@ -907,6 +921,7 @@ export class Tutor {
   // Getting the board ready (reading the document for the intro).
   private opening: Promise<void> | null = null;
   private retryLast: (() => void) | null = null;
+  heard = nothingHeard();
   private disposed = false;
   // The teacher's voice, when the lesson is said out loud, and the sentence being said.
   private voice: VoiceMode = 'off';
@@ -1407,6 +1422,7 @@ export class Tutor {
     this.controller = controller;
     this.retryLast = null;
     this.failure = '';
+    const heard = (this.heard = nothingHeard());
     this.resume();
     this.set((s) => ({
       ...s,
@@ -1440,8 +1456,30 @@ export class Tutor {
       this.streaming = true;
       void this.play(run);
       const result = await chat(
-        { system: tutorSystem(config, this.kind, this.voice), messages, use: 'board' },
-        { signal: controller.signal, onText: (d) => this.feed(run, d) },
+        {
+          system: tutorSystem(config, this.kind, this.voice),
+          messages,
+          use: 'board',
+          resend: true,
+        },
+        {
+          signal: controller.signal,
+          onText: (d) => {
+            heard.at = Date.now();
+            this.feed(run, d);
+          },
+          onReasoning: (d) => {
+            heard.at = Date.now();
+            heard.thought += d.length;
+          },
+          onWatch: () => (heard.watched = Date.now()),
+          // What the second asking thinks is counted afresh.
+          onResent: () => {
+            heard.resent = true;
+            heard.at = Date.now();
+            heard.thought = 0;
+          },
+        },
       );
       if (run !== this.run) return;
       this.feed(run, '\n');

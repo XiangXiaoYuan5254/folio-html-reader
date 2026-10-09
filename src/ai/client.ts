@@ -97,12 +97,19 @@ export type ChatRequest = {
   use?: AiUse;
   // Lets the model search the web when it decides to, where the service can.
   web?: boolean;
+  // Sends it again beside itself when its thinking stops coming in, where the service streams
+  // thinking word by word (electron/ai-providers.cjs).
+  resend?: boolean;
 };
 export type ChatHandlers = {
   onText?: (delta: string) => void;
   onReasoning?: (delta: string) => void;
   onTool?: (name: string) => void;
   onSearch?: (search: { id: string; title: string; done: boolean }) => void;
+  // With `resend`: the request is watched, and a pause of `ms` in it means stuck.
+  onWatch?: (ms: number) => void;
+  // Its thinking stopped that long, and it was sent again.
+  onResent?: () => void;
   signal?: AbortSignal;
 };
 export async function chat(request: ChatRequest, handlers: ChatHandlers = {}) {
@@ -121,6 +128,8 @@ export async function chat(request: ChatRequest, handlers: ChatHandlers = {}) {
     if (e.reasoning) handlers.onReasoning?.(e.reasoning);
     if (e.tool) handlers.onTool?.(e.tool);
     if (e.search) handlers.onSearch?.(e.search);
+    if (e.watch) handlers.onWatch?.(e.watch);
+    if (e.resent) handlers.onResent?.();
   });
   const cancel = () => void invoke('ai-cancel', { requestId }).catch(() => {});
   handlers.signal?.addEventListener('abort', cancel);

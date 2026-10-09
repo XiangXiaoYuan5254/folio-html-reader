@@ -34,7 +34,7 @@ import { providerFor, useAiConfig, useChoice } from '../ai/client';
 import { effortLabel, levelsFor, loadedModelOptions, lowerLevel } from '../ai/levels';
 import { isImageFile, maxImages, prepareImage } from '../ai/images';
 import { plainText, segments, texWithRefs, useTutor } from '../ai/board';
-import type { Block, Camera, Ink, Look, Shape, Stroke, Tutor } from '../ai/board';
+import type { Block, Camera, Heard, Ink, Look, Shape, Stroke, Tutor } from '../ai/board';
 import {
   arrowPath,
   boxPath,
@@ -137,23 +137,43 @@ function Written({ text, start = 0, dur }: { text: string; start?: number; dur: 
 
 // The teacher is working out what to say; after a few seconds, for how long, so a long
 // think doesn't look like the board is stuck, and after a long one, `slow`: why, and what
-// would make it quicker.
-function Thinking({ text, slow }: { text: string; slow: string }) {
+// would make it quicker. Where the service's thinking comes word by word, how much of it
+// came, and when it stops coming, that it may be stuck and what happens next.
+function Thinking({ text, slow, heard }: { text: string; slow: string; heard: () => Heard }) {
   const [since] = useState(() => Date.now());
   const [, tick] = useState(0);
   useEffect(() => {
     const timer = setInterval(() => tick((n) => n + 1), 1000);
     return () => clearInterval(timer);
   }, []);
-  const seconds = Math.floor((Date.now() - since) / 1000);
+  const now = Date.now();
+  const seconds = Math.floor((now - since) / 1000);
+  const { watched, at, thought, resent } = heard();
+  const quiet = watched ? Math.floor((now - (at || watched)) / 1000) : 0;
+  const time = [
+    thought ? `已想 ${thought.toLocaleString()} 字` : '',
+    seconds >= 5 ? `${seconds} 秒` : '',
+  ].filter(Boolean);
+  const hint =
+    quiet >= 10
+      ? !at
+        ? '正在等待服务响应…'
+        : resent
+          ? '服务暂时没有响应，请稍后再试。'
+          : '暂时没有收到新内容，稍后会自动重试。'
+      : resent
+        ? '连接不太稳定，已自动重试。'
+        : seconds >= 25
+          ? slow
+          : '';
   return (
     <>
       <p className="wb-status">
         <LoaderCircle className="spin" size={14} />
         {text}
-        {seconds >= 5 ? <span className="wb-status-time">{seconds} 秒</span> : null}
+        {time.length ? <span className="wb-status-time">{time.join(' · ')}</span> : null}
       </p>
-      {seconds >= 25 ? <p className="wb-status-hint">{slow}</p> : null}
+      {hint ? <p className="wb-status-hint">{hint}</p> : null}
     </>
   );
 }
@@ -1379,7 +1399,7 @@ export default function Whiteboard({
                 <p className="wb-error">{state.error}</p>
               ) : (
                 <>
-                  {status ? <Thinking text={status} slow={slow} /> : null}
+                  {status ? <Thinking text={status} slow={slow} heard={() => tutor.heard} /> : null}
                   {state.waiting ? (
                     <p className="wb-caption-text">
                       {mode === 'talk' ? '想问什么直接说' : '想问什么就在下面输入'}
