@@ -386,8 +386,10 @@ export default function App() {
   // Source mode: pointing at the preview locates the element's code.
   const [inspecting, setInspecting] = useState(false);
   useEffect(() => setInspecting(false), [mode, doc?.id]);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  useEffect(() => setHistoryOpen(false), [mode, doc?.id]);
+  // Each opening gets its own panel, so reopening while the last one is still leaving
+  // lists the backups afresh instead of reusing the closing one.
+  const [historyOpen, setHistoryOpen] = useState<object | null>(null);
+  useEffect(() => setHistoryOpen(null), [mode, doc?.id]);
   useEffect(() => {
     if (!inspecting) sourceEditor.current?.clearReveal();
   }, [inspecting]);
@@ -829,7 +831,7 @@ export default function App() {
   async function restoreBackup(entry: BackupEntry) {
     if (!doc) return;
     await model.restore(doc.id, entry.name);
-    setHistoryOpen(false);
+    setHistoryOpen(null);
     notify(`已恢复到 ${backupLabel(entry.time)} 的版本，恢复前的内容也已备份`);
   }
   function toggleAutosave() {
@@ -1668,7 +1670,7 @@ export default function App() {
               onReload={() =>
                 doc && guardDirty([doc], () => model.reload(doc.id), '重新载入文件？')
               }
-              onHistory={() => setHistoryOpen(true)}
+              onHistory={() => setHistoryOpen({})}
               aiEditing={aiSourceOpen}
               onAiEdit={isDesktop ? () => setAiSourceOpen((v) => !v) : undefined}
               assistantOpen={right && tab === 'assistant'}
@@ -2181,13 +2183,14 @@ export default function App() {
           />
         )}
       </Exit>
-      <Exit when={historyOpen && doc?.kind === 'html' && doc}>
-        {(doc) => (
+      <Exit when={historyOpen && doc?.kind === 'html' && { doc, opened: historyOpen }}>
+        {({ doc, opened }) => (
           <HistoryPanel
+            key={objectKey(opened)}
             doc={doc}
             unsaved={doc.draft !== doc.source && (!autosave || !!doc.autosavePaused)}
             onRestore={restoreBackup}
-            onClose={() => setHistoryOpen(false)}
+            onClose={() => setHistoryOpen(null)}
           />
         )}
       </Exit>
