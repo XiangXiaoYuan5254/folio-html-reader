@@ -3,7 +3,13 @@ import { fileManager } from './platform';
 let token = '';
 export const isDesktop = !!window.folio;
 export async function invoke<T = any>(action: string, payload: unknown = {}): Promise<T> {
-  if (window.folio) return window.folio.invoke(action, payload, token);
+  if (window.folio)
+    return window.folio.invoke(action, payload, token).catch((e: Error) => {
+      // A member feature reached without a membership (electron/main.cjs): src/license.ts.
+      if (String(e?.message).includes('需要会员：'))
+        window.dispatchEvent(new CustomEvent('folio-membership', { detail: '' }));
+      throw e;
+    });
   const r = await fetch('/__api/' + action, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Folio-Token': token },

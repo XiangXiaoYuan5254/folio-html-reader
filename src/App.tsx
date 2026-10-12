@@ -20,6 +20,7 @@ import {
   MessageCircleQuestion,
   Palette,
   Presentation,
+  Crown,
 } from 'lucide-react';
 import { invoke, subscribe, useWorkspace, isDesktop, documentUrl } from './api';
 import { isMac, shortcut, trashName } from './platform';
@@ -76,6 +77,9 @@ import { RegionCapture } from './components/RegionCapture';
 import { AiSourceEdit } from './components/AiSourceEdit';
 import { SelectionToolbar } from './components/SelectionToolbar';
 import { ThemePicker } from './components/ThemePicker';
+import { MembershipDialog, MemberLock } from './components/MembershipDialog';
+import { memberNow, renewLicense, useLicense } from './license';
+import { setThemesUnlocked } from './theme';
 import { Exit, objectKey } from './motion';
 import type { ScreenBox } from './components/SelectionToolbar';
 const SourceEditor = lazy(() => import('./components/SourceEditor'));
@@ -294,6 +298,21 @@ export default function App() {
   // The page the AI settings open on, when not the services.
   const [aiSettingsPage, setAiSettingsPage] = useState<'' | 'voices'>('');
   const [themePickerOpen, setThemePickerOpen] = useState(false);
+  // The membership dialog, with what was asked for when a member feature opened it.
+  const [membership, setMembership] = useState<{ reason: string } | null>(null);
+  const license = useLicense();
+  useEffect(() => {
+    const open = (e: Event) => setMembership({ reason: (e as CustomEvent<string>).detail || '' });
+    window.addEventListener('folio-membership', open);
+    return () => window.removeEventListener('folio-membership', open);
+  }, []);
+  useEffect(() => {
+    if (license) setThemesUnlocked(license.member);
+  }, [license?.member]);
+  // Opening the dialog is a good moment to hear about a refund or a move from the server.
+  useEffect(() => {
+    if (membership && license && license.state !== 'none') void renewLicense().catch(() => {});
+  }, [membership]);
   const [assistantMode, setAssistantMode] = useState<AssistantMode>(() => {
     try {
       return localStorage.getItem('folio.assistant-mode') === 'project' ? 'project' : 'doc';
@@ -519,6 +538,7 @@ export default function App() {
         if (e.type === 'files-changed') liveActions.current.refresh();
         if (e.type === 'ai-settings') setAiSettingsOpen(true);
         if (e.type === 'theme-picker') setThemePickerOpen(true);
+        if (e.type === 'membership') setMembership({ reason: '' });
         if (e.type === 'open-file' && sessionReady.current) liveActions.current.openFiles();
         if (e.type === 'toggle-focus') liveActions.current.focus();
         if (e.type === 'update') setUpdate(e.update);
@@ -965,6 +985,7 @@ export default function App() {
   }
   function openAiCard(cardMode: 'explain' | 'translate' | 'ask') {
     if (!doc || !selection) return;
+    if (!memberNow(cardMode === 'translate' ? 'AI 翻译' : 'AI 解释与提问')) return;
     assistant.openCard(cardMode, { docId: doc.id, path: doc.path, anchor: selection });
   }
   // The selected text, a picture of a framed region of the page, or a blank board for any
@@ -975,6 +996,7 @@ export default function App() {
     const path = from.blank ? undefined : from.path || doc?.path;
     const text = from.picture || from.blank ? '' : selection?.exact || '';
     if (!from.picture && !from.blank && !text) return;
+    if (!memberNow('白板讲解')) return;
     lessonRef.current?.tutor.dispose();
     const tutor = new Tutor({
       selection: text,
@@ -1477,6 +1499,32 @@ export default function App() {
               {update.status === 'ready' ? '重启以更新' : '有新版本'} {update.version}
             </button>
           ) : null}
+          {isDesktop && license ? (
+            <button
+              type="button"
+              className={`member-chip is-${license.state}`}
+              title={
+                license.member && license.forever
+                  ? '永久会员'
+                  : license.member && license.expires
+                    ? `会员到 ${new Date(license.expires).toLocaleString('zh-CN', { hour12: false })}`
+                    : 'PDF 阅读、AI 功能和界面主题需要会员'
+              }
+              onClick={() => setMembership({ reason: '' })}
+            >
+              {license.state === 'paid' ? <Crown size={13} /> : null}
+              {
+                {
+                  paid: license.forever ? '永久会员' : '会员',
+                  trial: '试用中',
+                  offline: '会员待验证',
+                  clock: '会员待验证',
+                  expired: '会员已到期',
+                  none: '开通会员',
+                }[license.state]
+              }
+            </button>
+          ) : null}
           <span className="titlebar-document">{workspace?.name}</span>
           <div className="theme-menu">
             <IconButton
@@ -1822,7 +1870,13 @@ export default function App() {
                         </span>
                       </div>
                     ) : null}
-                    {paneDoc ? (
+                    {paneDoc?.kind === 'pdf' && isDesktop && !license?.member ? (
+                      license ? (
+                        <MemberLock />
+                      ) : (
+                        <div className="reading-column-empty" />
+                      )
+                    ) : paneDoc ? (
                       <DocumentReader
                         key={paneDoc.id}
                         live={mode === 'source'}
@@ -2198,6 +2252,15 @@ export default function App() {
             }}
             root={workspace?.root}
             projectName={workspace?.name}
+          />
+        )}
+      </Exit>
+      <Exit when={membership}>
+        {(membership) => (
+          <MembershipDialog
+            reason={membership.reason}
+            onClose={() => setMembership(null)}
+            onNotify={notify}
           />
         )}
       </Exit>

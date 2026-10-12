@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { invoke, isDesktop, subscribe } from '../api';
+import { requireMember } from '../license';
 import type {
   AiConfig,
   AiPrefs,
@@ -112,9 +113,19 @@ export type ChatHandlers = {
   onResent?: () => void;
   signal?: AbortSignal;
 };
+// What the membership dialog says was asked for.
+const memberReason: Record<AiUse, string> = {
+  chat: 'AI 助手',
+  explain: 'AI 解释与提问',
+  translate: 'AI 翻译',
+  board: '白板讲解',
+  edit: 'AI 修改源码',
+};
 export async function chat(request: ChatRequest, handlers: ChatHandlers = {}) {
   if (!isDesktop) throw Error('请在桌面版中使用 AI 功能');
   if (handlers.signal?.aborted) throw abortError();
+  if (!(await requireMember(memberReason[request.use || 'chat'])))
+    throw Error('需要会员：开通会员或免费试用后就能用 AI 功能');
   const requestId = crypto.randomUUID();
   // Whether the model takes pictures is learned from sending some (electron/ai.cjs).
   const pictures = request.messages.some((m) => m.images?.length);

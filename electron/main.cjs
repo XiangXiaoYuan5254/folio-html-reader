@@ -22,6 +22,7 @@ const { renderPDFDocument, pdfAssetPath } = require('./pdf.cjs');
 const { projectFor, filesFromArgv } = require('./open-file.cjs');
 const { createUpdates } = require('./updater.cjs');
 const { createAi } = require('./ai.cjs');
+const { createLicense } = require('./license.cjs');
 const { createSpeech } = require('./speech.cjs');
 const { createHearing } = require('./hearing.cjs');
 const { limiter } = require('./cloud-voice.cjs');
@@ -37,6 +38,13 @@ let focusWindowState = null;
 let appearance = null;
 const previews = new Map();
 let ai;
+let license;
+// PDF and AI need a membership; the window opens the membership dialog on seeing this.
+const memberOnly = '需要会员：PDF 阅读和 AI 功能是会员功能，开通会员或免费试用后就能用';
+const needMember = async () => {
+  await license.ready;
+  if (!license.member()) throw Error(memberOnly);
+};
 // The teacher's sentences said by a speech service, two at a time.
 const voiceQueue = limiter(2);
 let voiceHushes = 0;
@@ -214,6 +222,10 @@ function menu() {
                   accelerator: 'Cmd+,',
                   click: () => win?.webContents.send('folio:event', { type: 'ai-settings' }),
                 },
+                {
+                  label: '会员与激活…',
+                  click: () => win?.webContents.send('folio:event', { type: 'membership' }),
+                },
                 { type: 'separator' },
                 { role: 'hide' },
                 { role: 'hideOthers' },
@@ -323,6 +335,13 @@ app
   .then(async () => {
     await initialWorkspace();
     appearance = appearanceColors((await readSettings()).appearance);
+    license = createLicense({
+      file: path.join(app.getPath('userData'), 'license.json'),
+      fetch: (url, init) => net.fetch(url, init),
+      version: app.getVersion(),
+      packaged: app.isPackaged,
+      onChange: (status) => toWindow({ type: 'license', status }),
+    });
     ai = createAi({
       file: path.join(app.getPath('userData'), 'ai.json'),
       kimiHome: path.join(app.getPath('userData'), 'kimi-code'),
@@ -376,6 +395,7 @@ app
         } else if (url.host === 'document') {
           relative = parts.join('/');
           if (/\.pdf$/i.test(relative)) {
+            await needMember();
             await workspace.asset(relative);
             const encoded = relative.split('/').map(encodeURIComponent).join('/');
             return new Response(
@@ -474,6 +494,14 @@ app
           'ai-speech-key',
           'cloud-voice',
           'cloud-voice-hush',
+          'license',
+          'license-activate',
+          'license-trial',
+          'license-renew',
+          'license-recover',
+          'license-offer',
+          'license-order',
+          'license-order-status',
         ].includes(action) &&
         token !== workspace.token
       )
@@ -537,8 +565,10 @@ app
           return workspace.create(payload);
         // The AI assistant finding papers and saving one into the project.
         case 'papers-search':
+          await needMember();
           return papers.search(net.fetch, payload);
         case 'save-pdf': {
+          await needMember();
           const data = await papers.download(net.fetch, payload?.url);
           return {
             workspace: await workspace.savePdf({ path: payload?.path, data }),
@@ -632,6 +662,23 @@ app
         case 'update-page':
           await shell.openExternal(updates.downloadPage);
           return true;
+        case 'license':
+          await license.ready;
+          return license.status();
+        case 'license-activate':
+          return license.activate(payload || {});
+        case 'license-trial':
+          return license.trial();
+        case 'license-renew':
+          return license.renew();
+        case 'license-recover':
+          return license.recover();
+        case 'license-offer':
+          return license.offer();
+        case 'license-order':
+          return license.order(payload || {});
+        case 'license-order-status':
+          return license.checkOrder();
         case 'ai-config':
           return ai.config();
         case 'ai-save-provider':
@@ -651,6 +698,7 @@ app
         case 'ai-test':
           return ai.test(payload);
         case 'ai-chat': {
+          await needMember();
           const sender = event.sender;
           return ai.chat(payload, (delta) => {
             if (!sender.isDestroyed()) sender.send('folio:event', delta);
@@ -671,6 +719,7 @@ app
         case 'microphone':
           return microphoneAccess();
         case 'codex-voice': {
+          if (payload?.type === 'start') await needMember();
           const sender = event.sender;
           return ai.codexVoice(payload, (e) => {
             if (!sender.isDestroyed()) sender.send('folio:event', e);
@@ -819,6 +868,7 @@ app
     createMainWindow = createWindow;
     createWindow();
     updates.start();
+    license.start();
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });

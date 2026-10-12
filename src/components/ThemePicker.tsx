@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Check, SunMoon } from 'lucide-react';
-import { setFollowSystem, setTheme, themes, useTheme } from '../theme';
+import { freeTheme, setFollowSystem, setTheme, themes, useTheme } from '../theme';
+import { askMembership } from '../license';
 import type { ThemeId } from '../theme';
 
 // A small window drawn with the theme's own tokens.
@@ -43,7 +44,14 @@ function ThemePreview({ id }: { id: ThemeId }) {
 }
 
 export function ThemePicker({ onClose }: { onClose: () => void }) {
-  const { prefs, active } = useTheme();
+  const { prefs, active, unlocked } = useTheme();
+  // Without a membership the other themes and following the system open the membership dialog.
+  const locked = (id?: ThemeId) => !unlocked && id !== freeTheme;
+  const askPro = () => {
+    onClose();
+    askMembership('十套界面主题');
+  };
+  const following = unlocked && prefs.followSystem;
   const panel = useRef<HTMLElement>(null);
   useEffect(() => {
     panel.current?.querySelector<HTMLElement>('[aria-pressed="true"]')?.focus();
@@ -67,8 +75,8 @@ export function ThemePicker({ onClose }: { onClose: () => void }) {
     };
   }, []);
   const groups = [
-    { dark: false, title: prefs.followSystem ? '白天使用' : '浅色' },
-    { dark: true, title: prefs.followSystem ? '夜间使用' : '深色' },
+    { dark: false, title: following ? '白天使用' : '浅色' },
+    { dark: true, title: following ? '夜间使用' : '深色' },
   ];
   return (
     <section className="theme-picker" ref={panel} role="dialog" aria-label="界面主题">
@@ -77,9 +85,9 @@ export function ThemePicker({ onClose }: { onClose: () => void }) {
         <button
           type="button"
           role="switch"
-          aria-checked={prefs.followSystem}
-          className={`theme-follow${prefs.followSystem ? ' on' : ''}`}
-          onClick={() => setFollowSystem(!prefs.followSystem)}
+          aria-checked={following}
+          className={`theme-follow${following ? ' on' : ''}`}
+          onClick={() => (unlocked ? setFollowSystem(!prefs.followSystem) : askPro())}
         >
           <SunMoon size={14} />
           跟随系统
@@ -87,12 +95,14 @@ export function ThemePicker({ onClose }: { onClose: () => void }) {
         </button>
       </header>
       <p className="theme-picker-hint">
-        {prefs.followSystem
-          ? '白天和夜间各选一套，随系统外观自动切换。'
-          : '只改变界面，文档页面保持原样。'}
+        {!unlocked
+          ? '青岚免费使用。其余九套主题和「跟随系统」是 Pro 会员功能。'
+          : following
+            ? '白天和夜间各选一套，随系统外观自动切换。'
+            : '只改变界面，文档页面保持原样。'}
       </p>
       {groups.map((group) => {
-        const chosen = prefs.followSystem ? (group.dark ? prefs.dark : prefs.light) : active;
+        const chosen = following ? (group.dark ? prefs.dark : prefs.light) : active;
         return (
           <div key={group.title} className="theme-group" role="group" aria-label={group.title}>
             <h3>{group.title}</h3>
@@ -105,8 +115,8 @@ export function ThemePicker({ onClose }: { onClose: () => void }) {
                     type="button"
                     className={`theme-card${chosen === t.id ? ' selected' : ''}`}
                     aria-pressed={chosen === t.id}
-                    aria-label={`${t.name}：${t.tagline}`}
-                    onClick={() => setTheme(t.id)}
+                    aria-label={`${t.name}：${t.tagline}${locked(t.id) ? '（Pro 会员）' : ''}`}
+                    onClick={() => (locked(t.id) ? askPro() : setTheme(t.id))}
                   >
                     <ThemePreview id={t.id} />
                     <span className="theme-card-label">
@@ -117,6 +127,8 @@ export function ThemePicker({ onClose }: { onClose: () => void }) {
                       <span className="theme-card-check">
                         <Check size={12} strokeWidth={3} />
                       </span>
+                    ) : locked(t.id) ? (
+                      <span className="theme-card-pro">Pro</span>
                     ) : null}
                   </button>
                 ))}

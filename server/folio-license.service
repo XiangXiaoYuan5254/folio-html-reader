@@ -1,0 +1,18 @@
+[Unit]
+Description=页间 activation server
+After=network.target
+
+[Service]
+User=folio-license
+# Its own Node (22.13 or newer), installed there by deploy.sh.
+ExecStart=/opt/folio-license/node/bin/node --disable-warning=ExperimentalWarning /opt/folio-license/folio-license.mjs
+Environment=PORT=8787
+Environment=FOLIO_LICENSE_DATA=/var/lib/folio-license
+Environment=FOLIO_LICENSE_KEY=/etc/folio-license/private.pem
+Environment=FOLIO_LICENSE_ADMIN_TOKEN=/etc/folio-license/admin-token
+Environment=FOLIO_LICENSE_PAY=/etc/folio-license/jianpay.json
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
