@@ -146,7 +146,7 @@
             </a>
           </div>
           <p class="hero-meta">
-            免费 · <span data-release="version">0.17.4</span> 版 · macOS 12+（Apple 芯片）· Windows 10 / 11
+            <span data-release="version">0.17.4</span> 版 · macOS 12+（Apple 芯片）· Windows 10 / 11
             <span data-other-download hidden>· <a href="#download"></a></span>
           </p>
           <p class="platform-hint" data-platform-hint hidden>
@@ -383,14 +383,14 @@
         <div class="container">
           <div class="section-head center reveal">
             <p class="eyebrow">接入 AI</p>
-            <h2><span class="nb">用你自己的 AI，</span><span class="nb">用多少付多少。</span></h2>
-            <p class="lead">页间不卖会员，也不经手你的钱。在 AI 设置里填上从服务商官网申请的 API Key，就能用；也可以用 ChatGPT 账号或 Kimi 会员，或者干脆在本机跑模型。</p>
+            <h2><span class="nb">用你自己的 AI，</span><span class="nb">国内外模型随你选。</span></h2>
+            <p class="lead">在 AI 设置里填上从服务商官网申请的 API Key，就能用；也可以用 ChatGPT 账号或 Kimi 会员，或者干脆在本机跑模型。</p>
           </div>
           <div class="model-grid">
             <article class="model-card reveal">
               <span class="model-icon"><svg class="icon" aria-hidden="true"><use href="#i-cloud" /></svg></span>
               <h3>云端服务</h3>
-              <p>按用量付费给服务商。填好 Key 可以获取模型列表、测试连接，添加几个都行，在输入框下面随时切换。</p>
+              <p>填好 Key 就能获取模型列表、测试连接，添加几个都行，在输入框下面随时切换。</p>
               <ul class="providers">
                 <li>DeepSeek</li><li>通义千问</li><li>Kimi</li><li>智谱 GLM</li><li>豆包</li><li>小米 MiMo</li><li>硅基流动</li><li>Claude</li><li>OpenAI</li><li>Gemini</li><li>OpenRouter</li><li class="more">任何 OpenAI 兼容接口</li>
               </ul>
@@ -398,7 +398,7 @@
             <article class="model-card reveal">
               <span class="model-icon"><svg class="icon" aria-hidden="true"><use href="#i-chat" /></svg></span>
               <h3>ChatGPT 账号 · Kimi 会员</h3>
-              <p>选 Codex 用 ChatGPT 套餐里的额度，选 Kimi Code 用 Kimi 会员里的额度，都不需要 API Key，不另外付费。通过这台电脑上的 Codex 或 Kimi Code 登录。</p>
+              <p>选 Codex 用 ChatGPT 套餐里的额度，选 Kimi Code 用 Kimi 会员里的额度，都不需要 API Key。通过这台电脑上的 Codex 或 Kimi Code 登录。</p>
               <ul class="providers"><li>Codex</li><li>Kimi Code</li></ul>
             </article>
             <article class="model-card reveal">
@@ -644,7 +644,7 @@
             <div class="download-glow" aria-hidden="true"></div>
             <img class="download-icon" src="assets/icon.svg" alt="" width="104" height="104" />
             <h2><span class="nb">在页间，</span><span class="nb">读下一篇。</span></h2>
-            <p class="lead">免费下载。打开文件夹，就能开始。</p>
+            <p class="lead">下载安装，打开文件夹，就能开始。</p>
             <div class="download-options" data-download-options>
               <div class="download-option" data-platform="mac">
                 <a class="btn btn-light btn-lg" href="#install" data-download="mac">
@@ -742,7 +742,6 @@
                 <li><strong>白板卡住会自动重试</strong>页老师备课时思考停了 30 秒还没开讲，会自动再问一次，先讲出来的那个留下。</li>
                 <li><strong>看得到备课进度</strong>备课时显示已经想了多少字，一段时间没有新内容会说明在等什么、接下来怎么办。</li>
               </ul>
-              <p class="fine">已装 0.8.0 及更新版本的页间会自动更新。0.7.0 及更早的版本请先退出旧版，Mac 把新版拖进「应用程序」替换，Windows 直接运行新版安装程序。批注存在你的文件夹里，不受影响。</p>
             </div>
           </div>
         </div>
@@ -757,8 +756,8 @@
           </div>
           <div class="faq-list reveal">
             <details>
-              <summary>页间收费吗？AI 功能要另外付钱吗？</summary>
-              <p>页间免费下载、免费使用。AI 用的是你自己的服务：云端服务按用量付给服务商，页间不经手；用 ChatGPT 账号走的是套餐里的 Codex 额度，用 Kimi 会员走的是 Kimi Code 额度；本机运行的模型不花钱。不配置 AI，其他功能照常使用。</p>
+              <summary>AI 用的是谁的服务？</summary>
+              <p>你自己选的服务：在 AI 设置里填上云端服务商的 API Key，或者用 ChatGPT 账号（Codex）、Kimi 会员（Kimi Code），也可以用本机运行的模型。不配置 AI，阅读和批注照常使用。</p>
             </details>
             <details>
               <summary>能打开哪些文件？</summary>
@@ -777,7 +776,7 @@
             </details>
             <details>
               <summary>白板的语音对话会上传录音吗？</summary>
-              <p>默认不会。macOS 上用这台电脑的中文语音时，语音合成和识别都在本机完成；Windows 上默认用通义实验室的 SenseVoice 模型在本机识别，第一次语音对话时下载约 240MB 的模型。选用 ChatGPT 的声音时，语音会通过 Codex 发给 ChatGPT，用的是 Codex 账号的额度；在 Windows 上改由通义百炼或豆包语音识别时，录音会发给对应的服务商，用你自己的 Key 计费。</p>
+              <p>默认不会。macOS 上用这台电脑的中文语音时，语音合成和识别都在本机完成；Windows 上默认用通义实验室的 SenseVoice 模型在本机识别，第一次语音对话时下载约 240MB 的模型。选用 ChatGPT 的声音时，语音会通过 Codex 发给 ChatGPT，用的是 Codex 账号的额度；在 Windows 上改由通义百炼或豆包语音识别时，录音会发给对应的服务商，用的是你自己的 Key。</p>
             </details>
             <details>
               <summary>批注存在哪里？会改动我的文件吗？</summary>
@@ -806,8 +805,7 @@
             </details>
             <details>
               <summary>怎么更新到新版本？</summary>
-              <p>页间会自动更新：新版本在后台下载好后提示重启，选「稍后」则下次退出时自动安装。Mac 版要放在「应用程序」文件夹里才能自动更新。</p>
-              <p>0.7.0 及更早的版本需要手动更新一次：退出旧版页间，Mac 把新版拖进「应用程序」并选择替换；Windows 直接运行新版安装程序，会覆盖旧版。文档和批注都在你的项目文件夹里，更新应用不会影响它们。</p>
+              <p>页间会自动更新：新版本在后台下载好后提示重启，选「稍后」则下次退出时自动安装。Mac 版要放在「应用程序」文件夹里才能自动更新。文档和批注都在你的项目文件夹里，更新应用不会影响它们。</p>
             </details>
           </div>
         </div>
