@@ -1,18 +1,24 @@
-import { useLayoutEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import type { HTMLAttributes } from 'react';
+import { prefersReducedMotion } from '../motion';
 
 export type ScreenBox = { left: number; top: number; right: number; bottom: number };
+export type ToolbarSide = 'below' | 'above';
 
-// The toolbar for selected text sits just below the selection, near where the pointer let
-// go, or above it when there is no room, and stays inside the reading area while the page
-// scrolls. Without a box it
-// falls back to the bottom of the pane.
+// The toolbar for selected text sits just below the selection, or above it when the reader
+// prefers that, on the other side when there is no room, and stays inside the reading area
+// while the page scrolls. Without a box it falls back to the bottom of the pane. When the
+// reader moves it to the other side it slides there; otherwise it keeps up with the page at once.
 export function SelectionToolbar({
   box,
+  side = 'below',
   className,
   ...props
-}: HTMLAttributes<HTMLDivElement> & { box: ScreenBox | null }) {
+}: HTMLAttributes<HTMLDivElement> & { box: ScreenBox | null; side?: ToolbarSide }) {
   const ref = useRef<HTMLDivElement>(null);
+  const shownSide = useRef(side);
+  const sliding = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(sliding.current), []);
   useLayoutEffect(() => {
     const el = ref.current;
     const pane = el?.offsetParent;
@@ -20,6 +26,14 @@ export function SelectionToolbar({
     if (!box || !(pane instanceof HTMLElement)) {
       el.style.transform = '';
       return;
+    }
+    if (side !== shownSide.current) {
+      shownSide.current = side;
+      if (!prefersReducedMotion()) {
+        el.dataset.sliding = '';
+        clearTimeout(sliding.current);
+        sliding.current = setTimeout(() => delete el.dataset.sliding, 400);
+      }
     }
     const place = () => {
       const p = pane.getBoundingClientRect();
@@ -29,9 +43,14 @@ export function SelectionToolbar({
         height = el.offsetHeight,
         gap = 10,
         edge = 6;
-      let top = box.bottom + gap;
-      if (top + height > area.bottom - edge) top = box.top - height - gap;
+      const below = box.bottom + gap,
+        above = box.top - height - gap;
+      let top = side === 'above' ? above : below;
+      if (side === 'above' && top < area.top + edge) top = below;
+      else if (side === 'below' && top + height > area.bottom - edge) top = above;
       top = Math.max(area.top + edge, Math.min(top, area.bottom - height - edge));
+      // Which edge it grows from when it appears.
+      el.dataset.side = top < box.top ? 'above' : 'below';
       const left = Math.max(
         p.left + edge,
         Math.min((box.left + box.right) / 2 - width / 2, p.right - width - edge),
@@ -43,7 +62,7 @@ export function SelectionToolbar({
     const observer = new ResizeObserver(place);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [box]);
+  }, [box, side]);
   return (
     <div
       ref={ref}

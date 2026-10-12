@@ -59,8 +59,11 @@ export function setVoiceSettings(patch: Partial<Settings>) {
     if (chosen) void chosen.then((s) => s.hush());
     const was = before.voice.startsWith(codexPrefix);
     if (was !== settings.voice.startsWith(codexPrefix)) {
-      if (was) void codex.listen(false);
-      else if (known?.hearing) void hear(false, '', '').catch(() => {});
+      if (was) {
+        void codex.listen(false);
+        // It would go on with what it was saying until its session ends.
+        codex.stop();
+      } else if (known?.hearing) void hear(false, '', '').catch(() => {});
       else if (isDesktop) void invoke('speech-listen', { on: false }).catch(() => {});
     }
   }

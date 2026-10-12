@@ -59,7 +59,8 @@ export function VoiceButton({
   // Who writes down what the student says, where the page listens.
   ears: string;
   support: Support | null;
-  // The teacher is talking, so a sample of a voice would talk over them.
+  // A lesson is under way, paused or not: a sample of a voice would talk over it, and
+  // would drop the sentences made ahead for it.
   busy: boolean;
   // Opens the AI settings on the page for speech services' keys.
   onOpenSettings: () => void;

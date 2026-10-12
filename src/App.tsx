@@ -21,6 +21,7 @@ import {
   Palette,
   Presentation,
   Crown,
+  ArrowUpToLine,
 } from 'lucide-react';
 import { invoke, subscribe, useWorkspace, isDesktop, documentUrl } from './api';
 import { isMac, shortcut, trashName } from './platform';
@@ -81,7 +82,7 @@ import { MembershipDialog, MemberLock } from './components/MembershipDialog';
 import { memberNow, renewLicense, useLicense } from './license';
 import { setThemesUnlocked } from './theme';
 import { Exit, objectKey } from './motion';
-import type { ScreenBox } from './components/SelectionToolbar';
+import type { ScreenBox, ToolbarSide } from './components/SelectionToolbar';
 const SourceEditor = lazy(() => import('./components/SourceEditor'));
 const Whiteboard = lazy(() => import('./components/Whiteboard'));
 import type { SourceEditorHandle } from './components/SourceEditor';
@@ -173,6 +174,19 @@ export default function App() {
       localStorage.setItem('folio.linked-scroll', String(linkedScroll));
     } catch {}
   }, [linkedScroll]);
+  // Whether the toolbar for selected text goes below the selection or above it.
+  const [toolbarSide, setToolbarSide] = useState<ToolbarSide>(() => {
+    try {
+      return localStorage.getItem('folio.selection-toolbar') === 'above' ? 'above' : 'below';
+    } catch {
+      return 'below';
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('folio.selection-toolbar', toolbarSide);
+    } catch {}
+  }, [toolbarSide]);
   const focusedSide = useRef<PaneSide>('left');
   const [splitRatio, setSplitRatio] = useState(() => {
     try {
@@ -345,6 +359,10 @@ export default function App() {
   const aiCard = useAssistantCard(assistant);
   // The whiteboard teacher explaining a selection.
   const [lesson, setLesson] = useState<{ tutor: Tutor; selection: string } | null>(null);
+  // The board put away for a while, to read on while the teacher thinks; the way back to it
+  // is in the title bar.
+  const [boardAway, setBoardAway] = useState(false);
+  const [titleEnd, setTitleEnd] = useState<HTMLDivElement | null>(null);
   // Framing a formula or figure on the page for the whiteboard.
   const [boardCapture, setBoardCapture] = useState(false);
   const [boardList, setBoardList] = useState(false);
@@ -1010,6 +1028,7 @@ export default function App() {
       ready: () => assistant.provider('board'),
     });
     setLesson({ tutor, selection: text || (from.picture ? '框选的区域' : '空白白板') });
+    setBoardAway(false);
     void tutor.start();
   }
   // The document and spot a framed box is over: the reader under its middle says which
@@ -1086,7 +1105,10 @@ export default function App() {
   }
   async function openSavedBoard(entry: BoardEntry) {
     setBoardList(false);
-    if (lessonRef.current?.tutor.id === entry.id) return true;
+    if (lessonRef.current?.tutor.id === entry.id) {
+      setBoardAway(false);
+      return true;
+    }
     const board = await invoke<SavedBoard | null>('board', { id: entry.id }).catch(() => null);
     if (!board) {
       notify('这块白板读取不了', true);
@@ -1104,6 +1126,7 @@ export default function App() {
       ready: () => assistant.provider('board'),
     });
     setLesson({ tutor, selection: entry.title });
+    setBoardAway(false);
     return true;
   }
   function openAssistant() {
@@ -1495,7 +1518,7 @@ export default function App() {
             <span>Folio</span>
           </div>
         )}
-        <div className="titlebar-end">
+        <div className="titlebar-end" ref={setTitleEnd}>
           {updateHidden && (update.status === 'ready' || update.status === 'manual') ? (
             <button type="button" className="update-chip" onClick={() => setUpdateHidden(false)}>
               {update.status === 'ready' ? '重启以更新' : '有新版本'} {update.version}
@@ -1914,7 +1937,11 @@ export default function App() {
                       </div>
                     )}
                     {paneDoc?.id === doc.id && selection && mode === 'read' ? (
-                      <SelectionToolbar box={selectionBox} onMouseDown={(e) => e.preventDefault()}>
+                      <SelectionToolbar
+                        box={selectionBox}
+                        side={toolbarSide}
+                        onMouseDown={(e) => e.preventDefault()}
+                      >
                         <span>已选 {selection.exact.length} 字</span>
                         {rebind ? (
                           <button
@@ -1976,6 +2003,17 @@ export default function App() {
                             </button>
                           </>
                         ) : null}
+                        <IconButton
+                          className="toolbar-side-button"
+                          data-side={toolbarSide}
+                          label={toolbarSide === 'below' ? '放到文字上方' : '放到文字下方'}
+                          help="以后选中文字时，工具栏都出现在这一侧"
+                          onClick={() =>
+                            setToolbarSide(toolbarSide === 'below' ? 'above' : 'below')
+                          }
+                        >
+                          <ArrowUpToLine size={13} />
+                        </IconButton>
                         <IconButton label="取消文字选择" onClick={clearSelection}>
                           <X size={13} />
                         </IconButton>
@@ -2229,6 +2267,9 @@ export default function App() {
           <Whiteboard
             tutor={lesson.tutor}
             selection={lesson.selection}
+            away={boardAway}
+            onAway={setBoardAway}
+            awayIn={titleEnd}
             onNotify={notify}
             onHistory={() => setBoardList(true)}
             onOpenSettings={(page) => {

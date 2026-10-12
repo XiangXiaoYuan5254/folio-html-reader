@@ -1275,6 +1275,20 @@ button.brand {
   top: 0;
   left: 0;
   bottom: auto;
+  transform-origin: top center;
+}
+.selection-toolbar.beside-selection[data-side='above'] {
+  transform-origin: bottom center;
+}
+/* Moved to the other side of the selection with its arrow button. */
+.selection-toolbar[data-sliding] {
+  transition: transform var(--dur-pop) var(--ease-spring);
+}
+.toolbar-side-button svg {
+  transition: rotate var(--dur-pop) var(--ease-spring);
+}
+.toolbar-side-button[data-side='above'] svg {
+  rotate: 180deg;
 }
 .selection-toolbar > span {
   font-size: 11px;

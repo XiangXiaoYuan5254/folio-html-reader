@@ -54,6 +54,12 @@ function resumedNote(heard: string) {
     return '（学生按了继续。像真人老师一样先自然地衔接一句（比如“好，我们接着看”），再接着往下讲，讲过的不用重复。）';
   return `（学生按了继续。像真人老师被打断后那样：先自然地衔接一句（比如“好，我们接着说”），再把刚才没讲完的那句话从头完整地说一遍，也就是从“${broken.slice(0, 8)}”说起，然后照常往下讲。讲完的句子不用重复。）`;
 }
+// Another ChatGPT voice chosen in the middle of a lesson goes on from what the last one said,
+// rather than from the start, which is all it would otherwise see of the lesson.
+function switchedNote(heard: string) {
+  const { before } = brokenOff(heard);
+  return `（学生换了一个声音，接下来由你接着讲。${before ? `刚才已经讲完的是：“${before.slice(-160)}”。` : ''}讲过的不用重复，接着往下讲新的要点。）`;
+}
 // How the student can reach the teacher: part of the instructions, and told when it changes.
 const modes = {
   talk: '学生可以随时开口跟你说话。',
@@ -335,7 +341,16 @@ export function codexVoice(
       close();
       return Promise.reject(new NotNow());
     }
-    if (session && session.voice !== want) close();
+    if (session && session.voice !== want) {
+      const heard = tidy(saying);
+      saying = '';
+      // Cut off in the middle of what it was saying, which isn't in what it said yet.
+      if (heard) {
+        speech.forEach((l) => l(heard, true));
+        remember('developer', switchedNote(heard));
+      }
+      close();
+    }
     if (!session) {
       if ((paused && !standby) || now() - failedAt < 15_000) return Promise.reject(new NotNow());
       // What wasn't finished is handed to the new session again.

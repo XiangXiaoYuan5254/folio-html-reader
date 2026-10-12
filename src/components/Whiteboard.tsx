@@ -9,6 +9,7 @@ import {
   useState,
 } from 'react';
 import type { CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import '../whiteboard.css';
@@ -20,6 +21,8 @@ import {
   History,
   ImagePlus,
   LoaderCircle,
+  Maximize2,
+  Minus,
   NotebookPen,
   Pause,
   Play,
@@ -34,7 +37,17 @@ import { providerFor, useAiConfig, useChoice } from '../ai/client';
 import { effortLabel, levelsFor, loadedModelOptions, lowerLevel } from '../ai/levels';
 import { isImageFile, maxImages, prepareImage } from '../ai/images';
 import { plainText, segments, texWithRefs, useTutor } from '../ai/board';
-import type { Block, Camera, Heard, Ink, Look, Shape, Stroke, Tutor } from '../ai/board';
+import type {
+  Block,
+  Camera,
+  Heard,
+  Ink,
+  Look,
+  Shape,
+  Stroke,
+  Tutor,
+  TutorState,
+} from '../ai/board';
 import {
   arrowPath,
   boxPath,
@@ -175,6 +188,61 @@ function Thinking({ text, slow, heard }: { text: string; slow: string; heard: ()
       </p>
       {hint ? <p className="wb-status-hint">{hint}</p> : null}
     </>
+  );
+}
+
+// The board put away: what the teacher is doing meanwhile, and the way back to it.
+function Away({
+  tutor,
+  state,
+  status,
+  onShow,
+}: {
+  tutor: Tutor;
+  state: TutorState;
+  status: string;
+  onShow: () => void;
+}) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => tick((n) => n + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const thinking = state.phase === 'thinking';
+  const ready = thinking && tutor.answered();
+  const seconds = Math.floor((Date.now() - tutor.heard.since) / 1000);
+  const text =
+    state.phase === 'error'
+      ? '页老师没讲成，点开看看'
+      : ready
+        ? '页老师想好了，点开开始讲'
+        : thinking
+          ? status
+          : state.phase === 'teaching'
+            ? '讲到一半，点开接着讲'
+            : '白板讲解';
+  return (
+    <button
+      type="button"
+      className="wb-away"
+      data-ready={ready || undefined}
+      data-error={state.phase === 'error' || undefined}
+      title="展开白板"
+      onClick={onShow}
+    >
+      {thinking && !ready ? (
+        <LoaderCircle className="spin" size={13} />
+      ) : (
+        <Presentation size={13} />
+      )}
+      <span className="wb-away-text" aria-live="polite">
+        {text}
+      </span>
+      {thinking && !ready && seconds >= 5 ? (
+        <span className="wb-away-time">{seconds} 秒</span>
+      ) : null}
+      <Maximize2 size={12} />
+    </button>
   );
 }
 
@@ -710,6 +778,9 @@ function describeStroke(points: number[], root: HTMLElement, tutor: Tutor) {
 export default function Whiteboard({
   tutor,
   selection,
+  away,
+  onAway,
+  awayIn,
   onClose,
   onNotify,
   onHistory,
@@ -720,6 +791,11 @@ export default function Whiteboard({
 }: {
   tutor: Tutor;
   selection: string;
+  // Put away for a while, to read on while the teacher thinks, with the way back to it shown
+  // in `awayIn` (the title bar).
+  away: boolean;
+  onAway: (away: boolean) => void;
+  awayIn: HTMLElement | null;
   onClose: () => void;
   onNotify: (text: string, error?: boolean) => void;
   // Shows the saved boards, to switch to another one.
@@ -792,7 +868,10 @@ export default function Whiteboard({
   const slow = lower
     ? `推理档位是「${effortLabel(effort)}」，页老师要多想一会儿。着急的话，可以在右上角换成「${effortLabel(lower)}」，下次提问会快一些。`
     : '这个模型要多想一会儿。着急的话，可以在右上角换个快一些的模型。';
-  useEffect(() => tutor.setVoice(mode, mode === 'off' ? null : teacherVoice), [mode, tutor]);
+  useEffect(
+    () => tutor.setVoice(mode, mode === 'off' ? null : teacherVoice, voice.voice),
+    [mode, voice.voice, tutor],
+  );
   // The helper goes when the board does, and the voice forgets it: another board opened in
   // its place starts afresh.
   useEffect(() => () => void stopSpeech(), [tutor]);
@@ -801,6 +880,20 @@ export default function Whiteboard({
   const [cutIn, setCutIn] = useState(false);
 
   useEffect(() => root.current?.focus(), []);
+  // Put away, the teacher goes on thinking but waits to teach until the board is back, and
+  // takes up where it stopped then. Whether it was paused for that; null while it is out.
+  const heldAway = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (away) {
+      heldAway.current =
+        !state.paused && (state.phase === 'thinking' || state.phase === 'teaching');
+      if (heldAway.current) tutor.pause();
+    } else if (heldAway.current !== null) {
+      if (heldAway.current) tutor.resume();
+      heldAway.current = null;
+      root.current?.focus();
+    }
+  }, [away, tutor]);
   useLayoutEffect(() => {
     const view = viewport.current!;
     const fit = () => {
@@ -1139,7 +1232,7 @@ export default function Whiteboard({
         : '页老师在备课…'
       : '';
   return (
-    <div className="modal-backdrop whiteboard-backdrop">
+    <div className="modal-backdrop whiteboard-backdrop" data-away={away || undefined} inert={away}>
       <section
         ref={root}
         className="whiteboard"
@@ -1212,6 +1305,13 @@ export default function Whiteboard({
             onClick={onHistory}
           >
             <History size={16} />
+          </IconButton>
+          <IconButton
+            label="收起白板"
+            help="页老师接着想，想好了点右下角的提示回来"
+            onClick={() => onAway(true)}
+          >
+            <Minus size={16} />
           </IconButton>
           <IconButton label="关闭白板" onClick={onClose}>
             <X size={16} />
@@ -1455,12 +1555,12 @@ export default function Whiteboard({
                 voice={voice.voice}
                 ears={voice.ears}
                 support={support}
-                busy={state.phase === 'teaching' && !state.paused}
+                busy={state.phase === 'teaching'}
                 onOpenSettings={() => onOpenSettings('voices')}
               />
             </div>
           </div>
-          {mode === 'talk' && support ? (
+          {mode === 'talk' && support && !away ? (
             <Listening
               // A ChatGPT voice listens itself; the helper or the page's microphone listens for
               // the others. Each board listens afresh, after the one before stopped the voice.
@@ -1553,6 +1653,12 @@ export default function Whiteboard({
           </form>
         </footer>
       </section>
+      {away && awayIn
+        ? createPortal(
+            <Away tutor={tutor} state={state} status={status} onShow={() => onAway(false)} />,
+            awayIn,
+          )
+        : null}
     </div>
   );
 }

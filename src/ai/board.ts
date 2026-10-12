@@ -367,6 +367,8 @@ export type TutorState = {
 // What came in for the request being answered, which the board shows while the teacher
 // thinks; it changes in place, read once a second rather than on every word.
 export type Heard = {
+  // When the question was sent.
+  since: number;
   // When the service was asked, where its thinking comes word by word, so a long pause in
   // it means stuck (0 elsewhere).
   watched: number;
@@ -376,7 +378,13 @@ export type Heard = {
   // The thinking stopped and the question was asked again, beside the first asking.
   resent: boolean;
 };
-const nothingHeard = (): Heard => ({ watched: 0, at: 0, thought: 0, resent: false });
+const nothingHeard = (): Heard => ({
+  since: Date.now(),
+  watched: 0,
+  at: 0,
+  thought: 0,
+  resent: false,
+});
 
 // What the board is to show next: things already on it, or room below the writing for a
 // block about to be written, `room` board pixels tall.
@@ -853,7 +861,8 @@ export type SavedBoard = {
   counter: number;
 };
 // A sentence being made ready to be said out loud.
-type Sound = { id: string; ms: Promise<number> };
+// `voice`: which of the voices chosen it is made in (Tutor.voiced).
+type Sound = { id: string; ms: Promise<number>; voice: number };
 type Queued = { cmd: Command; raw: string; sound?: Sound };
 type Options = {
   selection: string;
@@ -927,6 +936,10 @@ export class Tutor {
   private voice: VoiceMode = 'off';
   private speaker: Speaker | null = null;
   private voiceDone: Promise<void> | null = null;
+  // The voice chosen, and how many have been, so a sentence made in an earlier one, which
+  // was dropped when it changed, is made again.
+  private voiceName = '';
+  private voiced = 0;
   // Stops putting what a live voice says in the caption and transcript.
   private unspeak: (() => void) | null = null;
   // Paused with the voice too, not just the board while the student talks to it.
@@ -1228,6 +1241,10 @@ export class Tutor {
     this.voicePaused = voice;
     this.set({ paused: true });
   }
+  // Some of the answer has come and waits, paused, to go on the board.
+  answered() {
+    return this.queue.length > 0;
+  }
   resume() {
     if (!this.state.paused) return;
     this.pausedFor += performance.now() - this.pausedAt;
@@ -1241,15 +1258,19 @@ export class Tutor {
     this.speaker?.speed(speed);
     this.set({ speed });
   }
-  // Says the lesson out loud, or stops doing so. What is already queued is said from the
-  // next sentence on.
-  setVoice(mode: VoiceMode, speaker: Speaker | null) {
+  // Says the lesson out loud in the voice `name`, or stops doing so. What is already queued
+  // is said from the next sentence on, in the voice chosen now.
+  setVoice(mode: VoiceMode, speaker: Speaker | null, name = '') {
     const next = mode === 'off' ? null : speaker;
     if (this.speaker && this.speaker !== next) {
       this.speaker.hush();
       this.voiceDone = null;
+    }
+    if (this.speaker !== next || this.voiceName !== name) {
+      this.voiced++;
       for (const item of this.queue) item.sound = undefined;
     }
+    this.voiceName = name;
     this.voice = next ? mode : 'off';
     this.speaker = next;
     this.unspeak?.();
@@ -1671,7 +1692,7 @@ export class Tutor {
   }
   private sound(text: string): Sound {
     const id = `v${++this.counter}`;
-    return { id, ms: this.speaker!.prepare(id, text) };
+    return { id, ms: this.speaker!.prepare(id, text), voice: this.voiced };
   }
   // Waits for a sentence to be ready to say: its length in ms, or 0 if it won't be said. A
   // speech service's sentence may be waiting for room in the minute: it is waited for rather
@@ -1759,8 +1780,15 @@ export class Tutor {
         const speaker = this.speaker;
         let live = '';
         if (speaker) {
-          const sound = next.sound || this.sound(text);
-          const ms = await this.ready(run, sound);
+          // Taken before the voice changed, or being made when it did, it is made again.
+          let sound = next.sound?.voice === this.voiced ? next.sound : this.sound(text);
+          let ms = await this.ready(run, sound);
+          if (run === this.run && sound.voice !== this.voiced && this.speaker === speaker) {
+            sound = this.sound(text);
+            ms = await this.ready(run, sound);
+          }
+          // Paused while it was being made, it is said once the lesson goes on.
+          await this.until(run, 0);
           if (run !== this.run) return;
           // Said at the speed it is now, which may have changed while it was being made.
           if (ms > 0 && this.speaker === speaker) {
