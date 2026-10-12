@@ -185,6 +185,7 @@ try {
   );
   await page.getByLabel('高亮', { exact: true }).click();
   await page.getByLabel('显示或隐藏批注栏', { exact: true }).click();
+  await page.locator('.inspector').waitFor({ state: 'hidden' });
   const target = await screenBox(f.locator('#target'));
   await page.mouse.move(target.x + 1, target.y + target.height / 2);
   await page.mouse.down();

@@ -278,7 +278,7 @@ try {
   }
 
   // The assistant finds papers and, once approved, saves one into the project.
-  await page.getByLabel('AI 助手', { exact: true }).click();
+  // Still open from setting up the service; a click would slide it shut.
   if (!(await panel().isVisible())) await page.getByLabel('AI 助手', { exact: true }).click();
   await panel().getByRole('tab', { name: '整个项目' }).click();
   await panel().getByLabel('向 AI 提问').fill('找一篇 Transformer 的原始论文存到“论文”文件夹');
@@ -316,7 +316,11 @@ try {
     .getByLabel(/^夜读：/)
     .click();
   await page.keyboard.press('Escape');
-  assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'night');
+  // The new theme fades in over the old one.
+  await waitFor(
+    async () => (await page.evaluate(() => document.documentElement.dataset.theme)) === 'night',
+    'night theme',
+  );
   await waitFor(async () => {
     const s = JSON.parse(await fs.readFile(path.join(userData, 'settings.json'), 'utf8'));
     return s.appearance?.titlebar === '#15191f';

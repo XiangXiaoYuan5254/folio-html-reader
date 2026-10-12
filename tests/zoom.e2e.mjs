@@ -118,6 +118,8 @@ try {
   assert.equal(await page.title(), '页间 · Folio');
   assert.equal(page.url(), 'app://ui/index.html');
   await page.getByLabel('收起批注栏', { exact: true }).click();
+  // Measure the toolbar once the panel has slid away.
+  await page.locator('.inspector').waitFor({ state: 'hidden' });
   let f = await frame();
   await f.evaluate(() => scrollTo(0, 1600));
   await page.waitForTimeout(180);

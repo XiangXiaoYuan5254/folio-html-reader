@@ -201,7 +201,8 @@ try {
   assert.equal(await page.locator('vite-error-overlay').count(), 0);
   let f = await openFile(sampleName);
   await page.getByLabel('收起批注栏', { exact: true }).click();
-  assert.equal(await page.locator('.inspector').isVisible(), false);
+  // The panel slides away before it is hidden.
+  await page.locator('.inspector').waitFor({ state: 'hidden' });
   for (const label of [
     '选择文字',
     '高亮',
@@ -540,7 +541,10 @@ try {
   await app.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows()[0].setContentSize(900, 700),
   );
-  await page.getByLabel('橡皮擦', { exact: true }).click();
+  // A narrow toolbar keeps the eraser under 更多工具.
+  await page.getByLabel('更多工具', { exact: true }).click();
+  await page.getByRole('menuitem', { name: '橡皮擦' }).click();
+  await page.getByLabel('更多工具 · 当前：橡皮擦', { exact: true }).waitFor();
   assert.equal(
     await page.locator('.reader-toolbar').evaluate((e) => e.clientWidth >= e.scrollWidth),
     true,
@@ -552,8 +556,8 @@ try {
     'tools fit at 900px with inspector',
   );
   await page.getByLabel('收起批注栏', { exact: true }).click();
+  await page.locator('.inspector').waitFor({ state: 'hidden' });
   await page.screenshot({ path: path.join(evidence, 'interactions-compact.png') });
-  assert.equal(await page.locator('.inspector').isVisible(), false);
   const errors = consoleErrors.filter(
     (s) =>
       !s.includes('Failed to load resource') &&
