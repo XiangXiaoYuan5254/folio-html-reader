@@ -522,10 +522,11 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
         memberPlans,
         sales: sales(0),
         salesToday: sales(at - DAY),
-        trialsNow: one(
-          'SELECT count(*) AS n FROM trials WHERE started_at > ?',
+        // Trying it now: inside the trial and not paying already (a member counts as a member).
+        trialsNow: all(
+          'SELECT device FROM trials WHERE started_at > ?',
           at - rules.trialDays * DAY,
-        ).n,
+        ).filter(({ device }) => !runningPlan(device, at)).length,
         codes: all(
           `SELECT plan,
              sum(device IS NULL AND revoked_at IS NULL) AS unused,
