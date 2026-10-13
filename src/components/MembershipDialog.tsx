@@ -1,18 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Check,
-  ChevronDown,
-  Copy,
-  Crown,
-  FileText,
-  Gift,
-  Lock,
-  Palette,
-  RotateCw,
-  Sparkles,
-  Ticket,
-  X,
-} from 'lucide-react';
+import { Check, ChevronDown, Copy, Crown, Gift, Lock, RotateCw, Ticket, X } from 'lucide-react';
 import { encode } from 'uqr';
 import { invoke } from '../api';
 import { errorText } from '../ai/client';
@@ -46,6 +33,13 @@ const plan = (p: string) => (p === 'life' ? '永久' : p === 'year' ? '365 天' 
 const membership = (p: string) => (p === 'life' ? '永久会员' : `${plan(p)}会员`);
 // Fen as ¥19.9, ¥99, ¥8.25.
 const yuan = (fen: number) => `¥${(fen / 100).toFixed(fen % 10 ? 2 : fen % 100 ? 1 : 0)}`;
+// A price with its ¥ set smaller than the number.
+const Price = ({ fen }: { fen: number }) => (
+  <span className="membership-price">
+    <small>¥</small>
+    {yuan(fen).slice(1)}
+  </span>
+);
 const date = (ms: number) =>
   new Date(ms).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' });
 // The price struck through beside it: before the credit or the friend's invite, or the regular
@@ -57,17 +51,27 @@ const struck = (p: Offer['plans'][number]) =>
     : p.later && p.until
       ? p.later
       : 0;
-// A year always says what it comes to a month, with a friend's code too (the struck-through price
-// shows what the code took off).
+// What a friend's invite code takes off is a line of its own (see the plan cards).
 function planNote(p: Offer['plans'][number]) {
   if (p.credit) return `剩余天数抵扣 −${yuan(p.credit)}`;
   if (p.plan === 'year') return `合 ${yuan(Math.round(p.amount / 12))} / 月`;
-  if (p.discount) return `邀请码立减 ${yuan(p.discount)}`;
   if (p.later && p.until) return `早鸟价至 ${date(p.until - 1)}`;
   if (p.plan === 'life') return '一次买断';
   return '随用随买';
 }
 
+// What everyone has, and what a membership adds.
+const compare: [string, boolean][] = [
+  ['HTML 阅读、批注、笔记', true],
+  ['源码编辑、双栏、专注阅读', true],
+  ['导出 Markdown、默认主题', true],
+  ['PDF 阅读与批注', false],
+  ['十套界面主题、跟随系统', false],
+  ['AI 助手问答、AI 划重点', false],
+  ['划词解释、翻译、提问', false],
+  ['页老师白板讲解、语音对话', false],
+  ['精读笔记、找论文、AI 改源码', false],
+];
 const downloadPage = 'https://helloxxy.com/works/folio/';
 // What a friend's code takes off, as 年度会员减 ¥10、永久会员减 ¥20.
 const offText = (discount: InviteCode['discount']) =>
@@ -269,6 +273,8 @@ export function MembershipDialog({
   const price = offer?.plans.find((p) => p.plan === picked)?.amount;
   const liveCodes = status.codes.some((c) => !c.revoked);
   const paid = status.state === 'paid';
+  // Anyone not paying yet sees the cover beside the plans; a paying member sees their membership.
+  const shop = !paid;
   const invite = offer?.inviteCode;
   const friend = invite?.first ? invite.friend : undefined;
   const friendOk = friend && !friend.error ? friend.code : undefined;
@@ -286,7 +292,7 @@ export function MembershipDialog({
       }}
     >
       <form
-        className="dialog membership-dialog"
+        className={`dialog membership-dialog${shop ? ' is-shop' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="membership-title"
@@ -298,341 +304,380 @@ export function MembershipDialog({
           if (e.key === 'Escape' && !busy) onClose();
         }}
       >
-        <div className="dialog-heading">
-          <h2 id="membership-title">
-            <Crown size={18} />
-            {member ? '页间会员' : '开通页间会员'}
-          </h2>
-          <button type="button" className="icon-button" aria-label="关闭" onClick={onClose}>
-            <X size={18} />
-          </button>
-        </div>
-        {member ? null : (
-          <p className="membership-lead">
-            {reason
-              ? `「${reason}」是会员功能，开通后就能用。`
-              : '解锁 PDF、全部 AI 功能和界面主题。'}
-          </p>
-        )}
-        {status.state !== 'none' || status.codes.length || status.error ? (
-          <div className={`membership-status${paid ? ' is-paid' : member ? ' is-member' : ''}`}>
-            <div className="membership-status-head">
-              {paid ? (
-                <span className="membership-badge">
-                  <Crown size={18} />
-                </span>
-              ) : null}
-              <div>
-                <strong>{head.title}</strong>
-                {head.detail ? <span>{head.detail}</span> : null}
-              </div>
-            </div>
-            {status.codes.length ? (
-              <span className="membership-codes">
-                {status.codes.map((c) => (
-                  <span key={c.code}>
-                    激活码 {c.code} · {plan(c.plan)}
-                    {c.revoked ? (
-                      '（已作废）'
-                    ) : (
-                      <button
-                        type="button"
-                        className="icon-button"
-                        aria-label="复制激活码"
-                        title="复制激活码"
-                        onClick={() =>
-                          void navigator.clipboard.writeText(c.code).then(() => setCopied(c.code))
-                        }
-                      >
-                        {copied === c.code ? <Check size={12} /> : <Copy size={12} />}
-                      </button>
-                    )}
-                  </span>
-                ))}
-              </span>
-            ) : null}
-            {liveCodes ? (
-              <span className="membership-hint">
-                换电脑时在新电脑上输入激活码，会员就转过去，7 天内能转一次。
-              </span>
-            ) : null}
-            {status.error && !member ? (
-              <span className="membership-error">{status.error}</span>
-            ) : null}
-            {status.state === 'offline' || status.state === 'clock' ? (
-              <button
-                type="button"
-                className="secondary-button"
-                disabled={!!busy}
-                onClick={() => void act('renew', renewLicense)}
-              >
-                {busy === 'renew' ? '验证中…' : '重新验证'}
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-        {member ? null : (
-          <ul className="membership-perks">
-            <li>
-              <FileText size={16} />
-              <span>
-                <strong>PDF 阅读与批注</strong>和 HTML 一样高亮、写笔记、手绘
-              </span>
-            </li>
-            <li>
-              <Sparkles size={16} />
-              <span>
-                <strong>全部 AI 功能</strong>
-                AI 助手、划词翻译、白板讲解、精读笔记、找论文
-              </span>
-            </li>
-            <li>
-              <Palette size={16} />
-              <span>
-                <strong>十套界面主题</strong>
-                宣纸、夜读、墨金、终端……
-              </span>
-            </li>
-          </ul>
-        )}
-        {status.forever ? null : offerError || (offer && !offer.ready) ? (
-          <p className="membership-offline">
-            {offerError ? '连不上激活服务器，暂时不能购买。' : '暂时不能在线购买，请稍后再试。'}
-            <button type="button" className="link-button" onClick={loadOffer}>
-              重试
-            </button>
-          </p>
-        ) : !offer ? null : paid && !renewing && !order ? (
-          <button
-            type="button"
-            className="secondary-button membership-renew"
-            onClick={() => setRenewing(true)}
-          >
-            续费或升级为永久会员
-            <ChevronDown size={15} />
-          </button>
-        ) : order ? (
-          <div className={`membership-pay${order.closed ? ' is-closed' : ''}`}>
-            <div className="membership-qr-frame">
-              <QrCode text={order.payUrl} />
-              {order.closed ? (
-                <button
-                  type="button"
-                  className="membership-qr-expired"
-                  disabled={!!busy}
-                  onClick={() => void buy(order.plan)}
-                >
-                  <RotateCw size={18} />
-                  {busy === 'buy' ? '正在生成…' : '二维码已过期，点这里重新生成'}
-                </button>
-              ) : null}
-            </div>
-            <div className="membership-pay-text">
-              <span className="membership-pay-plan">{membership(order.plan)}</span>
-              <strong>{yuan(order.amount)}</strong>
-              <span>打开微信或支付宝，扫一扫付款</span>
-              {order.closed ? null : <span className="membership-waiting">付完自动开通</span>}
-              <div className="membership-pay-actions">
-                <button type="button" className="link-button" onClick={() => setOrder(null)}>
-                  换个套餐
-                </button>
-                <button
-                  type="button"
-                  className="link-button"
-                  onClick={() => void invoke('external', { url: order.payUrl }).catch(() => {})}
-                >
-                  在浏览器里打开
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <>
-            {paid ? (
-              <p className="membership-section">
-                续费的天数接在后面；升级永久时，剩下的天数折成钱抵扣
-              </p>
-            ) : null}
-            <div className="membership-plans" role="radiogroup" aria-label="会员时长">
-              {offer.plans.map((p) => (
-                <button
-                  key={p.plan}
-                  type="button"
-                  role="radio"
-                  aria-checked={picked === p.plan}
-                  className={`membership-plan${picked === p.plan ? ' is-picked' : ''}`}
-                  onClick={() => setPicked(p.plan)}
-                >
-                  <span className="membership-plan-name">
-                    {p.credit ? '升级永久' : plan(p.plan)}
-                    {p.later ? <em>早鸟价</em> : p.plan === 'year' ? <em>推荐</em> : null}
-                  </span>
-                  <strong>
-                    {yuan(p.amount)}
-                    {struck(p) ? <s>{yuan(struck(p))}</s> : null}
-                  </strong>
-                  <span
-                    className={`membership-plan-note${p.credit || p.discount ? ' is-credit' : ''}`}
-                  >
-                    {planNote(p)}
-                  </span>
-                </button>
-              ))}
-            </div>
-            {invite?.first ? (
-              <div className="membership-friend">
-                {friendOk ? (
-                  <span className="membership-friend-ok">
-                    <Check size={14} />
-                    已使用好友的邀请码 {friendOk}
-                    <button
-                      type="button"
-                      className="link-button"
-                      disabled={!!busy}
-                      onClick={() => {
-                        setFriendCode('');
-                        setFriendTyping(true);
-                        void applyFriend('');
-                      }}
-                    >
-                      更换
-                    </button>
-                  </span>
-                ) : friendTyping || friend?.error ? (
-                  <>
-                    <div className="membership-friend-input">
-                      <input
-                        ref={friendInput}
-                        aria-label="好友的邀请码"
-                        placeholder="好友的邀请码"
-                        value={friendCode}
-                        spellCheck={false}
-                        autoComplete="off"
-                        maxLength={12}
-                        onChange={(e) => setFriendCode(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key !== 'Enter') return;
-                          e.preventDefault();
-                          if (friendCode.trim() && !busy) void applyFriend(friendCode);
-                        }}
-                      />
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        disabled={!friendCode.trim() || !!busy}
-                        onClick={() => void applyFriend(friendCode)}
-                      >
-                        {busy === 'invite' ? '检查中…' : '使用'}
-                      </button>
-                    </div>
-                    {friend?.error ? (
-                      <span className="membership-error">{friend.error}</span>
-                    ) : null}
-                  </>
-                ) : (
-                  <button
-                    type="button"
-                    className="link-button membership-friend-ask"
-                    onClick={() => setFriendTyping(true)}
-                  >
-                    <Ticket size={14} />
-                    有好友的邀请码？{offText(invite.discount)}
-                  </button>
-                )}
-              </div>
-            ) : null}
-            <button
-              type="button"
-              className="primary-button membership-buy"
-              disabled={!!busy || !price}
-              onClick={() => void buy(picked)}
-            >
-              {busy === 'buy' ? '正在下单…' : `微信 / 支付宝付款 ${price ? yuan(price) : ''}`}
-            </button>
-            <p className="membership-fineprint">
-              扫码付款，付完自动开通 · 一份会员同时在一台电脑上用
+        {shop ? (
+          <aside className="membership-cover">
+            <span className="membership-cover-mark">
+              <Crown size={13} />
+              FOLIO MEMBERSHIP
+            </span>
+            <h2 id="membership-title">页间会员</h2>
+            <p>
+              {reason ? (
+                `「${reason}」是会员功能，开通后就能用。`
+              ) : (
+                <>
+                  PDF、全部 AI 功能和十套界面主题，
+                  <br />
+                  一次解锁。
+                </>
+              )}
             </p>
-          </>
-        )}
-        {invite && (paid || inviting) ? (
-          <InviteCard invite={invite} />
+            <table className="membership-compare">
+              <thead>
+                <tr>
+                  <th />
+                  <th>免费</th>
+                  <th>会员</th>
+                </tr>
+              </thead>
+              <tbody>
+                {compare.map(([what, free], i) => (
+                  <tr
+                    key={what}
+                    className={
+                      free ? '' : i && compare[i - 1][1] ? 'is-pro is-pro-start' : 'is-pro'
+                    }
+                  >
+                    <td>{what}</td>
+                    <td>{free ? <Check size={14} role="img" aria-label="有" /> : '—'}</td>
+                    <td>
+                      <Check size={15} role="img" aria-label="有" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </aside>
         ) : null}
-        {refusal ? (
-          <div className="membership-move" role="alert">
-            {refusal.canMoveAt ? (
-              <span>
-                这个激活码正在另一台{computer(refusal.platform)}上使用，7 天内转移过，
-                {when(refusal.canMoveAt)} 之后才能转到这台电脑。
-              </span>
+        <div className="membership-main">
+          <div className="dialog-heading">
+            {shop ? (
+              <span className="membership-step">{order ? '扫码付款' : '选择会员时长'}</span>
             ) : (
-              <>
-                <span>
-                  这个激活码正在另一台{computer(refusal.platform)}上使用。转到这台电脑后，那台
-                  {computer(refusal.platform)}上的会员会停用，之后 7 天内不能再转。
+              <h2 id="membership-title">
+                <Crown size={18} />
+                页间会员
+              </h2>
+            )}
+            <button type="button" className="icon-button" aria-label="关闭" onClick={onClose}>
+              <X size={18} />
+            </button>
+          </div>
+          {status.state !== 'none' || status.codes.length || status.error ? (
+            <div className={`membership-status${paid ? ' is-paid' : member ? ' is-member' : ''}`}>
+              <div className="membership-status-head">
+                {paid ? (
+                  <span className="membership-badge">
+                    <Crown size={18} />
+                  </span>
+                ) : null}
+                <div>
+                  <strong>{head.title}</strong>
+                  {head.detail ? <span>{head.detail}</span> : null}
+                </div>
+              </div>
+              {status.codes.length ? (
+                <span className="membership-codes">
+                  {status.codes.map((c) => (
+                    <span key={c.code}>
+                      激活码 {c.code} · {plan(c.plan)}
+                      {c.revoked ? (
+                        '（已作废）'
+                      ) : (
+                        <button
+                          type="button"
+                          className="icon-button"
+                          aria-label="复制激活码"
+                          title="复制激活码"
+                          onClick={() =>
+                            void navigator.clipboard.writeText(c.code).then(() => setCopied(c.code))
+                          }
+                        >
+                          {copied === c.code ? <Check size={12} /> : <Copy size={12} />}
+                        </button>
+                      )}
+                    </span>
+                  ))}
                 </span>
+              ) : null}
+              {liveCodes ? (
+                <span className="membership-hint">
+                  换电脑时在新电脑上输入激活码，会员就转过去，7 天内能转一次。
+                </span>
+              ) : null}
+              {status.error && !member ? (
+                <span className="membership-error">{status.error}</span>
+              ) : null}
+              {status.state === 'offline' || status.state === 'clock' ? (
                 <button
                   type="button"
                   className="secondary-button"
                   disabled={!!busy}
-                  onClick={() => void activate(true)}
+                  onClick={() => void act('renew', renewLicense)}
                 >
-                  {busy === 'move' ? '转移中…' : '转到这台电脑'}
+                  {busy === 'renew' ? '验证中…' : '重新验证'}
                 </button>
-              </>
-            )}
-          </div>
-        ) : null}
-        {error ? (
-          <p className="dialog-error" role="alert">
-            {error}
-          </p>
-        ) : null}
-        {typing ? (
-          <div className="membership-activate">
-            <input
-              ref={input}
-              aria-label="激活码"
-              placeholder="输入激活码，如 ABCD-EFGH-JKMN-PQRS"
-              value={code}
-              spellCheck={false}
-              autoComplete="off"
-              onChange={(e) => {
-                setCode(e.target.value);
-                setRefusal(null);
-              }}
-            />
-            <button className="primary-button" disabled={!code.trim() || !!busy}>
-              {busy === 'activate' ? '激活中…' : '激活'}
-            </button>
-          </div>
-        ) : null}
-        <div className="membership-footer">
-          {typing ? null : (
-            <button type="button" className="link-button" onClick={() => setTyping(true)}>
-              有激活码？
-            </button>
-          )}
-          {invite && !paid && !inviting ? (
-            <button type="button" className="link-button" onClick={() => setInviting(true)}>
-              邀请好友
-            </button>
+              ) : null}
+            </div>
           ) : null}
-          {!member && !status.trialUsed ? (
+          {status.forever ? null : offerError || (offer && !offer.ready) ? (
+            <p className="membership-offline">
+              {offerError ? '连不上激活服务器，暂时不能购买。' : '暂时不能在线购买，请稍后再试。'}
+              <button type="button" className="link-button" onClick={loadOffer}>
+                重试
+              </button>
+            </p>
+          ) : !offer ? null : paid && !renewing && !order ? (
             <button
               type="button"
-              className="link-button membership-trial"
-              disabled={!!busy}
-              onClick={() =>
-                void act('trial', async () => {
-                  const s = await startTrial();
-                  onNotify(`试用已开始，到 ${s.expires ? when(s.expires) : '—'}`);
-                  if (reason && s.member) onClose();
-                })
-              }
+              className="secondary-button membership-renew"
+              onClick={() => setRenewing(true)}
             >
-              {busy === 'trial' ? '开通中…' : '先免费试用 3 天'}
+              续费或升级为永久会员
+              <ChevronDown size={15} />
             </button>
+          ) : order ? (
+            <div className={`membership-pay${order.closed ? ' is-closed' : ''}`}>
+              <div className="membership-qr-frame">
+                <QrCode text={order.payUrl} />
+                {order.closed ? (
+                  <button
+                    type="button"
+                    className="membership-qr-expired"
+                    disabled={!!busy}
+                    onClick={() => void buy(order.plan)}
+                  >
+                    <RotateCw size={18} />
+                    {busy === 'buy' ? '正在生成…' : '二维码已过期，点这里重新生成'}
+                  </button>
+                ) : null}
+              </div>
+              <div className="membership-pay-text">
+                <span className="membership-pay-plan">{membership(order.plan)}</span>
+                <strong>
+                  <Price fen={order.amount} />
+                </strong>
+                <span>打开微信或支付宝，扫一扫付款</span>
+                {order.closed ? null : <span className="membership-waiting">付完自动开通</span>}
+                <div className="membership-pay-actions">
+                  <button type="button" className="link-button" onClick={() => setOrder(null)}>
+                    换个套餐
+                  </button>
+                  <button
+                    type="button"
+                    className="link-button"
+                    onClick={() => void invoke('external', { url: order.payUrl }).catch(() => {})}
+                  >
+                    在浏览器里打开
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              {paid ? (
+                <p className="membership-section">
+                  续费的天数接在后面；升级永久时，剩下的天数折成钱抵扣
+                </p>
+              ) : null}
+              <div className="membership-plans" role="radiogroup" aria-label="会员时长">
+                {offer.plans.map((p) => {
+                  const off = invite?.first ? invite.discount[p.plan] : undefined;
+                  return (
+                    <button
+                      key={p.plan}
+                      type="button"
+                      role="radio"
+                      aria-checked={picked === p.plan}
+                      className={`membership-plan${picked === p.plan ? ' is-picked' : ''}`}
+                      onClick={() => setPicked(p.plan)}
+                    >
+                      <span className="membership-plan-radio" aria-hidden="true" />
+                      <span className="membership-plan-main">
+                        <span className="membership-plan-name">
+                          {p.credit ? '升级永久' : plan(p.plan)}
+                          {p.later ? (
+                            <em>早鸟价</em>
+                          ) : p.plan === 'year' ? (
+                            <em className="is-pick">推荐</em>
+                          ) : null}
+                        </span>
+                        <span className={`membership-plan-note${p.credit ? ' is-credit' : ''}`}>
+                          {planNote(p)}
+                        </span>
+                      </span>
+                      <span className="membership-plan-price">
+                        <strong>
+                          {struck(p) ? <s>{yuan(struck(p))}</s> : null}
+                          <Price fen={p.amount} />
+                        </strong>
+                        {off ? (
+                          <span className="membership-plan-invite">
+                            {p.discount
+                              ? `邀请码已减 ${yuan(p.discount)}`
+                              : `填邀请码立减 ${yuan(off)}`}
+                          </span>
+                        ) : null}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              {invite?.first ? (
+                <div className="membership-friend">
+                  {friendOk ? (
+                    <span className="membership-friend-ok">
+                      <Check size={14} />
+                      已使用好友的邀请码 {friendOk}
+                      <button
+                        type="button"
+                        className="link-button"
+                        disabled={!!busy}
+                        onClick={() => {
+                          setFriendCode('');
+                          setFriendTyping(true);
+                          void applyFriend('');
+                        }}
+                      >
+                        更换
+                      </button>
+                    </span>
+                  ) : friendTyping || friend?.error ? (
+                    <>
+                      <div className="membership-friend-input">
+                        <input
+                          ref={friendInput}
+                          aria-label="好友的邀请码"
+                          placeholder="好友的邀请码"
+                          value={friendCode}
+                          spellCheck={false}
+                          autoComplete="off"
+                          maxLength={12}
+                          onChange={(e) => setFriendCode(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key !== 'Enter') return;
+                            e.preventDefault();
+                            if (friendCode.trim() && !busy) void applyFriend(friendCode);
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          disabled={!friendCode.trim() || !!busy}
+                          onClick={() => void applyFriend(friendCode)}
+                        >
+                          {busy === 'invite' ? '检查中…' : '使用'}
+                        </button>
+                      </div>
+                      {friend?.error ? (
+                        <span className="membership-error">{friend.error}</span>
+                      ) : null}
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="link-button membership-friend-ask"
+                      onClick={() => setFriendTyping(true)}
+                    >
+                      <Ticket size={14} />
+                      有好友的邀请码？点这里填写
+                    </button>
+                  )}
+                </div>
+              ) : null}
+              <button
+                type="button"
+                className="membership-buy"
+                disabled={!!busy || !price}
+                onClick={() => void buy(picked)}
+              >
+                {busy === 'buy'
+                  ? '正在下单…'
+                  : `${paid ? (picked === 'life' ? '升级永久' : '续费') : '立即开通'}${price ? ` · ${yuan(price)}` : ''}`}
+              </button>
+              <p className="membership-fineprint">
+                微信 / 支付宝扫码付款，付完自动开通 · 一份会员同时在一台电脑上用
+              </p>
+            </>
+          )}
+          {invite && (paid || inviting) ? <InviteCard invite={invite} /> : null}
+          {refusal ? (
+            <div className="membership-move" role="alert">
+              {refusal.canMoveAt ? (
+                <span>
+                  这个激活码正在另一台{computer(refusal.platform)}上使用，7 天内转移过，
+                  {when(refusal.canMoveAt)} 之后才能转到这台电脑。
+                </span>
+              ) : (
+                <>
+                  <span>
+                    这个激活码正在另一台{computer(refusal.platform)}上使用。转到这台电脑后，那台
+                    {computer(refusal.platform)}上的会员会停用，之后 7 天内不能再转。
+                  </span>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    disabled={!!busy}
+                    onClick={() => void activate(true)}
+                  >
+                    {busy === 'move' ? '转移中…' : '转到这台电脑'}
+                  </button>
+                </>
+              )}
+            </div>
           ) : null}
+          {error ? (
+            <p className="dialog-error" role="alert">
+              {error}
+            </p>
+          ) : null}
+          {typing ? (
+            <div className="membership-activate">
+              <input
+                ref={input}
+                aria-label="激活码"
+                placeholder="输入激活码，如 ABCD-EFGH-JKMN-PQRS"
+                value={code}
+                spellCheck={false}
+                autoComplete="off"
+                onChange={(e) => {
+                  setCode(e.target.value);
+                  setRefusal(null);
+                }}
+              />
+              <button className="primary-button" disabled={!code.trim() || !!busy}>
+                {busy === 'activate' ? '激活中…' : '激活'}
+              </button>
+            </div>
+          ) : null}
+          <div className="membership-footer">
+            {typing ? null : (
+              <button type="button" className="link-button" onClick={() => setTyping(true)}>
+                有激活码？
+              </button>
+            )}
+            {invite && !paid && !inviting ? (
+              <button type="button" className="link-button" onClick={() => setInviting(true)}>
+                邀请好友
+              </button>
+            ) : null}
+            {!member && !status.trialUsed ? (
+              <button
+                type="button"
+                className="link-button membership-trial"
+                disabled={!!busy}
+                onClick={() =>
+                  void act('trial', async () => {
+                    const s = await startTrial();
+                    onNotify(`试用已开始，到 ${s.expires ? when(s.expires) : '—'}`);
+                    if (reason && s.member) onClose();
+                  })
+                }
+              >
+                {busy === 'trial' ? '开通中…' : '先免费试用 3 天'}
+              </button>
+            ) : null}
+          </div>
         </div>
       </form>
     </div>

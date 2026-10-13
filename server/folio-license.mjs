@@ -24,7 +24,7 @@ export const prices = {
   life: {
     amount: 29800,
     name: '页间永久会员',
-    early: { amount: 19800, until: Date.parse('2026-11-13T00:00:00+08:00') },
+    early: { amount: 19800, until: Date.parse('2026-11-15T00:00:00+08:00') },
   },
 };
 export const rules = {
