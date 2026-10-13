@@ -12,9 +12,12 @@ export type LicenseStatus = {
   forever?: boolean;
   expires: number | null;
   trialUsed: boolean;
-  codes: { code: string; plan: Plan; revoked?: boolean }[];
+  // `invite`: days a friend's purchase earned, as many as `days`.
+  codes: { code: string; plan: Plan | 'invite'; days?: number; revoked?: boolean }[];
   // Why the last check didn't reach the server, if it didn't.
   error?: string;
+  // Recording a demo (FOLIO_DEMO=1, unpackaged): everything works, nothing says membership.
+  demo?: boolean;
 };
 // A code that is on another computer: it can be moved here, at most once a week.
 export type Refusal = {
@@ -26,6 +29,7 @@ export type Refusal = {
 
 // What can be bought, in fen. `later`: the price after an early-bird price ends at `until`.
 // `credit`: taken off lifetime for the days left of memberships bought on this computer.
+// `discount`: taken off by a friend's invite code.
 export type Offer = {
   ready: boolean;
   plans: {
@@ -33,9 +37,24 @@ export type Offer = {
     days: number;
     amount: number;
     credit?: number;
+    discount?: number;
     later?: number;
     until?: number;
   }[];
+  invite?: Invite;
+};
+// Inviting friends, while the server runs the offer. `code`: this computer's own; `friends` paid
+// with it, `toward` of them on a year or lifetime, and `life` once that brought it lifetime (the
+// code then works no more). `first`: this computer hasn't paid yet, so a friend's code counts;
+// `friend` is the one typed in, with why it doesn't count if it doesn't.
+export type Invite = {
+  code: string;
+  friends: number;
+  toward: number;
+  life: boolean;
+  first: boolean;
+  friend?: { code: string; error?: string };
+  rules: { discount: number; days: Record<Plan, number>; lifeAfter: number };
 };
 // A purchase waiting to be paid: `payUrl` is the checkout page, shown as a QR code. 简付 closes
 // it unpaid after about 15 minutes (`closed`).
@@ -87,7 +106,10 @@ export async function activateLicense(code: string, move = false) {
 }
 export const startTrial = () => invoke<LicenseStatus>('license-trial').then((s) => (set(s), s));
 export const getOffer = () => invoke<Offer>('license-offer');
-export const createOrder = (plan: Plan) => invoke<Order>('license-order', { plan });
+// Keeps a friend's invite code for this computer's first purchase ('' forgets it).
+export const setInvite = (code: string) => invoke<Offer>('license-invite', { code });
+export const createOrder = (plan: Plan, invite?: string) =>
+  invoke<Order>('license-order', { plan, invite });
 export async function checkOrder() {
   const r = await invoke<{ paid: boolean; closed: boolean; status: LicenseStatus }>(
     'license-order-status',

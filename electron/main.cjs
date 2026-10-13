@@ -500,6 +500,7 @@ app
           'license-renew',
           'license-recover',
           'license-offer',
+          'license-invite',
           'license-order',
           'license-order-status',
         ].includes(action) &&
@@ -675,6 +676,8 @@ app
           return license.recover();
         case 'license-offer':
           return license.offer();
+        case 'license-invite':
+          return license.setInvite(payload || {});
         case 'license-order':
           return license.order(payload || {});
         case 'license-order-status':

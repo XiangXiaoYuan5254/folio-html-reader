@@ -2079,6 +2079,135 @@ button.brand {
   font-weight: 600;
   color: var(--danger);
 }
+.membership-friend {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  margin-top: 12px;
+  font-size: 12px;
+}
+.membership-friend-ask {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+}
+.membership-friend-ok {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--accent-deep);
+}
+.membership-friend-ok .link-button {
+  margin-left: 6px;
+  font-size: 12px;
+}
+.membership-friend-input {
+  display: flex;
+  gap: 8px;
+  align-self: stretch;
+}
+.membership-friend-input input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.membership-friend-input input::placeholder {
+  font-family: inherit;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.membership-friend-input .secondary-button {
+  padding: 5px 14px;
+  font-size: 12.5px;
+}
+.membership-invite {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-size: 12px;
+  color: var(--text-3);
+}
+.membership-invite-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.membership-invite-head > svg {
+  flex: none;
+  color: var(--accent);
+}
+.membership-invite-head strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.membership-invite-code {
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 5px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  letter-spacing: 1.5px;
+  color: var(--text);
+  user-select: all;
+}
+.membership-invite-head .secondary-button {
+  gap: 4px;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+.membership-invite-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 8px 0 0;
+  padding: 0 0 0 16px;
+  line-height: 1.6;
+}
+.membership-invite-rules li::marker {
+  color: var(--faint);
+}
+.dialog .membership-invite-done {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-3);
+}
+.membership-invite-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.membership-invite-pips {
+  display: inline-flex;
+  gap: 3px;
+}
+.membership-invite-pips i {
+  width: 14px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line-strong);
+}
+.membership-invite-pips i.is-on {
+  background: var(--accent);
+}
 .membership-buy {
   width: 100%;
   margin-top: 12px;

@@ -7,6 +7,8 @@
 // code stops working within hours online and within a week offline.
 const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
+const { existsSync } = require('node:fs');
+const path = require('node:path');
 const { execFile } = require('node:child_process');
 
 const publicKey = crypto.createPublicKey({
@@ -19,6 +21,10 @@ const DAY = 24 * HOUR;
 const RENEW_EVERY = 6 * HOUR;
 // The clock may wobble this much backwards; more means it was turned back to stretch a lease.
 const CLOCK_SLACK = HOUR;
+// The test switches below (FOLIO_MEMBER, FOLIO_DEMO, FOLIO_LICENSE_DEVICE) work only run from
+// the project itself, its src/ beside electron/. Not from an installed app's files, not even when
+// a stock Electron runs them: that one calls itself unpackaged whatever it runs.
+const fromSource = existsSync(path.join(__dirname, '../src'));
 
 const run = (file, args) =>
   new Promise((resolve) =>
@@ -45,16 +51,22 @@ async function machineId() {
   return (await fs.readFile('/etc/machine-id', 'utf8').catch(() => '')).trim();
 }
 
-function createLicense({ file, fetch, version, packaged, onChange }) {
-  const dev = !packaged;
+function createLicense({ file: savedFile, fetch, version, packaged, onChange }) {
+  const dev = !packaged && fromSource;
   const server = (process.env.FOLIO_LICENSE_SERVER || 'https://helloxxy.com/api/folio').replace(
     /\/$/,
     '',
   );
-  // Tests run unpackaged as a member, or as another computer; a packaged app ignores both.
-  const testMember = dev && process.env.FOLIO_MEMBER === '1';
-  // `order`: a purchase not yet seen paid, { no, at }.
-  let saved = { lease: null, seen: 0, fallbackId: null, order: null };
+  // Tests run from the source as a member, or as another computer; an installed app ignores both.
+  // Recording a demo (FOLIO_DEMO=1) is a member too, but the title bar says nothing about it and
+  // the membership window shows what a new computer sees. It asks the server as a computer of its
+  // own and keeps its own file, so the real membership on this computer is left as it is.
+  const demo = dev && process.env.FOLIO_DEMO === '1';
+  const testMember = dev && (process.env.FOLIO_MEMBER === '1' || demo);
+  const file = demo ? savedFile.replace(/\.json$/, '-demo.json') : savedFile;
+  // `order`: a purchase not yet seen paid, { no, at }. `invite`: a friend's invite code typed in
+  // for this computer's first purchase.
+  let saved = { lease: null, seen: 0, fallbackId: null, order: null, invite: null };
   let device = '';
   let lastError = '';
   let renewing = null;
@@ -63,7 +75,10 @@ function createLicense({ file, fetch, version, packaged, onChange }) {
     try {
       saved = { ...saved, ...JSON.parse(await fs.readFile(file, 'utf8')) };
     } catch {}
-    let id = (dev && process.env.FOLIO_LICENSE_DEVICE) || (await machineId());
+    let id =
+      (dev && process.env.FOLIO_LICENSE_DEVICE) ||
+      (demo ? 'folio-demo' : '') ||
+      (await machineId());
     if (!id) {
       saved.fallbackId ||= crypto.randomUUID();
       id = saved.fallbackId;
@@ -91,7 +106,15 @@ function createLicense({ file, fetch, version, packaged, onChange }) {
   }
   function status() {
     if (testMember)
-      return { member: true, state: 'paid', expires: null, trialUsed: true, codes: [], error: '' };
+      return {
+        member: true,
+        state: 'paid',
+        expires: null,
+        trialUsed: true,
+        codes: [],
+        error: '',
+        ...(demo ? { demo: true } : {}),
+      };
     const now = Date.now();
     const l = lease();
     if (now > saved.seen + 10 * 60_000) {
@@ -200,10 +223,18 @@ function createLicense({ file, fetch, version, packaged, onChange }) {
     }
   }
   const trial = () => post('/trial', {});
-  // Plans and today's prices.
-  const offer = () => request('/offer', {});
-  async function order({ plan }) {
-    const made = (await request('/order', { plan })).order;
+  // Plans and today's prices, less what the friend's invite code takes off; and this computer's
+  // own invite code.
+  const offer = () => request('/offer', saved.invite ? { invite: saved.invite } : {});
+  // Keeps the friend's invite code (or forgets it, given none) and asks for the prices with it.
+  async function setInvite({ code } = {}) {
+    saved.invite = typeof code === 'string' && code.trim() ? code.trim().slice(0, 32) : null;
+    await save();
+    return offer();
+  }
+  // `invite`: the friend's code, when the offer took something off for it.
+  async function order({ plan, invite }) {
+    const made = (await request('/order', { plan, invite })).order;
     saved.order = { no: made.no, at: Date.now() };
     await save();
     return made;
@@ -224,6 +255,8 @@ function createLicense({ file, fetch, version, packaged, onChange }) {
       throw e;
     }
     if (answer.paid || answer.closed || Date.now() - pending.at > DAY) saved.order = null;
+    // A friend's code is only for the first purchase.
+    if (answer.paid) saved.invite = null;
     await take(answer.lease);
     return { paid: answer.paid, closed: !!answer.closed, status: status() };
   }
@@ -235,6 +268,7 @@ function createLicense({ file, fetch, version, packaged, onChange }) {
     activate,
     trial,
     offer,
+    setInvite,
     order,
     checkOrder,
     renew,

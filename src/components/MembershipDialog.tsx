@@ -5,10 +5,12 @@ import {
   Copy,
   Crown,
   FileText,
+  Gift,
   Lock,
   Palette,
   RotateCw,
   Sparkles,
+  Ticket,
   X,
 } from 'lucide-react';
 import { encode } from 'uqr';
@@ -22,10 +24,11 @@ import {
   getOffer,
   recoverLicense,
   renewLicense,
+  setInvite,
   startTrial,
   useLicense,
 } from '../license';
-import type { LicenseStatus, Offer, Order, Plan, Refusal } from '../license';
+import type { Invite, LicenseStatus, Offer, Order, Plan, Refusal } from '../license';
 
 const DAY = 86_400_000;
 const when = (ms: number) =>
@@ -41,20 +44,99 @@ const computer = (platform: string | null) =>
   platform === 'darwin' ? ' Mac ' : platform === 'win32' ? ' Windows 电脑' : '电脑';
 const plan = (p: string) => (p === 'life' ? '永久' : p === 'year' ? '365 天' : '30 天');
 const membership = (p: string) => (p === 'life' ? '永久会员' : `${plan(p)}会员`);
+// The codes to list: days friends' purchases earned stay out of the way, unless they're all there
+// is (any one code moves the whole membership to another computer).
+function shownCodes(codes: LicenseStatus['codes']) {
+  const own = codes.filter((c) => c.plan !== 'invite');
+  if (own.some((c) => !c.revoked)) return own;
+  const reward = codes.find((c) => c.plan === 'invite' && !c.revoked);
+  return reward ? [...own, reward] : own;
+}
 // Fen as ¥19.9, ¥99, ¥8.25.
 const yuan = (fen: number) => `¥${(fen / 100).toFixed(fen % 10 ? 2 : fen % 100 ? 1 : 0)}`;
 const date = (ms: number) =>
   new Date(ms).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' });
-// The price struck through beside it: before the credit, or the regular price the early-bird
-// one stands in for until its date (said in the note, so it isn't a made-up "original" price).
+// The price struck through beside it: before the credit or the friend's invite, or the regular
+// price the early-bird one stands in for until its date (said in the note, so it isn't a made-up
+// "original" price).
 const struck = (p: Offer['plans'][number]) =>
-  p.credit ? p.amount + p.credit : p.later && p.until ? p.later : 0;
+  p.credit || p.discount
+    ? p.amount + (p.credit || 0) + (p.discount || 0)
+    : p.later && p.until
+      ? p.later
+      : 0;
 function planNote(p: Offer['plans'][number]) {
   if (p.credit) return `剩余天数抵扣 −${yuan(p.credit)}`;
+  if (p.discount) return `邀请码立减 ${yuan(p.discount)}`;
   if (p.later && p.until) return `早鸟价至 ${date(p.until - 1)}`;
   if (p.plan === 'year') return `合 ${yuan(Math.round(p.amount / 12))} / 月`;
   if (p.plan === 'life') return '一次买断';
   return '随用随买';
+}
+
+const downloadPage = 'https://helloxxy.com/works/folio/';
+// This computer's invite code, what it gets friends and its owner, and how far it has got.
+// A lifetime member gets nothing more from it, so only the friends' side is said.
+function InviteCard({ invite, forever }: { invite: Invite; forever: boolean }) {
+  const [copied, setCopied] = useState(false);
+  const { discount, days, lifeAfter } = invite.rules;
+  const share = `页间邀请码 ${invite.code}：首次开通会员时填写，可立减 ${yuan(discount)}。下载页间：${downloadPage}`;
+  return (
+    <section className="membership-invite" aria-labelledby="membership-invite-title">
+      <div className="membership-invite-head">
+        <Gift size={16} />
+        <strong id="membership-invite-title">邀请好友</strong>
+        {invite.life ? null : (
+          <>
+            <code className="membership-invite-code">{invite.code}</code>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => void navigator.clipboard.writeText(share).then(() => setCopied(true))}
+            >
+              {copied ? <Check size={13} /> : <Copy size={13} />}
+              {copied ? '已复制' : '复制邀请'}
+            </button>
+          </>
+        )}
+      </div>
+      {invite.life ? (
+        <p className="membership-invite-done">
+          已有 {invite.friends} 位好友通过你的邀请码开通会员，你已获得永久会员，此邀请码已停用。
+        </p>
+      ) : (
+        <>
+          <ul className="membership-invite-rules">
+            <li>好友首次开通会员时填写你的邀请码，可立减 {yuan(discount)}</li>
+            {forever ? null : (
+              <>
+                <li>好友开通月度会员，你获得 {days.month} 天会员</li>
+                <li>好友开通年度或永久会员，你获得 {days.year} 天会员</li>
+                <li>累计 {lifeAfter} 位好友开通年度或永久会员，你将获得永久会员</li>
+              </>
+            )}
+          </ul>
+          {invite.friends ? (
+            <div className="membership-invite-progress">
+              <span>已邀请 {invite.friends} 位好友</span>
+              {forever ? null : (
+                <>
+                  <span>
+                    年度或永久 {Math.min(invite.toward, lifeAfter)}/{lifeAfter}
+                  </span>
+                  <span className="membership-invite-pips" aria-hidden="true">
+                    {Array.from({ length: lifeAfter }, (_, i) => (
+                      <i key={i} className={i < invite.toward ? 'is-on' : ''} />
+                    ))}
+                  </span>
+                </>
+              )}
+            </div>
+          ) : null}
+        </>
+      )}
+    </section>
+  );
 }
 
 // The checkout page as a QR code: black on white whatever the theme, for the phone to read.
@@ -78,6 +160,15 @@ function QrCode({ text }: { text: string }) {
     </svg>
   );
 }
+
+// What a computer that has never been a member sees, for recording a demo.
+const newComputer: LicenseStatus = {
+  member: false,
+  state: 'none',
+  expires: null,
+  trialUsed: false,
+  codes: [],
+};
 
 function headline(s: LicenseStatus) {
   const left = s.expires ? Math.max(1, Math.ceil((s.expires - Date.now()) / DAY)) : 0;
@@ -123,7 +214,8 @@ export function MembershipDialog({
   onClose: () => void;
   onNotify: (message: string) => void;
 }) {
-  const status = useLicense();
+  const real = useLicense();
+  const status = real?.demo ? newComputer : real;
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
@@ -136,13 +228,28 @@ export function MembershipDialog({
   // A paying member sees the plans only after asking for them, so the window reads as "you're in".
   const [renewing, setRenewing] = useState(false);
   const [copied, setCopied] = useState('');
+  // A friend's invite code being typed in, and this computer's own card opened from the footer.
+  const [friendTyping, setFriendTyping] = useState(false);
+  const [friendCode, setFriendCode] = useState('');
+  const [inviting, setInviting] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  const friendInput = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (typing) input.current?.focus();
   }, [typing]);
+  useEffect(() => {
+    if (friendTyping) friendInput.current?.focus();
+  }, [friendTyping]);
   const loadOffer = () => {
     setOfferError('');
-    getOffer().then(setOffer, (e) => setOfferError(errorText(e)));
+    getOffer().then(
+      (next) => {
+        setOffer(next);
+        // A code kept from before that doesn't count: shown in the box with why.
+        if (next.invite?.friend?.error) setFriendCode(next.invite.friend.code);
+      },
+      (e) => setOfferError(errorText(e)),
+    );
   };
   useEffect(() => {
     loadOffer();
@@ -203,11 +310,15 @@ export function MembershipDialog({
   const price = offer?.plans.find((p) => p.plan === picked)?.amount;
   const liveCodes = status.codes.some((c) => !c.revoked);
   const paid = status.state === 'paid';
+  const invite = offer?.invite;
+  const friend = invite?.first ? invite.friend : undefined;
+  const friendOk = friend && !friend.error ? friend.code : undefined;
   const buy = (plan: Plan) =>
     act('buy', async () => {
       setPicked(plan);
-      setOrder(await createOrder(plan));
+      setOrder(await createOrder(plan, friendOk));
     });
+  const applyFriend = (code: string) => act('invite', async () => setOffer(await setInvite(code)));
   return (
     <div
       className="modal-backdrop"
@@ -259,9 +370,9 @@ export function MembershipDialog({
             </div>
             {status.codes.length ? (
               <span className="membership-codes">
-                {status.codes.map((c) => (
+                {shownCodes(status.codes).map((c) => (
                   <span key={c.code}>
-                    激活码 {c.code} · {plan(c.plan)}
+                    激活码 {c.code} · {c.plan === 'invite' ? `${c.days} 天邀请奖励` : plan(c.plan)}
                     {c.revoked ? (
                       '（已作废）'
                     ) : (
@@ -401,12 +512,76 @@ export function MembershipDialog({
                     {yuan(p.amount)}
                     {struck(p) ? <s>{yuan(struck(p))}</s> : null}
                   </strong>
-                  <span className={`membership-plan-note${p.credit ? ' is-credit' : ''}`}>
+                  <span
+                    className={`membership-plan-note${p.credit || p.discount ? ' is-credit' : ''}`}
+                  >
                     {planNote(p)}
                   </span>
                 </button>
               ))}
             </div>
+            {invite?.first ? (
+              <div className="membership-friend">
+                {friendOk ? (
+                  <span className="membership-friend-ok">
+                    <Check size={14} />
+                    已使用好友的邀请码 {friendOk}，立减 {yuan(invite.rules.discount)}
+                    <button
+                      type="button"
+                      className="link-button"
+                      disabled={!!busy}
+                      onClick={() => {
+                        setFriendCode('');
+                        setFriendTyping(true);
+                        void applyFriend('');
+                      }}
+                    >
+                      更换
+                    </button>
+                  </span>
+                ) : friendTyping || friend?.error ? (
+                  <>
+                    <div className="membership-friend-input">
+                      <input
+                        ref={friendInput}
+                        aria-label="好友的邀请码"
+                        placeholder="好友的邀请码"
+                        value={friendCode}
+                        spellCheck={false}
+                        autoComplete="off"
+                        maxLength={12}
+                        onChange={(e) => setFriendCode(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key !== 'Enter') return;
+                          e.preventDefault();
+                          if (friendCode.trim() && !busy) void applyFriend(friendCode);
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        disabled={!friendCode.trim() || !!busy}
+                        onClick={() => void applyFriend(friendCode)}
+                      >
+                        {busy === 'invite' ? '检查中…' : '使用'}
+                      </button>
+                    </div>
+                    {friend?.error ? (
+                      <span className="membership-error">{friend.error}</span>
+                    ) : null}
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    className="link-button membership-friend-ask"
+                    onClick={() => setFriendTyping(true)}
+                  >
+                    <Ticket size={14} />
+                    有好友的邀请码？首次开通立减 {yuan(invite.rules.discount)}
+                  </button>
+                )}
+              </div>
+            ) : null}
             <button
               type="button"
               className="primary-button membership-buy"
@@ -420,6 +595,9 @@ export function MembershipDialog({
             </p>
           </>
         )}
+        {invite && (paid || inviting) ? (
+          <InviteCard invite={invite} forever={!!status.forever} />
+        ) : null}
         {refusal ? (
           <div className="membership-move" role="alert">
             {refusal.canMoveAt ? (
@@ -475,6 +653,11 @@ export function MembershipDialog({
               有激活码？
             </button>
           )}
+          {invite && !paid && !inviting ? (
+            <button type="button" className="link-button" onClick={() => setInviting(true)}>
+              邀请好友得会员
+            </button>
+          ) : null}
           {!member && !status.trialUsed ? (
             <button
               type="button"
