@@ -1524,7 +1524,7 @@ export default function App() {
               {update.status === 'ready' ? '重启以更新' : '有新版本'} {update.version}
             </button>
           ) : null}
-          {isDesktop && license && !license.demo ? (
+          {isDesktop && license ? (
             <button
               type="button"
               className={`member-chip is-${license.state}`}

@@ -16,8 +16,6 @@ export type LicenseStatus = {
   codes: { code: string; plan: Plan | 'invite'; days?: number; revoked?: boolean }[];
   // Why the last check didn't reach the server, if it didn't.
   error?: string;
-  // Recording a demo (FOLIO_DEMO=1, unpackaged): everything works, nothing says membership.
-  demo?: boolean;
 };
 // A code that is on another computer: it can be moved here, at most once a week.
 export type Refusal = {

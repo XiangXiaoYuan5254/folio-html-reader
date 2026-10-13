@@ -161,15 +161,6 @@ function QrCode({ text }: { text: string }) {
   );
 }
 
-// What a computer that has never been a member sees, for recording a demo.
-const newComputer: LicenseStatus = {
-  member: false,
-  state: 'none',
-  expires: null,
-  trialUsed: false,
-  codes: [],
-};
-
 function headline(s: LicenseStatus) {
   const left = s.expires ? Math.max(1, Math.ceil((s.expires - Date.now()) / DAY)) : 0;
   switch (s.state) {
@@ -214,8 +205,7 @@ export function MembershipDialog({
   onClose: () => void;
   onNotify: (message: string) => void;
 }) {
-  const real = useLicense();
-  const status = real?.demo ? newComputer : real;
+  const status = useLicense();
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');

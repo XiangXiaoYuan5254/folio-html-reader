@@ -21,7 +21,7 @@ const DAY = 24 * HOUR;
 const RENEW_EVERY = 6 * HOUR;
 // The clock may wobble this much backwards; more means it was turned back to stretch a lease.
 const CLOCK_SLACK = HOUR;
-// The test switches below (FOLIO_MEMBER, FOLIO_DEMO, FOLIO_LICENSE_DEVICE) work only run from
+// The test switches below (FOLIO_MEMBER, FOLIO_LICENSE_DEVICE) work only run from
 // the project itself, its src/ beside electron/. Not from an installed app's files, not even when
 // a stock Electron runs them: that one calls itself unpackaged whatever it runs.
 const fromSource = existsSync(path.join(__dirname, '../src'));
@@ -51,19 +51,14 @@ async function machineId() {
   return (await fs.readFile('/etc/machine-id', 'utf8').catch(() => '')).trim();
 }
 
-function createLicense({ file: savedFile, fetch, version, packaged, onChange }) {
+function createLicense({ file, fetch, version, packaged, onChange }) {
   const dev = !packaged && fromSource;
   const server = (process.env.FOLIO_LICENSE_SERVER || 'https://helloxxy.com/api/folio').replace(
     /\/$/,
     '',
   );
   // Tests run from the source as a member, or as another computer; an installed app ignores both.
-  // Recording a demo (FOLIO_DEMO=1) is a member too, but the title bar says nothing about it and
-  // the membership window shows what a new computer sees. It asks the server as a computer of its
-  // own and keeps its own file, so the real membership on this computer is left as it is.
-  const demo = dev && process.env.FOLIO_DEMO === '1';
-  const testMember = dev && (process.env.FOLIO_MEMBER === '1' || demo);
-  const file = demo ? savedFile.replace(/\.json$/, '-demo.json') : savedFile;
+  const testMember = dev && process.env.FOLIO_MEMBER === '1';
   // `order`: a purchase not yet seen paid, { no, at }. `invite`: a friend's invite code typed in
   // for this computer's first purchase.
   let saved = { lease: null, seen: 0, fallbackId: null, order: null, invite: null };
@@ -75,10 +70,7 @@ function createLicense({ file: savedFile, fetch, version, packaged, onChange }) 
     try {
       saved = { ...saved, ...JSON.parse(await fs.readFile(file, 'utf8')) };
     } catch {}
-    let id =
-      (dev && process.env.FOLIO_LICENSE_DEVICE) ||
-      (demo ? 'folio-demo' : '') ||
-      (await machineId());
+    let id = (dev && process.env.FOLIO_LICENSE_DEVICE) || (await machineId());
     if (!id) {
       saved.fallbackId ||= crypto.randomUUID();
       id = saved.fallbackId;
@@ -106,15 +98,7 @@ function createLicense({ file: savedFile, fetch, version, packaged, onChange }) 
   }
   function status() {
     if (testMember)
-      return {
-        member: true,
-        state: 'paid',
-        expires: null,
-        trialUsed: true,
-        codes: [],
-        error: '',
-        ...(demo ? { demo: true } : {}),
-      };
+      return { member: true, state: 'paid', expires: null, trialUsed: true, codes: [], error: '' };
     const now = Date.now();
     const l = lease();
     if (now > saved.seen + 10 * 60_000) {
