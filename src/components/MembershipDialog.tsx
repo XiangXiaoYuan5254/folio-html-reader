@@ -80,7 +80,7 @@ const downloadPage = 'https://helloxxy.com/works/folio/';
 function InviteCard({ invite, forever }: { invite: Invite; forever: boolean }) {
   const [copied, setCopied] = useState(false);
   const { discount, days, lifeAfter } = invite.rules;
-  const share = `页间邀请码 ${invite.code}：首次开通会员时填写，可立减 ${yuan(discount)}。下载页间：${downloadPage}`;
+  const share = `我在用「页间」读文档，首次开通会员时填我的邀请码 ${invite.code}，可立减 ${yuan(discount)}。下载：${downloadPage}`;
   return (
     <section className="membership-invite" aria-labelledby="membership-invite-title">
       <div className="membership-invite-head">
