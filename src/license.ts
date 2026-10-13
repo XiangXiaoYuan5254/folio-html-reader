@@ -12,8 +12,7 @@ export type LicenseStatus = {
   forever?: boolean;
   expires: number | null;
   trialUsed: boolean;
-  // `invite`: days a friend's purchase earned, as many as `days`.
-  codes: { code: string; plan: Plan | 'invite'; days?: number; revoked?: boolean }[];
+  codes: { code: string; plan: Plan; revoked?: boolean }[];
   // Why the last check didn't reach the server, if it didn't.
   error?: string;
 };
@@ -39,20 +38,18 @@ export type Offer = {
     later?: number;
     until?: number;
   }[];
-  invite?: Invite;
+  inviteCode?: InviteCode;
 };
-// Inviting friends, while the server runs the offer. `code`: this computer's own; `friends` paid
-// with it, `toward` of them on a year or lifetime, and `life` once that brought it lifetime (the
-// code then works no more). `first`: this computer hasn't paid yet, so a friend's code counts;
-// `friend` is the one typed in, with why it doesn't count if it doesn't.
-export type Invite = {
+// Inviting friends, while the server runs the offer. `code`: this computer's own, `used` once a
+// friend has bought with it (it works for one friend). `first`: this computer hasn't paid yet, so
+// a friend's code counts; `friend` is the one typed in, with why it doesn't count if it doesn't.
+// `discount`: what a code takes off each plan it works for, in fen.
+export type InviteCode = {
   code: string;
-  friends: number;
-  toward: number;
-  life: boolean;
+  used: boolean;
   first: boolean;
   friend?: { code: string; error?: string };
-  rules: { discount: number; days: Record<Plan, number>; lifeAfter: number };
+  discount: Partial<Record<Plan, number>>;
 };
 // A purchase waiting to be paid: `payUrl` is the checkout page, shown as a QR code. 简付 closes
 // it unpaid after about 15 minutes (`closed`).

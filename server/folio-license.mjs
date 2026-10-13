@@ -3,8 +3,8 @@
 // Codes made here to give away are typed in instead. A code belongs to one computer at a time,
 // the buyer can move it to a new computer once a week, and a refunded code is revoked so the
 // membership it gave ends.
-// Every computer also has an invite code: a friend's first purchase with it costs less, and the
-// friend paying earns its owner days of membership, or lifetime after enough of them.
+// Every computer also has an invite code, good for one friend: that friend's first year or
+// lifetime membership costs less with it.
 // Every answer is a lease signed with the server's Ed25519 key; the app trusts nothing else.
 // Needs Node 22.13+ (node:sqlite) and nothing from npm. Deployment: server/README.md.
 import http from 'node:http';
@@ -34,16 +34,17 @@ export const rules = {
   leaseDays: 7,
   moveEveryDays: 7,
 };
-// Inviting friends. A computer that has never paid takes `discount` (fen) off its first purchase
-// with a friend's code. When it pays, the code's owner gets `days[plan]` days, and lifetime once
-// `lifeAfter` friends bought a year or lifetime; then the code stops working. After `until`
-// (null: no end) no code takes anything off; what was given stays.
+// Inviting friends. A computer that has never paid takes `discount[plan]` (fen) off its first
+// purchase of that plan with another computer's invite code; other plans take nothing. Each code
+// works for one friend, and the code's owner gets nothing for it. After `until` (null: no end)
+// no code takes anything off.
 export const invites = {
-  discount: 500,
-  days: { month: 7, year: 30, life: 30 },
-  lifeAfter: 5,
+  discount: { year: 1000, life: 2000 },
   until: null,
 };
+// How long an unpaid order holds the invite code it was made with, so that two friends paying
+// at once can't both use it. 简付 closes an unpaid order after about 15 minutes.
+const inviteHold = 20 * 60_000;
 // No 0/O, 1/I/L: codes are read off a screen and typed in.
 const alphabet = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 
@@ -115,18 +116,17 @@ export function openDb(file) {
       code TEXT
     );
     CREATE INDEX IF NOT EXISTS orders_device ON orders(device);
-    -- Each computer's invite code, made the first time it asks; life_code is the lifetime code
-    -- its friends earned it.
+    -- Each computer's invite code, made the first time it asks.
     CREATE TABLE IF NOT EXISTS invites (
       device TEXT PRIMARY KEY,
       code TEXT NOT NULL UNIQUE,
-      created_at INTEGER NOT NULL,
-      life_code TEXT
+      created_at INTEGER NOT NULL
     );
   `);
   // Added later: what an upgrade to lifetime took off for the days left of bought memberships.
-  // Then what a friend's invite code took off, whose code it was (`inviter`, a device) and the
-  // code that friend's payment gave its owner (`reward`).
+  // Then what a friend's invite code took off and whose code it was (`inviter`, a device).
+  // Databases from 0.20 also have orders.reward and invites.life_code, from when a friend's
+  // purchase earned the code's owner days of membership; nothing reads them now.
   const columns = db
     .prepare('PRAGMA table_info(orders)')
     .all()
@@ -135,7 +135,6 @@ export function openDb(file) {
     ['credit', 'INTEGER'],
     ['discount', 'INTEGER'],
     ['inviter', 'TEXT'],
-    ['reward', 'TEXT'],
   ])
     if (!columns.includes(name)) db.exec(`ALTER TABLE orders ADD COLUMN ${name} ${type}`);
   db.exec('CREATE INDEX IF NOT EXISTS orders_inviter ON orders(inviter)');
@@ -227,11 +226,9 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
           ? Math.min(expires, at + rules.leaseDays * DAY)
           : at + rules.leaseDays * DAY,
       trialUsed: m.trialUsed,
-      // `invite`: days a friend's purchase earned, as many as `days`.
       codes: m.codes.map((c) => ({
         code: formatCode(c.code),
         plan: c.plan,
-        ...(c.plan === 'invite' ? { days: c.days } : {}),
         ...(c.revoked_at ? { revoked: true } : {}),
       })),
     });
@@ -311,7 +308,7 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
   function priceFor(plan, device, at, friend = null) {
     const full = priceOf(plan, at);
     const credit = plan === 'life' && device ? Math.min(creditOf(device, at), full - 100) : 0;
-    const discount = friend ? Math.min(invites.discount, full - credit - 100) : 0;
+    const discount = friend ? Math.min(invites.discount[plan] || 0, full - credit - 100) : 0;
     return { amount: full - credit - discount, credit, discount };
   }
 
@@ -332,20 +329,16 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
     }
     return row;
   }
-  // Friends who paid with a computer's code, refunded ones left out; `toward`: of them, those who
-  // bought a year or lifetime. `life`: they earned it lifetime, and the code is spent.
-  function invited(row) {
-    const n = one(
-      `SELECT count(*) AS friends, coalesce(sum(o.plan != 'month'), 0) AS toward FROM orders o
-       JOIN codes c ON c.code = o.code WHERE o.inviter = ? AND c.revoked_at IS NULL`,
+  // The friend's purchase that used a computer's invite code, refunded ones left out.
+  const usedBy = (row) =>
+    one(
+      `SELECT o.no, o.paid_at FROM orders o JOIN codes c ON c.code = o.code
+       WHERE o.inviter = ? AND c.revoked_at IS NULL`,
       row.device,
     );
-    const life =
-      !!row.life_code &&
-      !one('SELECT revoked_at FROM codes WHERE code = ?', row.life_code).revoked_at;
-    return { ...n, life };
-  }
   // The friend whose code a computer typed in, if it takes something off its first purchase.
+  // Someone paying with the code on another computer right now has it until 简付 closes their
+  // order.
   function friendOf(device, typed, at) {
     const code = normalizeCode(typed);
     if (!code || !inviting(at)) return null;
@@ -354,72 +347,26 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
     if (row.device === device) throw new Refusal(409, 'invite-own', '不能用自己的邀请码');
     if (hasPaid(device))
       throw new Refusal(409, 'invite-not-first', '邀请码仅限这台电脑首次开通会员时使用');
-    if (invited(row).life) throw new Refusal(410, 'invite-spent', '这个邀请码已经停用了');
-    return row;
-  }
-  // The inviter's thanks for a friend's purchase: days, and lifetime once enough friends bought a
-  // year or lifetime. The days are a code of their own on the inviter's computer, so a refund
-  // takes back just them.
-  function reward(row, at) {
-    const days = invites.days[row.plan];
-    const code = giveCode(row.inviter, 'invite', days, '邀请奖励', at);
-    run('UPDATE orders SET reward = ? WHERE no = ?', code, row.no);
-    log('invite-reward', code, row.inviter, `${days} 天 · ${row.no}`);
-    settleLife(row.inviter, at);
-  }
-  // Lifetime for enough friends: given once, taken back while refunds leave too few, given back
-  // when they're restored.
-  function settleLife(device, at) {
-    const row = inviteOf(device);
-    const due = invited(row).toward >= invites.lifeAfter;
-    const life = row.life_code && one('SELECT * FROM codes WHERE code = ?', row.life_code);
-    if (due && !life) {
-      const code = giveCode(device, 'life', 0, '邀请奖励', at);
-      run('UPDATE invites SET life_code = ? WHERE device = ?', code, device);
-      log('invite-life', code, device);
-    } else if (due && life.revoked_at) {
-      run('UPDATE codes SET revoked_at = NULL, revoke_reason = NULL WHERE code = ?', life.code);
-      log('restore', life.code, life.device, '邀请的好友够了');
-    } else if (!due && life && !life.revoked_at) {
-      run(
-        'UPDATE codes SET revoked_at = ?, revoke_reason = ? WHERE code = ?',
-        at,
-        '邀请的好友退款了',
-        life.code,
-      );
-      log('revoke', life.code, life.device, '邀请的好友退款了');
-    }
-  }
-  // After a refund or its undoing: the days a purchase earned its inviter follow it, and so does
-  // the inviter's lifetime if the count of friends crosses the line.
-  function followInvite(code) {
-    const o = one(
-      `SELECT o.inviter, o.reward, c.revoked_at FROM orders o JOIN codes c ON c.code = o.code
-       WHERE o.code = ?`,
-      code,
+    const held = one(
+      'SELECT 1 FROM orders WHERE inviter = ? AND device != ? AND code IS NULL AND created_at > ?',
+      row.device,
+      device,
+      at - inviteHold,
     );
-    if (!o?.inviter) return;
-    if (o.reward) {
-      const reason = o.revoked_at ? '邀请的好友退款了' : null;
-      run(
-        'UPDATE codes SET revoked_at = ?, revoke_reason = ? WHERE code = ?',
-        o.revoked_at,
-        reason,
-        o.reward,
-      );
-      log(o.revoked_at ? 'revoke' : 'restore', o.reward, o.inviter, reason);
-    }
-    settleLife(o.inviter, now());
+    if (usedBy(row) || held) throw new Refusal(410, 'invite-used', '这个邀请码已经被用过了');
+    return row;
   }
 
   // What the app offers to buy, at today's prices for the computer asking, with a friend's code
-  // if it typed one in. `invite`: this computer's own code and what it has earned, while the
-  // offer runs; `friend` is the code typed in, with why it doesn't count if it doesn't.
+  // if it typed one in. `inviteCode`, while the offer runs: this computer's own code, whether a
+  // friend has used it, and what a code takes off; `friend` is the code typed in, with why it
+  // doesn't count if it doesn't. (0.20 read `invite`, with rewards for the code's owner that are
+  // gone now, so it gets nothing to show.)
   function offer(body = {}) {
     const at = now();
     const device = /^[0-9a-f]{32}$/.test(body.device || '') ? body.device : null;
     let friend = null;
-    let invite;
+    let inviteCode;
     if (device && inviting(at)) {
       const mine = inviteOf(device);
       const typed = normalizeCode(body.invite);
@@ -430,12 +377,12 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
         if (!(e instanceof Refusal)) throw e;
         refused = e.message;
       }
-      invite = {
+      inviteCode = {
         code: mine.code,
-        ...invited(mine),
+        used: !!usedBy(mine),
         first: !hasPaid(device),
         ...(typed ? { friend: { code: typed, ...(refused ? { error: refused } : {}) } } : {}),
-        rules: invites,
+        discount: invites.discount,
       };
     }
     return {
@@ -451,7 +398,7 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
           ...(p.early && at < p.early.until ? { later: p.amount, until: p.early.until } : {}),
         };
       }),
-      ...(invite ? { invite } : {}),
+      ...(inviteCode ? { inviteCode } : {}),
     };
   }
   // An order at 简付; the app shows its checkout page as a QR code to scan with WeChat or Alipay.
@@ -467,7 +414,8 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
       'FO' +
       new Date(at).toISOString().slice(0, 10).replace(/-/g, '') +
       crypto.randomBytes(5).toString('hex').toUpperCase();
-    const friend = friendOf(device, body.invite, at);
+    // A friend's code only for the plans it takes something off.
+    const friend = invites.discount[body.plan] ? friendOf(device, body.invite, at) : null;
     const { amount, credit, discount } = priceFor(body.plan, device, at, friend);
     let made;
     try {
@@ -485,7 +433,7 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
       amount,
       credit || null,
       discount || null,
-      friend?.device ?? null,
+      discount ? friend.device : null,
       at,
       made.orderId,
       made.payUrl,
@@ -524,7 +472,6 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
       no,
     );
     log('purchase', code, row.device, `${row.plan} ${row.amount}`);
-    if (row.inviter) reward(row, at);
   }
   // The app asks while the QR code is on screen, and once more later if it was closed unpaid.
   // Until 简付's notification comes, the server asks 简付 itself, at most every few seconds.
@@ -573,21 +520,11 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
     if (!row) throw new Refusal(404, 'not-found', '没有这个激活码');
     return row;
   };
-  // The friend's purchase a reward code thanks for.
-  const rewardOrder = (code) => {
-    const o = one('SELECT no, plan, amount, paid_at FROM orders WHERE reward = ?', code);
-    return o ? { no: o.no, plan: o.plan, amount: o.amount, paid: o.paid_at } : null;
-  };
-  // A computer's invite code and what friends brought it: `days` still counting, and lifetime.
+  // A computer's invite code, and the friend's purchase that used it (`usedBy`, an order number).
   function inviteInfo(device) {
     const row = one('SELECT * FROM invites WHERE device = ?', device);
     if (!row) return null;
-    const { d } = one(
-      `SELECT coalesce(sum(c.days), 0) AS d FROM orders o JOIN codes c ON c.code = o.reward
-       WHERE o.inviter = ? AND c.revoked_at IS NULL`,
-      device,
-    );
-    return { code: row.code, ...invited(row), days: d };
+    return { code: row.code, usedBy: usedBy(row)?.no ?? null };
   }
   // China's calendar day of a time, as 2026-10-12.
   const dayOf = (ms) => new Date(ms + 8 * 3_600_000).toISOString().slice(0, 10);
@@ -650,9 +587,7 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
               paid: o.paid_at,
             }
           : null,
-        // A code an invite gave: the friend's purchase it thanks for (none for lifetime).
-        rewardFor: row.batch === '邀请奖励' ? rewardOrder(row.code) : null,
-        // Its computer's own invite code and what friends brought it.
+        // Its computer's own invite code, and whether a friend has used it.
         invite: row.device ? inviteInfo(row.device) : null,
         otherCodes: m
           ? m.codes.filter((c) => c.code !== row.code).map((c) => formatCode(c.code))
@@ -662,7 +597,7 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
     },
     // A refund: the code stops counting, and its computer's membership shrinks by it the next
     // time the app checks in (at most `leaseDays` later, sooner while it's online). A purchase
-    // with a friend's invite code takes back what it earned that friend.
+    // with a friend's invite code gives that code back, for another friend.
     revoke({ code, reason }) {
       const row = codeRow(code);
       run(
@@ -672,14 +607,12 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
         row.code,
       );
       log('revoke', row.code, row.device, reason || null);
-      followInvite(row.code);
       return admin.info({ code: row.code });
     },
     restore({ code }) {
       const row = codeRow(code);
       run('UPDATE codes SET revoked_at = NULL, revoke_reason = NULL WHERE code = ?', row.code);
       log('restore', row.code, row.device);
-      followInvite(row.code);
       return admin.info({ code: row.code });
     },
     // Lets the buyer move to another computer now, without waiting out the week.
@@ -702,8 +635,7 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
           since,
         );
       // Each member computer by what it's on: lifetime, or the plan of the code running now.
-      // `invite`: on days friends' purchases earned it.
-      const memberPlans = { month: 0, year: 0, life: 0, invite: 0 };
+      const memberPlans = { month: 0, year: 0, life: 0 };
       for (const { device } of devices) {
         const plan = runningPlan(device, at);
         if (plan) memberPlans[plan]++;
@@ -786,9 +718,8 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
       const midnight = Date.parse(`${dayOf(at)}T00:00:00+08:00`);
       const since = span ? midnight - (span - 1) * DAY : 0;
       const orders = all(
-        `SELECT o.*, c.revoked_at, r.days AS reward_days, r.revoked_at AS reward_revoked,
-           d.platform FROM orders o JOIN codes c ON c.code = o.code
-         LEFT JOIN codes r ON r.code = o.reward LEFT JOIN devices d ON d.device = o.device
+        `SELECT o.*, c.revoked_at, d.platform FROM orders o JOIN codes c ON c.code = o.code
+         LEFT JOIN devices d ON d.device = o.device
          WHERE o.paid_at > ? ORDER BY o.paid_at`,
         since,
       );
@@ -852,13 +783,6 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
       }
 
       const invitedSales = sales.filter((o) => o.inviter);
-      const inviters = all(
-        `SELECT i.*, d.platform, count(o.no) AS friends, coalesce(sum(o.amount), 0) AS amount,
-           coalesce(sum(o.plan != 'month'), 0) AS toward FROM invites i
-         JOIN orders o ON o.inviter = i.device JOIN codes c ON c.code = o.code
-         LEFT JOIN devices d ON d.device = i.device
-         WHERE c.revoked_at IS NULL GROUP BY i.device ORDER BY friends DESC, amount DESC LIMIT 20`,
-      );
       return {
         days: span,
         sales: sum(sales),
@@ -893,27 +817,6 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
             Object.keys(prices).map((p) => [p, invitedSales.filter((o) => o.plan === p).length]),
           ),
           discount: invitedSales.reduce((a, o) => a + (o.discount || 0), 0),
-          rewardDays: invitedSales.reduce(
-            (a, o) => a + (o.reward_revoked ? 0 : o.reward_days || 0),
-            0,
-          ),
-          // Different invite codes used by the window's sales.
-          codes: new Set(invitedSales.map((o) => o.inviter)).size,
-          // Lifetime memberships friends earned, all time.
-          lives: one(
-            `SELECT count(*) AS n FROM invites i JOIN codes c ON c.code = i.life_code
-             WHERE c.revoked_at IS NULL`,
-          ).n,
-          // The best inviters of all time: refunded friends left out.
-          top: inviters.map((i) => ({
-            code: i.code,
-            platform: i.platform || null,
-            friends: i.friends,
-            toward: i.toward,
-            amount: i.amount,
-            life: invited(i).life,
-            since: i.created_at,
-          })),
         },
       };
     },

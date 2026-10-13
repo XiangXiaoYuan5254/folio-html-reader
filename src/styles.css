@@ -2168,45 +2168,11 @@ button.brand {
   padding: 3px 10px;
   font-size: 12px;
 }
-.membership-invite-rules {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 8px 0 0;
-  padding: 0 0 0 16px;
-  line-height: 1.6;
-}
-.membership-invite-rules li::marker {
-  color: var(--faint);
-}
-.dialog .membership-invite-done {
+.dialog .membership-invite-note {
   margin: 6px 0 0;
   font-size: 12px;
   line-height: 1.6;
   color: var(--text-3);
-}
-.membership-invite-progress {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
-  color: var(--text-2);
-  font-variant-numeric: tabular-nums;
-}
-.membership-invite-pips {
-  display: inline-flex;
-  gap: 3px;
-}
-.membership-invite-pips i {
-  width: 14px;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--line-strong);
-}
-.membership-invite-pips i.is-on {
-  background: var(--accent);
 }
 .membership-buy {
   width: 100%;
