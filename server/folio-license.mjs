@@ -38,10 +38,24 @@ export const rules = {
 // purchase of that plan with another computer's invite code; other plans take nothing. Each code
 // works for one friend, and the code's owner gets nothing for it. After `until` (null: no end)
 // no code takes anything off.
+// `share` is what 复制邀请 copies, {code} being the computer's own code and {discount} what it
+// takes off each plan.
 export const invites = {
   discount: { year: 1000, life: 2000 },
+  share:
+    '我在用「页间」读文档，推荐你也试试。\n填写我的邀请码：{code}\n第一次开通{discount}（该码只能用一次）\n电脑上下载：https://helloxxy.com/works/folio/',
   until: null,
 };
+const planNames = { month: '月度会员', year: '年度会员', life: '永久会员' };
+// Fen as ¥10, ¥19.9.
+const yuan = (fen) => `¥${(fen / 100).toFixed(fen % 10 ? 2 : fen % 100 ? 1 : 0)}`;
+const shareText = (code) =>
+  invites.share.replaceAll('{code}', code).replaceAll(
+    '{discount}',
+    Object.entries(invites.discount)
+      .map(([plan, fen]) => `${planNames[plan]}立减 ${yuan(fen)}`)
+      .join('，'),
+  );
 // How long an unpaid order holds the invite code it was made with, so that two friends paying
 // at once can't both use it. 简付 closes an unpaid order after about 15 minutes.
 const inviteHold = 20 * 60_000;
@@ -358,10 +372,10 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
   }
 
   // What the app offers to buy, at today's prices for the computer asking, with a friend's code
-  // if it typed one in. `inviteCode`, while the offer runs: this computer's own code, whether a
-  // friend has used it, and what a code takes off; `friend` is the code typed in, with why it
-  // doesn't count if it doesn't. (0.20 read `invite`, with rewards for the code's owner that are
-  // gone now, so it gets nothing to show.)
+  // if it typed one in. `inviteCode`, while the offer runs: this computer's own code, the invite
+  // to send with it, whether a friend has used it, and what a code takes off; `friend` is the
+  // code typed in, with why it doesn't count if it doesn't. (0.20 read `invite`, with rewards
+  // for the code's owner that are gone now, so it gets nothing to show.)
   function offer(body = {}) {
     const at = now();
     const device = /^[0-9a-f]{32}$/.test(body.device || '') ? body.device : null;
@@ -379,6 +393,7 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
       }
       inviteCode = {
         code: mine.code,
+        share: shareText(mine.code),
         used: !!usedBy(mine),
         first: !hasPaid(device),
         ...(typed ? { friend: { code: typed, ...(refused ? { error: refused } : {}) } } : {}),

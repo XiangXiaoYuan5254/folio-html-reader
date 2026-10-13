@@ -1983,6 +1983,7 @@ button.brand {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  white-space: pre-line;
 }
 .membership-status.is-paid {
   position: relative;
@@ -2002,6 +2003,34 @@ button.brand {
   border: 1px solid rgb(207 174 108 / 0.2);
   border-radius: 7px;
   pointer-events: none;
+}
+/* Just paid: a band of light passes over the card once. */
+.membership-status.is-welcome {
+  overflow: hidden;
+}
+.membership-status.is-welcome::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 35%,
+    rgb(242 226 182 / 0.22) 50%,
+    transparent 65%
+  );
+  transform: translateX(-100%);
+  animation: membership-shine 1.4s var(--ease-out) 0.25s both;
+  pointer-events: none;
+}
+@keyframes membership-shine {
+  to {
+    transform: translateX(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .membership-status.is-welcome::after {
+    display: none;
+  }
 }
 .membership-status.is-paid strong {
   font-family: var(--m-serif);
@@ -2332,6 +2361,7 @@ button.brand {
   color: var(--text-2);
 }
 .membership-invite-code {
+  display: inline-grid;
   margin-left: auto;
   padding: 1px 8px;
   border-radius: 5px;
@@ -2341,7 +2371,25 @@ button.brand {
   font-size: 13px;
   letter-spacing: 1.5px;
   color: var(--text);
-  user-select: all;
+  transition: box-shadow var(--dur-fast) ease-out;
+}
+.membership-invite-code:hover:not(:disabled) {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--m-gold);
+}
+.membership-invite-code > span {
+  grid-area: 1 / 1;
+  text-align: center;
+}
+.membership-invite-code > .is-copied {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--m-gold-text);
+}
+.membership-invite-code > .is-hidden {
+  visibility: hidden;
 }
 .membership-invite-head .secondary-button {
   gap: 4px;

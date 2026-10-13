@@ -72,18 +72,27 @@ const compare: [string, boolean][] = [
   ['页老师白板讲解、语音对话', false],
   ['精读笔记、找论文、AI 改源码', false],
 ];
-const downloadPage = 'https://helloxxy.com/works/folio/';
 // What a friend's code takes off, as 年度会员减 ¥10、永久会员减 ¥20.
 const offText = (discount: InviteCode['discount']) =>
   (['month', 'year', 'life'] as const)
     .filter((p) => discount[p])
     .map((p) => `${{ month: '月度', year: '年度', life: '永久' }[p]}会员减 ${yuan(discount[p]!)}`)
     .join('、');
-// This computer's invite code: it takes something off one friend's first purchase.
+// This computer's invite code: it takes something off one friend's first purchase. The button
+// copies the server's invite, with the code and download link in it; clicking the code copies
+// just the code (for a comment, or a chat that already knows 页间), and says so for a moment.
 function InviteCard({ invite }: { invite: InviteCode }) {
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<'' | 'code' | 'share'>('');
+  useEffect(() => {
+    if (copied !== 'code') return;
+    const timer = window.setTimeout(() => setCopied(''), 1500);
+    return () => clearTimeout(timer);
+  }, [copied]);
   const off = offText(invite.discount);
-  const share = `我在用「页间」读文档，送你我的邀请码 ${invite.code}：第一次开通${off}，这个码只能用一次。下载：${downloadPage}`;
+  const copy = (what: 'code' | 'share') =>
+    void navigator.clipboard
+      .writeText(what === 'code' ? invite.code : invite.share)
+      .then(() => setCopied(what));
   return (
     <section className="membership-invite" aria-labelledby="membership-invite-title">
       <div className="membership-invite-head">
@@ -91,14 +100,21 @@ function InviteCard({ invite }: { invite: InviteCode }) {
         <strong id="membership-invite-title">邀请好友</strong>
         {invite.used ? null : (
           <>
-            <code className="membership-invite-code">{invite.code}</code>
+            {/* Both words take the same cell, so the button keeps its width either way. */}
             <button
               type="button"
-              className="secondary-button"
-              onClick={() => void navigator.clipboard.writeText(share).then(() => setCopied(true))}
+              className="membership-invite-code"
+              title="点击复制邀请码"
+              onClick={() => copy('code')}
             >
-              {copied ? <Check size={13} /> : <Copy size={13} />}
-              {copied ? '已复制' : '复制邀请'}
+              <span className={copied === 'code' ? 'is-hidden' : ''}>{invite.code}</span>
+              <span className={copied === 'code' ? 'is-copied' : 'is-copied is-hidden'}>
+                已复制
+              </span>
+            </button>
+            <button type="button" className="secondary-button" onClick={() => copy('share')}>
+              {copied === 'share' ? <Check size={13} /> : <Copy size={13} />}
+              {copied === 'share' ? '已复制' : '复制邀请'}
             </button>
           </>
         )}
@@ -195,6 +211,8 @@ export function MembershipDialog({
   const [friendTyping, setFriendTyping] = useState(false);
   const [friendCode, setFriendCode] = useState('');
   const [inviting, setInviting] = useState(false);
+  // Paid just now in this window: it says so and shows the invite, and closes on 开始使用.
+  const [welcome, setWelcome] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const friendInput = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -233,12 +251,8 @@ export function MembershipDialog({
       if (!r?.paid) return void (timer = window.setTimeout(ask, 2000));
       setOrder(null);
       setRenewing(false);
+      setWelcome(true);
       loadOffer();
-      const s = r.status;
-      onNotify(
-        s.forever ? '已开通永久会员' : `已开通，会员到 ${s.expires ? when(s.expires) : '—'}`,
-      );
-      if (reason) onClose();
     };
     timer = window.setTimeout(ask, 2000);
     return () => {
@@ -268,7 +282,15 @@ export function MembershipDialog({
       if (reason && s.member) onClose();
     });
   if (!status) return null;
-  const head = headline(status);
+  const head =
+    welcome && status.state === 'paid'
+      ? {
+          title: '开通成功',
+          detail: status.forever
+            ? 'PDF 和全部 AI 功能已经可以用了，永久有效'
+            : `PDF 和全部 AI 功能已经可以用了\n会员到 ${status.expires ? when(status.expires) : '—'}`,
+        }
+      : headline(status);
   const member = status.member;
   const price = offer?.plans.find((p) => p.plan === picked)?.amount;
   const liveCodes = status.codes.some((c) => !c.revoked);
@@ -364,7 +386,9 @@ export function MembershipDialog({
             </button>
           </div>
           {status.state !== 'none' || status.codes.length || status.error ? (
-            <div className={`membership-status${paid ? ' is-paid' : member ? ' is-member' : ''}`}>
+            <div
+              className={`membership-status${paid ? ' is-paid' : member ? ' is-member' : ''}${paid && welcome ? ' is-welcome' : ''}`}
+            >
               <div className="membership-status-head">
                 {paid ? (
                   <span className="membership-badge">
@@ -420,7 +444,7 @@ export function MembershipDialog({
               ) : null}
             </div>
           ) : null}
-          {status.forever ? null : offerError || (offer && !offer.ready) ? (
+          {status.forever || welcome ? null : offerError || (offer && !offer.ready) ? (
             <p className="membership-offline">
               {offerError ? '连不上激活服务器，暂时不能购买。' : '暂时不能在线购买，请稍后再试。'}
               <button type="button" className="link-button" onClick={loadOffer}>
@@ -554,6 +578,15 @@ export function MembershipDialog({
                           autoComplete="off"
                           maxLength={12}
                           onChange={(e) => setFriendCode(e.target.value)}
+                          onPaste={(e) => {
+                            // A friend's whole invite pasted in: just the code from it.
+                            const found = e.clipboardData
+                              .getData('text')
+                              .match(/邀请码[\s：:]*([0-9a-z]{6})(?![0-9a-z])/i);
+                            if (!found) return;
+                            e.preventDefault();
+                            setFriendCode(found[1].toUpperCase());
+                          }}
                           onKeyDown={(e) => {
                             if (e.key !== 'Enter') return;
                             e.preventDefault();
@@ -601,6 +634,11 @@ export function MembershipDialog({
             </>
           )}
           {invite && (paid || inviting) ? <InviteCard invite={invite} /> : null}
+          {paid && welcome ? (
+            <button type="button" className="membership-buy" onClick={onClose}>
+              开始使用
+            </button>
+          ) : null}
           {refusal ? (
             <div className="membership-move" role="alert">
               {refusal.canMoveAt ? (
@@ -651,7 +689,7 @@ export function MembershipDialog({
             </div>
           ) : null}
           <div className="membership-footer">
-            {typing ? null : (
+            {typing || welcome ? null : (
               <button type="button" className="link-button" onClick={() => setTyping(true)}>
                 有激活码？
               </button>

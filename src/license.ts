@@ -40,12 +40,14 @@ export type Offer = {
   }[];
   inviteCode?: InviteCode;
 };
-// Inviting friends, while the server runs the offer. `code`: this computer's own, `used` once a
-// friend has bought with it (it works for one friend). `first`: this computer hasn't paid yet, so
-// a friend's code counts; `friend` is the one typed in, with why it doesn't count if it doesn't.
-// `discount`: what a code takes off each plan it works for, in fen.
+// Inviting friends, while the server runs the offer. `code`: this computer's own, `share` the
+// invite to send with it, `used` once a friend has bought with it (it works for one friend).
+// `first`: this computer hasn't paid yet, so a friend's code counts; `friend` is the one typed
+// in, with why it doesn't count if it doesn't. `discount`: what a code takes off each plan it
+// works for, in fen.
 export type InviteCode = {
   code: string;
+  share: string;
   used: boolean;
   first: boolean;
   friend?: { code: string; error?: string };
