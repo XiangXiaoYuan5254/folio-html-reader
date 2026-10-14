@@ -292,6 +292,8 @@ export function MembershipDialog({
         }
       : headline(status);
   const member = status.member;
+  // A lifetime member has nothing left for an activation code to add on this computer.
+  const lifetime = member && status.forever;
   const price = offer?.plans.find((p) => p.plan === picked)?.amount;
   const liveCodes = status.codes.some((c) => !c.revoked);
   const paid = status.state === 'paid';
@@ -669,7 +671,7 @@ export function MembershipDialog({
               {error}
             </p>
           ) : null}
-          {typing ? (
+          {typing && !lifetime ? (
             <div className="membership-activate">
               <input
                 ref={input}
@@ -689,7 +691,7 @@ export function MembershipDialog({
             </div>
           ) : null}
           <div className="membership-footer">
-            {typing || welcome ? null : (
+            {typing || welcome || lifetime ? null : (
               <button type="button" className="link-button" onClick={() => setTyping(true)}>
                 有激活码？
               </button>
