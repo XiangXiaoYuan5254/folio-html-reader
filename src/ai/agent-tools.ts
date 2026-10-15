@@ -247,6 +247,8 @@ type Context = {
   host: AiHost;
   text: (path: string) => Promise<DocText>;
   progress: (detail: string) => void;
+  // Looking things up in the open documents (readingTools), which has no list_files.
+  reading?: boolean;
 };
 
 const fail = (content: string): ToolOutcome => ({ content, isError: true, detail: content });
@@ -271,7 +273,7 @@ function newPath(value: unknown) {
     )
     .join('/');
 }
-function existing(host: AiHost, value: unknown) {
+function existing(host: AiHost, value: unknown, reading = false) {
   const path = cleanPath(value);
   const files = host.files();
   const hit = files.find((f) => f.path === path) || files.find((f) => fileName(f.path) === path);
@@ -280,9 +282,12 @@ function existing(host: AiHost, value: unknown) {
     .filter((f) => f.path.includes(fileName(path).replace(/\.\w+$/, '')))
     .slice(0, 5)
     .map((f) => f.path);
-  throw Error(
-    `找不到文档 ${path}。${near.length ? `你是不是指：${near.join('、')}？` : '可以先用 list_files 查看路径。'}`,
-  );
+  const hint = near.length
+    ? `你是不是指：${near.join('、')}？`
+    : reading
+      ? `正在阅读的文档是：${files.map((f) => f.path).join('、')}。`
+      : '可以先用 list_files 查看路径。';
+  throw Error(`找不到文档 ${path}。${hint}`);
 }
 const title = (path: string) => `《${fileName(path)}》`;
 function pageRange(spec: string, total: number) {
@@ -320,7 +325,7 @@ export function prepareTool(name: string, input: any, ctx: Context): PreparedToo
         title: `搜索“${query.slice(0, 30)}”`,
         run: async () => {
           if (!query) return fail('请提供搜索关键词。');
-          const scope = input?.path ? [existing(host, input.path)] : host.files();
+          const scope = input?.path ? [existing(host, input.path, ctx.reading)] : host.files();
           const words = query.toLowerCase().split(/\s+/).filter(Boolean);
           const results: string[] = [];
           let docs = 0;
@@ -350,7 +355,7 @@ export function prepareTool(name: string, input: any, ctx: Context): PreparedToo
       return {
         title: `阅读${title(cleanPath(input?.path))}${input?.pages ? `第 ${input.pages} 页` : ''}`,
         run: async () => {
-          const file = existing(host, input?.path);
+          const file = existing(host, input?.path, ctx.reading);
           ctx.progress('正在载入文档…');
           const doc = await ctx.text(file.path);
           let body = docBody(doc);

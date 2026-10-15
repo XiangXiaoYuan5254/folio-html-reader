@@ -681,18 +681,21 @@ async function streamCodex({ provider, request, signal, onDelta, version }) {
     : /^(minimal|low|medium|high|xhigh|max)$/.test(provider.effort || '')
       ? provider.effort
       : '';
-  // Another model picked halfway: the thread goes on with it, from this turn.
-  const switched = tail && provider.model && provider.model !== kept.model;
+  // The model in use, by name: no model is the default one.
+  const wanted = model?.id || provider.model || '';
+  if (kept && !tail) kept.model = wanted;
+  // Another model picked halfway, the default one too: the thread goes on with it, from this turn.
+  const switched = tail && wanted && wanted !== kept.model;
   try {
     const turn = await s.call('turn/start', {
       threadId: thread.id,
       input: turnInput(tail || messages),
       ...(effort ? { effort } : {}),
-      ...(switched ? { model: provider.model } : {}),
+      ...(switched ? { model: wanted } : {}),
       summary: 'auto',
     });
     thread.turnId = turn?.turn?.id || thread.turnId;
-    if (switched) kept.model = provider.model;
+    if (switched) kept.model = wanted;
   } catch (e) {
     thread.fail(new CodexError(friendly(e.message)));
   }

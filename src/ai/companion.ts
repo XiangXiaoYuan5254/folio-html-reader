@@ -79,7 +79,8 @@ export function notesRecord(path: string, body: string) {
   const long = text.length > 8_000;
   return `（我为这篇文档制作了精读笔记，保存为 ${path}，已在右栏打开。下面是笔记的正文${long ? '（较长，只列出前面的部分）' : ''}：）\n\n${text.slice(0, 8_000)}`;
 }
-// And of one that didn't finish: how far it got, and that it can go on.
+// And of one that didn't finish: how far it got. Whether it can go on is added as the
+// conversation is sent (notesNext), as that lasts only while the app is open.
 export function unfinishedNotes(page: string, notes: number, stopped: boolean, why = '') {
   const sections = [...page.matchAll(/<h2[^>]*>([\s\S]*?)<\/h2>/gi)]
     .map((m) => draftText(m[1]))
@@ -92,8 +93,22 @@ export function unfinishedNotes(page: string, notes: number, stopped: boolean, w
       : notes
         ? `长文档已经通读了 ${notes} 部分，页面还没开始写`
         : '还没有写出内容';
-  const next = page.trim() || notes ? '用户说“继续”或点「接着写」，就会从断开的地方接着写完。' : '';
-  return `（我在为这篇文档制作精读笔记，${how}，${done}。${next}）`;
+  return `（我在为这篇文档制作精读笔记，${how}，${done}。）`;
+}
+const goOn = '用户说“继续”或点「接着写」，就会从断开的地方接着写完。';
+// An unfinished 精读笔记 as the model is told of it: that it can go on, while the app still has
+// what it got done; that it can't, for the conversation's latest notes once that's gone (after
+// a restart, say); nothing more for earlier ones, written on in a later reply.
+export function notesNext(said: string, next: 'go-on' | 'start-over' | '') {
+  // Conversations from 0.22.0 have “go on” written in.
+  const base = said.replace(goOn, '');
+  const add =
+    next === 'go-on'
+      ? goOn
+      : next === 'start-over'
+        ? '已经没法从断开的地方接着写了；用户想要完整的笔记，可以重新点「制作精读笔记」。'
+        : '';
+  return add && base.endsWith('）') ? `${base.slice(0, -1)}${add}）` : base;
 }
 // The page being written, as plain text, so a long wait visibly moves.
 export function draftText(html: string) {

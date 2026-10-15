@@ -72,6 +72,7 @@ import {
   companionPrompt,
   companionSystem,
   joinContinuation,
+  notesNext,
   notesRecord,
   unfinishedNotes,
 } from './companion';
@@ -609,8 +610,8 @@ export class Assistant {
     return { system: withDocuments(readingSystem(config.prefs, ctx.docs.length), blocks), partial };
   }
   // A reply as the model is to see it in the conversation: what it's told the reply was, and
-  // where an unfinished one broke off.
-  private said(m: ChatMessage, vision: boolean, agent = false): WireMessage {
+  // where an unfinished one broke off. `latest`: the last 精读笔记 reply before the question.
+  private said(m: ChatMessage, vision: boolean, agent = false, latest = false): WireMessage {
     if (m.role === 'user') {
       const asked = m.text || (agent ? imageRequest : imageQuestion);
       return userTurn(m.selection ? selectionPrompt(m.selection, asked) : asked, m.images, vision);
@@ -624,7 +625,14 @@ export class Assistant {
             .join('\n')
         : m.text
     ).trim();
-    if (m.said !== undefined) return { role: 'assistant', content: m.said };
+    if (m.said !== undefined)
+      return {
+        role: 'assistant',
+        content:
+          m.status === 'stopped' || m.status === 'error'
+            ? notesNext(m.said, this.companionWork.has(m.id) ? 'go-on' : latest ? 'start-over' : '')
+            : m.said,
+      };
     const content =
       m.status === 'stopped'
         ? text
@@ -640,7 +648,9 @@ export class Assistant {
   // The conversation before a question, from where its summary ends, as the model sees it.
   private conversation(thread: ChatThread, before: ChatMessage[], vision: boolean) {
     const from = thread.summary ? before.findIndex((m) => m.id === thread.summary!.upTo) + 1 : 0;
-    const wire = before.slice(from).map((m) => this.said(m, vision, thread.mode === 'agent'));
+    const open = before.slice(from);
+    const latest = [...open].reverse().find((m) => m.said !== undefined);
+    const wire = open.map((m) => this.said(m, vision, thread.mode === 'agent', m === latest));
     while (wire[0]?.role === 'assistant') wire.shift();
     return wire;
   }
@@ -889,6 +899,7 @@ export class Assistant {
       host,
       text: (path) => this.text(path),
       progress: () => {},
+      reading: true,
     });
     const id = `read-${call.id}`;
     this.step(patch, { id, tool: call.name, title: tool.title, status: 'running' });
