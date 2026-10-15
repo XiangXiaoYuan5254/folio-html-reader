@@ -233,5 +233,7 @@ export type ChatThread = {
   createdAt: number;
   updatedAt: number;
   messages: ChatMessage[];
+  // A reply finished while another conversation was open; cleared once this one is opened.
+  unseen?: boolean;
 };
 export type ChatHistory = { version: 1; active?: string; threads: ChatThread[] };

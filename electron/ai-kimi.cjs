@@ -592,21 +592,23 @@ class Session {
   // Collects updates until the turn finishes or asks for tools.
   next(onDelta, signal, idleMs) {
     return new Promise((resolve, reject) => {
+      // Giving up stops the turn too, so it doesn't go on using the membership.
+      const cancel = (e) => {
+        try {
+          this.s.send({ method: 'session/cancel', params: { sessionId: this.id } });
+        } catch {}
+        this.fail(e);
+      };
       let idle;
       const touch = () => {
         clearTimeout(idle);
         idle = setTimeout(
-          () => this.fail(new KimiError('Kimi Code 长时间没有响应，已停止')),
+          () => cancel(new KimiError('Kimi Code 长时间没有响应，已停止')),
           idleMs,
         );
       };
       let gather = null;
-      const abort = () => {
-        try {
-          this.s.send({ method: 'session/cancel', params: { sessionId: this.id } });
-        } catch {}
-        this.fail(Object.assign(new Error('已停止'), { name: 'AbortError' }));
-      };
+      const abort = () => cancel(Object.assign(new Error('已停止'), { name: 'AbortError' }));
       signal?.addEventListener('abort', abort, { once: true });
       const settle = (fn) => {
         clearTimeout(idle);
@@ -728,7 +730,9 @@ async function streamKimi({ provider, request, signal, onDelta, home, version })
   // Continuing a turn that stopped for tools: the last assistant message names its session.
   const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
   const live = lastAssistant?.raw?.kimiSession && s.sessions.get(lastAssistant.raw.kimiSession);
-  const idleMs = 180_000;
+  // Thinking counts as a sign of life; only a long silence gives up. The CLI goes quiet while it
+  // retries a failed request (up to ten times, waiting up to half a minute between).
+  const idleMs = 10 * 60_000;
   // Turns left waiting on tool results (an agent run that was abandoned) are closed.
   for (const t of s.sessions.values())
     if (t !== live && !t.waiting && Date.now() - t.touched > 15 * 60_000) {

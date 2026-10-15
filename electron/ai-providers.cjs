@@ -800,7 +800,9 @@ async function streamOpenAI({ provider, key, request, signal, onDelta, fetch }) 
     if (pages.size && !queried)
       onDelta({ search: { id, title: `联网搜索：找到 ${pages.size} 个网页`, done: true } });
   };
-  for await (const data of sseData(response.body, signal, request.idleMs || 180_000)) {
+  // Thinking counts as a sign of life; only a long silence gives up. Some models think
+  // without saying so (OpenAI's reasoning models), sometimes for minutes.
+  for await (const data of sseData(response.body, signal, request.idleMs || 10 * 60_000)) {
     if (data === '[DONE]') break;
     let chunk;
     try {

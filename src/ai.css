@@ -182,6 +182,20 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.assistant-thread-item span svg {
+  margin-right: 5px;
+  vertical-align: -1px;
+  color: var(--muted);
+}
+.assistant-thread-unseen {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin: 0 7px 0 2px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: 2px;
+}
 .assistant-thread-item time {
   color: var(--muted);
   font-size: 11px;

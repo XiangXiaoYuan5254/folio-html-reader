@@ -36,6 +36,7 @@ import {
   fileName,
   surrounding,
 } from './context';
+import type { Chunk } from './context';
 import {
   agentSystem,
   annotationsList,
@@ -113,6 +114,17 @@ type State = {
   // Each run's "apply later changes automatically" choice.
   autoApply: Record<string, boolean>;
 };
+// A 精读笔记 under way: a long document's parts and the notes on those read, the request
+// the page is written from, and the page so far.
+type CompanionWork = {
+  chunks?: Chunk[];
+  notes: string[];
+  ask?: WireMessage;
+  reply: string;
+  model: string;
+  usage: Usage;
+  quota: Quota | null;
+};
 const now = () => Date.now();
 // What a question made only of pictures asks.
 const imageQuestion = '请结合文档内容，解释图片里的内容。';
@@ -148,6 +160,9 @@ export class Assistant {
   private listeners = new Set<() => void>();
   private frame = 0;
   private controllers = new Map<string, AbortController>();
+  // What a 精读笔记 that stopped on an error got done, by its reply, so 重试 goes on from
+  // there instead of starting over. Kept while the app is open, as the draft is.
+  private companionWork = new Map<string, CompanionWork>();
   private approvals = new Map<string, (ok: boolean) => void>();
   private saveTimers = new Map<Scope, ReturnType<typeof setTimeout>>();
   private loading = new Map<Scope, Promise<void>>();
@@ -180,6 +195,7 @@ export class Assistant {
   // Switching projects starts from a clean slate.
   reset() {
     for (const c of this.controllers.values()) c.abort();
+    this.companionWork.clear();
     for (const resolve of this.approvals.values()) resolve(false);
     this.approvals.clear();
     this.texts.clear();
@@ -247,6 +263,13 @@ export class Assistant {
     return this.state.histories[scope] || emptyHistory();
   }
   private putHistory(scope: Scope, history: ChatHistory, immediate = false) {
+    // The open conversation has been seen.
+    const active = history.active || history.threads[0]?.id;
+    if (history.threads.some((t) => t.id === active && t.unseen))
+      history = {
+        ...history,
+        threads: history.threads.map((t) => (t.id === active ? { ...t, unseen: false } : t)),
+      };
     this.set((s) => ({ ...s, histories: { ...s.histories, [scope]: history } }), immediate);
     this.persist(scope);
   }
@@ -350,8 +373,16 @@ export class Assistant {
       messages: t.messages.map((m) => (m.id === messageId ? fn(m) : m)),
     }));
   }
-  // Adds a question and an empty reply to the scope's current conversation.
+  // Adds a question and an empty reply to the scope's current conversation and starts the
+  // reply; nothing when the conversation has one going, so only one runs at a time.
   private begin(scope: Scope, user: Partial<ChatMessage>, reply: Partial<ChatMessage> = {}) {
+    const busy = this.thread(scope);
+    if (busy && this.controllers.has(busy.id)) return null;
+    const { threadId, answerId, history } = this.add(scope, user, reply);
+    return { threadId, answerId, history, signal: this.start(threadId) };
+  }
+  // Adds a question and its reply to the scope's current conversation.
+  private add(scope: Scope, user: Partial<ChatMessage>, reply: Partial<ChatMessage>) {
     const mode = scope === 'project' ? 'agent' : 'doc';
     let thread = this.thread(scope);
     if (!thread || thread.mode !== mode) {
@@ -380,13 +411,20 @@ export class Assistant {
       updatedAt: now(),
       messages: [...t.messages, question, answer],
     }));
+    return { threadId: thread.id, answerId: answer.id, history };
+  }
+  private start(threadId: string) {
     const controller = new AbortController();
-    this.controllers.set(thread.id, controller);
-    this.set((s) => ({ ...s, running: { ...s.running, [thread!.id]: true } }), true);
-    return { threadId: thread.id, answerId: answer.id, history, signal: controller.signal };
+    this.controllers.set(threadId, controller);
+    this.set((s) => ({ ...s, running: { ...s.running, [threadId]: true } }), true);
+    return controller.signal;
   }
   private finish(threadId: string) {
     this.controllers.delete(threadId);
+    // Finished while another conversation was open: marked until it's opened.
+    for (const [scope, h] of Object.entries(this.state.histories))
+      if (h?.threads.some((t) => t.id === threadId) && this.thread(scope)?.id !== threadId)
+        this.updateThread(scope, threadId, (t) => ({ ...t, unseen: true }));
     this.set((s) => {
       const running = { ...s.running };
       delete running[threadId];
@@ -429,14 +467,16 @@ export class Assistant {
   async ask(ctx: ReadingContext, text: string, selection = ctx.selection, images: string[] = []) {
     const question = text.trim();
     if (!question && !images.length) return;
-    this.setDraft(ctx.scope, '');
-    this.setAttachments(ctx.scope, []);
     await this.load(ctx.scope);
-    const { threadId, answerId, history, signal } = this.begin(
+    const started = this.begin(
       ctx.scope,
       { text: question, selection, ...(images.length ? { images } : {}) },
       { docs: ctx.docs },
     );
+    if (!started) return;
+    const { threadId, answerId, history, signal } = started;
+    this.setDraft(ctx.scope, '');
+    this.setAttachments(ctx.scope, []);
     await this.stream(ctx, threadId, answerId, signal, async (provider, config) => {
       const system = await this.readingSystem(
         ctx,
@@ -656,9 +696,7 @@ export class Assistant {
   }
   // Keeps a selection card's result as part of the document's conversation.
   keepExchange(scope: Scope, docs: CiteDoc[], user: Partial<ChatMessage>, answer: string) {
-    const { threadId, answerId } = this.begin(scope, user, { docs });
-    this.patchMessage(scope, threadId, answerId, (m) => ({ ...m, text: answer, status: 'done' }));
-    this.finish(threadId);
+    this.add(scope, user, { docs, text: answer, status: 'done' });
   }
 
   private cardController: AbortController | null = null;
@@ -770,11 +808,13 @@ export class Assistant {
 
   async runTask(ctx: ReadingContext, task: Task) {
     await this.load(ctx.scope);
-    const { threadId, answerId, signal } = this.begin(
+    const started = this.begin(
       ctx.scope,
       { text: taskLabels[task], label: taskLabels[task] },
       { docs: ctx.docs },
     );
+    if (!started) return;
+    const { threadId, answerId, signal } = started;
     if (task === 'highlights') return this.highlights(ctx, threadId, answerId, signal);
     if (task === 'companion') return this.companion(ctx, threadId, answerId, signal);
     if (task === 'summary') return this.summary(ctx, threadId, answerId, signal);
@@ -798,6 +838,21 @@ export class Assistant {
       },
       { canSaveNote: true },
     );
+  }
+  // Whether a 精读笔记 that stopped on an error can go on from where it stopped.
+  canResume(answerId: string) {
+    return this.companionWork.has(answerId);
+  }
+  // Goes on writing it in the same reply.
+  resumeCompanion(ctx: ReadingContext, threadId: string, answerId: string) {
+    if (this.controllers.has(threadId) || !this.companionWork.has(answerId)) return;
+    const signal = this.start(threadId);
+    this.patchMessage(ctx.scope, threadId, answerId, (m) => ({
+      ...m,
+      status: 'streaming',
+      error: undefined,
+    }));
+    return this.companion(ctx, threadId, answerId, signal);
   }
   private async summary(
     ctx: ReadingContext,
@@ -857,22 +912,29 @@ export class Assistant {
     const patch = (fn: (m: ChatMessage) => ChatMessage) =>
       this.patchMessage(ctx.scope, threadId, answerId, fn);
     const source = ctx.docs[0].path;
-    let model = '';
-    let usage = { input: 0, output: 0, cached: 0 };
-    let quota: Quota | null = null;
+    // Going on from a try that stopped on an error, or starting afresh.
+    const work: CompanionWork = this.companionWork.get(answerId) || {
+      notes: [],
+      reply: '',
+      model: '',
+      usage: { input: 0, output: 0, cached: 0 },
+      quota: null,
+    };
+    this.companionWork.delete(answerId);
+    let finished = false;
     const track = (r: {
       provider: string;
       model: string;
       usage?: Usage | null;
       quota?: Quota | null;
     }) => {
-      model = `${r.provider} · ${r.model}`;
-      quota = r.quota ?? quota;
+      work.model = `${r.provider} · ${r.model}`;
+      work.quota = r.quota ?? work.quota;
       if (r.usage)
-        usage = {
-          input: usage.input + r.usage.input,
-          output: usage.output + r.usage.output,
-          cached: usage.cached + r.usage.cached,
+        work.usage = {
+          input: work.usage.input + r.usage.input,
+          output: work.usage.output + r.usage.output,
+          cached: work.usage.cached + r.usage.cached,
         };
     };
     try {
@@ -887,11 +949,16 @@ export class Assistant {
       const budget = documentBudget(provider, 0.5);
       const whole = documentContext(doc, budget);
       let material = documentBlock(doc, whole.text, 1, false);
-      if (whole.partial) {
-        // Too long for one request: take notes part by part, then write from the notes.
-        const chunks = chunkDocument(doc, Math.min(30_000, Math.floor(budget * 0.7))).slice(0, 24);
-        const notes: string[] = [];
+      if (whole.partial && !work.ask) {
+        // Too long for one request: take notes part by part, then write from the notes. Parts
+        // read before an error aren't read again.
+        const chunks = (work.chunks ||= chunkDocument(
+          doc,
+          Math.min(30_000, Math.floor(budget * 0.7)),
+        ).slice(0, 24));
+        const notes = work.notes;
         for (const [i, chunk] of chunks.entries()) {
+          if (i < notes.length) continue;
           if (signal.aborted) throw new DOMException('已停止', 'AbortError');
           patch((m) => ({
             ...m,
@@ -916,23 +983,28 @@ export class Assistant {
         material = `${documentBlock(doc, chunks[0]?.text || '', 1, true)}\n\n各部分要点（按顺序）：\n\n${notes.join('\n\n')}`;
       }
       if (signal.aborted) throw new DOMException('已停止', 'AbortError');
-      patch((m) => ({ ...m, text: '正在构思精读笔记…', draft: '' }));
-      // A page cut off at the service's output limit is continued where it stopped, so a
-      // long document still gets its whole notes page.
-      const ask: WireMessage = {
+      // A page cut off at the service's output limit, or by an error, is continued where it
+      // stopped, so a long document still gets its whole notes page.
+      const ask = (work.ask ||= {
         role: 'user',
         content: `${material}\n\n${companionPrompt(whole.partial)}`,
-      };
-      let reply = '';
+      });
+      let reply = work.reply;
       let cut = false;
-      let written = 0;
+      let written = reply.length;
       let thought = 0;
+      patch((m) =>
+        reply
+          ? { ...m, text: `正在接着写精读笔记…（已写 ${written.toLocaleString()} 字）` }
+          : { ...m, text: '正在构思精读笔记…', draft: '' },
+      );
       for (let round = 0; round < 8; round++) {
         if (signal.aborted) throw new DOMException('已停止', 'AbortError');
+        let current = '';
         const result = await chat(
           {
             system: companionSystem(config.prefs.profile),
-            messages: round
+            messages: reply
               ? [
                   ask,
                   { role: 'assistant', content: reply },
@@ -954,6 +1026,7 @@ export class Assistant {
             },
             onText: (d) => {
               written += d.length;
+              current += d;
               onDraft(d);
               patch((m) => ({
                 ...m,
@@ -961,12 +1034,18 @@ export class Assistant {
               }));
             },
           },
-        );
+        ).catch((e) => {
+          // What this round wrote is kept too.
+          if (current) work.reply = reply ? joinContinuation(reply, current) : current;
+          throw e;
+        });
         track(result);
-        reply = round ? joinContinuation(reply, result.text) : result.text;
+        reply = reply ? joinContinuation(reply, result.text) : result.text;
+        work.reply = reply;
         cut = result.stopReason === 'max_tokens';
         if (!cut) break;
       }
+      finished = true;
       const pdf = doc.kind === 'pdf' ? fileName(source) : undefined;
       const cleaned = cleanCompanion(reply, pdf);
       if (cleaned.sections < 3)
@@ -979,7 +1058,7 @@ export class Assistant {
         body: cleaned.body,
         title: cleaned.title,
         source,
-        model,
+        model: work.model,
         date: new Date().toLocaleDateString('zh-CN'),
       });
       const dir = source.includes('/') ? source.slice(0, source.lastIndexOf('/') + 1) : '';
@@ -997,11 +1076,17 @@ export class Assistant {
       ]
         .filter(Boolean)
         .join('');
+      const { model, usage, quota } = work;
       patch((m) => ({ ...m, text, draft: undefined, status: 'done', model, usage, quota }));
       this.host.notify(`已生成精读笔记：${fileName(target)}`);
     } catch (e) {
       if (isAbort(e)) patch((m) => ({ ...m, status: 'stopped' }));
-      else patch((m) => ({ ...m, status: 'error', error: errorText(e) }));
+      else {
+        // Stopped before the page was all written: 重试 goes on from the parts read and the
+        // page so far.
+        if (!finished && (work.reply || work.notes.length)) this.companionWork.set(answerId, work);
+        patch((m) => ({ ...m, status: 'error', error: errorText(e) }));
+      }
     } finally {
       this.finish(threadId);
     }
@@ -1139,14 +1224,16 @@ export class Assistant {
     const scope = 'project';
     const request = text.trim();
     if (!request && !images.length) return;
-    this.setDraft(scope, '');
-    this.setAttachments(scope, []);
     await this.load(scope);
-    const { threadId, answerId, history, signal } = this.begin(
+    const started = this.begin(
       scope,
       { text: request, ...(images.length ? { images } : {}) },
       { parts: [] },
     );
+    if (!started) return;
+    const { threadId, answerId, history, signal } = started;
+    this.setDraft(scope, '');
+    this.setAttachments(scope, []);
     const patch = (fn: (m: ChatMessage) => ChatMessage) =>
       this.patchMessage(scope, threadId, answerId, fn);
     const setParts = (fn: (parts: MessagePart[]) => MessagePart[]) =>

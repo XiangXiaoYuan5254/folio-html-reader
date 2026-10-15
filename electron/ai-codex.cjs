@@ -391,18 +391,20 @@ class Thread {
   // Collects events until the turn finishes or asks for tools.
   next(onDelta, signal, idleMs) {
     return new Promise((resolve, reject) => {
-      let idle;
-      const touch = () => {
-        clearTimeout(idle);
-        idle = setTimeout(() => this.fail(new CodexError('Codex 长时间没有响应，已停止')), idleMs);
-      };
-      let gather = null;
-      const abort = () => {
+      // Giving up stops the turn too, so it doesn't go on using the plan.
+      const interrupt = (e) => {
         this.s
           .call('turn/interrupt', { threadId: this.id, turnId: this.turnId }, 10_000)
           .catch(() => {});
-        this.fail(Object.assign(new Error('已停止'), { name: 'AbortError' }));
+        this.fail(e);
       };
+      let idle;
+      const touch = () => {
+        clearTimeout(idle);
+        idle = setTimeout(() => interrupt(new CodexError('Codex 长时间没有响应，已停止')), idleMs);
+      };
+      let gather = null;
+      const abort = () => interrupt(Object.assign(new Error('已停止'), { name: 'AbortError' }));
       signal?.addEventListener('abort', abort, { once: true });
       const settle = (fn) => {
         clearTimeout(idle);
@@ -541,7 +543,9 @@ async function streamCodex({ provider, request, signal, onDelta, version }) {
   // Continuing a turn that stopped for tools: the last assistant message names its thread.
   const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
   const live = lastAssistant?.raw?.codexThread && s.threads.get(lastAssistant.raw.codexThread);
-  const idleMs = 180_000;
+  // Thinking counts as a sign of life; only a long silence gives up. Codex itself waits five
+  // minutes on a stalled stream before it retries.
+  const idleMs = 10 * 60_000;
   // Turns left waiting on tool results (an agent run that was abandoned) are closed.
   for (const t of s.threads.values())
     if (t !== live && !t.waiting && Date.now() - t.touched > 15 * 60_000) {

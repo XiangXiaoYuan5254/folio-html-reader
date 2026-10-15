@@ -198,6 +198,7 @@ export function AssistantPanel(p: {
             <ThreadMenu
               threads={history.threads}
               active={thread?.id}
+              running={state.running}
               onPick={(id) => {
                 p.store.selectThread(scope, id);
                 setThreadsOpen(false);
@@ -289,6 +290,7 @@ export function AssistantPanel(p: {
                 thread={thread}
                 store={p.store}
                 scope={scope}
+                running={running}
                 autoApply={!!state.autoApply[thread.id]}
               />
             ),
@@ -466,6 +468,8 @@ function SetupCard({ onOpen }: { onOpen: () => void }) {
 function ThreadMenu(p: {
   threads: ChatThread[];
   active?: string;
+  // Conversations with a reply going, marked so none runs out of sight.
+  running: Record<string, true>;
   onPick: (id: string) => void;
   onDelete: (id: string) => void;
   onClose: () => void;
@@ -485,7 +489,14 @@ function ThreadMenu(p: {
         shown.map((t) => (
           <div key={t.id} className={`assistant-thread-item ${t.id === p.active ? 'active' : ''}`}>
             <button role="menuitem" onClick={() => p.onPick(t.id)}>
-              <span>{t.title}</span>
+              <span>
+                {p.running[t.id] ? (
+                  <LoaderCircle className="spin" size={11} aria-label="正在回答" />
+                ) : t.unseen ? (
+                  <i className="assistant-thread-unseen" aria-label="有新回复，还没看" />
+                ) : null}
+                {t.title}
+              </span>
               <time>{when(t.updatedAt)}</time>
             </button>
             <IconButton label="删除这段对话" onClick={() => p.onDelete(t.id)}>
@@ -579,6 +590,8 @@ function AnswerMessage(p: {
   thread: ChatThread;
   store: Assistant;
   scope: string;
+  // Something in the conversation is still going; 重试 waits until it's over.
+  running: boolean;
   autoApply: boolean;
 }) {
   const m = p.message;
@@ -606,6 +619,7 @@ function AnswerMessage(p: {
   const empty = !text.trim() && !m.parts?.length;
   const index = p.thread.messages.indexOf(m);
   const question = p.thread.messages[index - 1];
+  const resume = p.store.canResume(m.id);
   return (
     <div className={`chat-answer ${m.status || ''}`}>
       {m.reasoning ? (
@@ -664,11 +678,12 @@ function AnswerMessage(p: {
         <div className="chat-error" role="alert">
           <CircleX size={14} />
           <span>{m.error || '出错了'}</span>
-          {m.status === 'error' && question?.role === 'user' && !m.parts ? (
+          {m.status === 'error' && question?.role === 'user' && !m.parts && !p.running ? (
             <button
               onClick={() => {
                 const reading = m.docs?.length ? { scope: p.scope, docs: m.docs } : null;
                 if (!reading) return;
+                if (resume) return void p.store.resumeCompanion(reading, p.thread.id, m.id);
                 const task = (Object.keys(taskLabels) as Task[]).find(
                   (t) => taskLabels[t] === question.label,
                 );
@@ -677,7 +692,7 @@ function AnswerMessage(p: {
               }}
             >
               <RotateCcw size={12} />
-              重试
+              {resume ? '接着写' : '重试'}
             </button>
           ) : null}
         </div>

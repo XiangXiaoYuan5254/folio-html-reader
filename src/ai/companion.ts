@@ -62,9 +62,10 @@ export function companionPrompt(partial: boolean) {
     ? '文档较长，上面给出了开头部分，以及按原文小节顺序整理的要点。请据此制作整篇的精读伴读笔记。'
     : '请为这篇文档制作精读伴读笔记。';
 }
-// Asked when the reply stopped at the output limit, with the reply so far before it.
+// Asked when the reply stopped at the output limit or on an error, with the reply so far
+// before it.
 export const companionContinue =
-  '你的输出在上面这里被长度上限截断了。请紧接着断点继续输出剩下的笔记 HTML：从断点处的下一个字符开始，不要重复已经写过的内容，不要加任何说明，也不要用代码块包裹。';
+  '你的输出在上面这里断开了。请紧接着断点继续输出剩下的笔记 HTML：从断点处的下一个字符开始，不要重复已经写过的内容，不要加任何说明，也不要用代码块包裹。';
 // Joins a continuation onto the reply so far, dropping a fence or a repeat of the end.
 export function joinContinuation(before: string, after: string) {
   const next = after.replace(/^\s*```(?:html)?\s*\n/i, '').replace(/\n```\s*$/, '');
