@@ -11,6 +11,7 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import readline from 'node:readline';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 
@@ -921,7 +922,110 @@ export function createJianPay({
   };
 }
 
-export function createServer({ service, adminToken, prefix = '/api/folio', backupDir }) {
+// Who came for 页间, off the website's nginx access log (combined format): visits to its page,
+// installers downloaded from it, and copies of the app updating themselves (electron-builder
+// asks for the new version). Over the last `days` days, today being the last (0 or none: the
+// whole log); days are China's. A day counts an address once for each; bots, HEAD requests and
+// the owner's own network (any /24 that has called the admin API) are left out.
+export async function downloadStats({ file, days, now = Date.now() }) {
+  const dayOf = (ms) => new Date(ms + 8 * 3_600_000).toISOString().slice(0, 10);
+  const span = Math.min(Math.max(Math.floor(Number(days)) || 0, 0), 3650);
+  const today = dayOf(now);
+  const from = span ? dayOf(Date.parse(`${today}T00:00:00+08:00`) - (span - 1) * DAY) : '';
+  const months = 'JanFebMarAprMayJunJulAugSepOctNovDec';
+  const entry =
+    /^(\S+) \S+ \S+ \[(\d\d)\/(\w{3})\/(\d{4}):(\d\d:\d\d:\d\d) ([+-]\d\d)(\d\d)\] "(\S+) (\S+)[^"]*" (\d{3}) \S+ "([^"]*)" "([^"]*)"/;
+  const bot = /bot|spider|crawl|slurp|curl|wget|python|go-http|okhttp|java\/|headless|scrapy/i;
+  const network = (ip) =>
+    ip.includes(':') ? ip.split(':').slice(0, 4).join(':') : ip.split('.').slice(0, 3).join('.');
+  const hostOf = (url) => {
+    try {
+      return new URL(url).host;
+    } catch {
+      return '';
+    }
+  };
+
+  const owner = new Set();
+  const hits = [];
+  let since = null;
+  for await (const text of readline.createInterface({ input: fs.createReadStream(file) })) {
+    const m = entry.exec(text);
+    if (!m) continue;
+    const [, ip, dd, mon, yyyy, time, tzh, tzm, method, url, status, referrer, agent] = m;
+    const at = Date.parse(
+      `${yyyy}-${String(months.indexOf(mon) / 3 + 1).padStart(2, '0')}-${dd}T${time}${tzh}:${tzm}`,
+    );
+    const day = dayOf(at);
+    since ??= day;
+    const pathname = url.split('?')[0];
+    if (pathname.startsWith('/api/folio/admin/')) owner.add(network(ip));
+    if (day < from || method !== 'GET' || bot.test(agent)) continue;
+    const installer =
+      /^\/works\/folio\/downloads\/Folio-([\d.]+)-(mac|win)-[^/]*\.(dmg|zip|exe)$/.exec(pathname);
+    if (installer && (status === '200' || status === '206'))
+      hits.push({
+        at,
+        day,
+        ip,
+        kind: agent.includes('electron-builder') ? 'update' : 'download',
+        platform: installer[2] === 'mac' ? 'darwin' : 'win32',
+        version: installer[1],
+        from: hostOf(referrer),
+      });
+    else if (
+      /^\/works\/folio\/(index\.html)?$/.test(pathname) &&
+      (status === '200' || status === '304')
+    )
+      hits.push({ at, day, ip, kind: 'visit', from: hostOf(referrer) });
+  }
+
+  const daily = [];
+  for (let t = Date.parse(`${from || since || today}T12:00:00+08:00`); dayOf(t) <= today; t += DAY)
+    daily.push({
+      day: dayOf(t),
+      visitors: 0,
+      downloads: { darwin: 0, win32: 0 },
+      updates: { darwin: 0, win32: 0 },
+    });
+  const byDay = new Map(daily.map((d) => [d.day, d]));
+  const seen = new Set();
+  const events = [];
+  const sources = {};
+  const versions = {};
+  for (const hit of hits) {
+    const key = `${hit.day} ${hit.ip} ${hit.kind} ${hit.platform}`;
+    if (owner.has(network(hit.ip)) || seen.has(key)) continue;
+    seen.add(key);
+    const d = byDay.get(hit.day);
+    if (hit.kind === 'visit') {
+      d.visitors++;
+      sources[hit.from] = (sources[hit.from] || 0) + 1;
+      continue;
+    }
+    d[hit.kind === 'update' ? 'updates' : 'downloads'][hit.platform]++;
+    if (hit.kind === 'update') versions[hit.version] = (versions[hit.version] || 0) + 1;
+    events.push(hit);
+  }
+  return {
+    days: span,
+    // The first day in the log: nothing older can be counted.
+    since,
+    daily,
+    // Downloads and updates, newest first.
+    events: events.reverse().slice(0, 300),
+    // Where visitors came from (the referring site; '' when typed in or not told).
+    sources: Object.entries(sources)
+      .map(([host, n]) => ({ host, n }))
+      .sort((a, b) => b.n - a.n),
+    // What the updates were to.
+    versions: Object.entries(versions)
+      .map(([version, n]) => ({ version, n }))
+      .sort((a, b) => b.n - a.n),
+  };
+}
+
+export function createServer({ service, adminToken, prefix = '/api/folio', backupDir, accessLog }) {
   const tokenHash = crypto.createHash('sha256').update(adminToken).digest();
   const isAdmin = (req) => {
     const given = (req.headers.authorization || '').replace(/^Bearer /, '');
@@ -981,6 +1085,15 @@ export function createServer({ service, adminToken, prefix = '/api/folio', backu
             .createReadStream(file)
             .on('close', () => fs.rmSync(file, { force: true }))
             .pipe(res);
+        }
+        if (route === '/admin/downloads' && req.method === 'GET') {
+          if (!accessLog || !fs.existsSync(accessLog))
+            throw new Refusal(404, 'no-log', '服务器上找不到网站的访问日志');
+          return send(
+            res,
+            200,
+            await downloadStats({ file: accessLog, days: url.searchParams.get('days') }),
+          );
         }
         const query = {
           '/admin/stats': 'stats',
@@ -1069,7 +1182,9 @@ if (process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import
   setInterval(daily, DAY).unref();
   const port = Number(env.PORT) || 8787;
   const host = env.HOST || '127.0.0.1';
-  createServer({ service, adminToken, backupDir }).listen(port, host, () =>
+  // The website's nginx log, for the admin app's 下载 page.
+  const accessLog = env.FOLIO_LICENSE_ACCESS_LOG || '/www/wwwlogs/helloxxy.com.log';
+  createServer({ service, adminToken, backupDir, accessLog }).listen(port, host, () =>
     console.log(`folio-license listening on http://${host}:${port}/api/folio`),
   );
 }

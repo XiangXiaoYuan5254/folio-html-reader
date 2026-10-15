@@ -11,6 +11,7 @@ Environment=FOLIO_LICENSE_DATA=/var/lib/folio-license
 Environment=FOLIO_LICENSE_KEY=/etc/folio-license/private.pem
 Environment=FOLIO_LICENSE_ADMIN_TOKEN=/etc/folio-license/admin-token
 Environment=FOLIO_LICENSE_PAY=/etc/folio-license/jianpay.json
+Environment=FOLIO_LICENSE_ACCESS_LOG=/www/wwwlogs/helloxxy.com.log
 Restart=always
 RestartSec=3
 

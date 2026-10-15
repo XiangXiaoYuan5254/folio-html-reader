@@ -83,6 +83,10 @@ bash server/deploy.sh
 - **概览**：会员人数、在线收入、试用、各批次、最近记录。
 - 右上角「下载备份」：服务器数据库下载到 `~/.folio-license/backups/`。
 
+## 下载统计
+
+管理应用的「下载」页向服务器要 `/admin/downloads`：服务器读网站的 nginx 访问日志（`/www/wwwlogs/helloxxy.com.log`，服务里的 `FOLIO_LICENSE_ACCESS_LOG`），数出页间官网页面的访客、从官网下载安装包的（`.dmg` / `.exe`）、页间自己自动更新的（electron-builder 来下新版本）。同一天同一个 IP 每样只算一次；爬虫、`curl` 和只问大小的 HEAD 请求不算；调过管理接口的网络（同一个 /24 网段）算是你自己，也不算。日志从 2026-09-26 开始，宝塔以后要是开了日志切割，切走的旧日志就数不到了。
+
 ## 备份
 
 服务器每天把数据库复制一份到 `/var/lib/folio-license/backups/`，保留最近 14 天。服务器硬盘坏了这些也会丢，所以 Mac 上也每天自动下载一份到 `~/.folio-license/backups/`，保留 30 天（由「页间激活码管理」项目的 `npm run install-backup` 装好，见那里的 README）。
