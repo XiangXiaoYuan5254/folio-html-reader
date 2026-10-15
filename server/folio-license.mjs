@@ -584,9 +584,13 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
         revoked: row.revoked_at,
         reason: row.revoke_reason,
         device: row.device,
-        platform: row.device
-          ? one('SELECT platform FROM devices WHERE device = ?', row.device)?.platform
-          : null,
+        // The computer, with the 页间 version it last reported and when it last checked in.
+        ...(row.device
+          ? one(
+              'SELECT platform, version, last_seen AS seen FROM devices WHERE device = ?',
+              row.device,
+            )
+          : { platform: null, version: null, seen: null }),
         memberUntil: m ? Math.max(m.paidUntil, m.trialUntil) || null : null,
         forever: !!m?.forever,
         // The purchase it came from: what to look for in the 简付 console for a refund. `invite`:
@@ -629,6 +633,15 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
       const row = codeRow(code);
       run('UPDATE codes SET revoked_at = NULL, revoke_reason = NULL WHERE code = ?', row.code);
       log('restore', row.code, row.device);
+      return admin.info({ code: row.code });
+    },
+    // A code's note (its batch), changed: who it went to, say. Empty means none.
+    note({ code, batch }) {
+      const row = codeRow(code);
+      const note = String(batch ?? '')
+        .trim()
+        .slice(0, 100);
+      run('UPDATE codes SET batch = ? WHERE code = ?', note || null, row.code);
       return admin.info({ code: row.code });
     },
     // Lets the buyer move to another computer now, without waiting out the week.
@@ -704,7 +717,8 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
         );
       const filter = where.length ? 'WHERE ' + where.join(' AND ') : '';
       const rows = all(
-        `SELECT c.*, d.platform FROM codes c LEFT JOIN devices d ON d.device = c.device ${filter}
+        `SELECT c.*, d.platform, d.version, d.last_seen FROM codes c
+         LEFT JOIN devices d ON d.device = c.device ${filter}
          ORDER BY c.created_at DESC, c.code LIMIT ? OFFSET ?`,
         ...args,
         Math.min(Math.max(Number(limit) || 200, 1), 5000),
@@ -722,6 +736,8 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
           revoked: r.revoked_at,
           reason: r.revoke_reason,
           platform: r.platform || null,
+          version: r.version || null,
+          seen: r.last_seen || null,
         })),
       };
     },
@@ -1110,6 +1126,7 @@ export function createServer({ service, adminToken, prefix = '/api/folio', backu
           '/admin/revoke': 'revoke',
           '/admin/restore': 'restore',
           '/admin/allow-move': 'allowMove',
+          '/admin/note': 'note',
         }[route];
         if (!action || req.method !== 'POST') throw new Refusal(404, 'not-found', '没有这个地址');
         return send(res, 200, service.admin[action](await readBody(req)));
