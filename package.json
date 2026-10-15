@@ -1,12 +1,12 @@
 {
   "name": "folio-html-reader",
   "productName": "页间",
-  "version": "0.21.3",
+  "version": "0.22.0",
   "description": "本地 HTML / PDF 阅读、批注与项目管理",
   "type": "module",
   "main": "electron/main.cjs",
   "author": "XiangXiaoYuan5254",
-  "license": "MIT",
+  "license": "UNLICENSED",
   "scripts": {
     "dev": "node scripts/build-speech.mjs && node scripts/dev.mjs",
     "dev:web": "vite --host 127.0.0.1",
