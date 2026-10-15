@@ -17,7 +17,7 @@
 
 1. 打开下载的 DMG，把 **页间** 拖到 **Applications / 应用程序**。
 2. 复制完成后推出磁盘映像，在“应用程序”或 Spotlight 中打开页间。
-3. 点击左侧 **打开文件夹**，选择存放 HTML 或 PDF 的文件夹。首次启动提供三篇可自由编辑的原创演示文档。
+3. 点击左上角的 **选择项目**（`⌘O`），选择存放 HTML 或 PDF 的文件夹。首次启动会打开「示例文档」：五篇可自由编辑的原创演示文档，介绍各项功能，并附有批注、AI 和白板讲解的练习。
 
 页间使用 Apple Developer ID 签名，并已通过 Apple 公证，下载后可以直接打开。第一次打开时 macOS 会确认一次“这是从互联网下载的 App，是否打开”，点 **打开** 即可。
 
@@ -27,7 +27,7 @@ Mac 的芯片型号可在苹果菜单的“关于本机”中查看。Intel 芯�
 
 1. 运行下载的 `Folio-版本号-win-x64-setup.exe`，按向导完成安装。默认只为当前用户安装，不需要管理员权限，也可以改安装位置。
 2. 从开始菜单或桌面快捷方式打开 **页间**。
-3. 点击左侧 **打开文件夹**，选择存放 HTML 或 PDF 的文件夹。
+3. 点击左上角的 **选择项目**（`Ctrl+O`），选择存放 HTML 或 PDF 的文件夹。
 
 安装后，在资源管理器中右键 HTML 文件，选择 **打开方式 → 页间** 即可直接阅读；安装程序不会更改你的默认浏览器。
 
@@ -118,7 +118,7 @@ PDF 原文件保持不变，新增批注和笔记自动保存到 PDF 所在文�
 
 ## 编辑 HTML
 
-点击 **源码**，左侧是带语法高亮、查找和撤销的源码编辑器，右侧是实时预览。编辑后预览自动更新；`⌘S` 或保存按钮写回原 HTML。
+点击 **源码**，左侧是带语法高亮、查找和撤销的源码编辑器，右侧是实时预览。编辑后预览自动更新，修改默认自动写回原 HTML；关掉源码工具栏的 **自动保存** 后，用 `⌘S` 或保存按钮手动写回。
 
 写回前会自动备份修改前的文件，连续编辑时最多每 10 分钟一份。源码工具栏的 **历史版本** 列出这些备份，可以按页面或源码预览，一键恢复；恢复前会先备份当前内容，所以恢复本身也能撤回。旧备份自动清理：2 小时内全部保留，24 小时内每小时留一份，30 天内每天留一份，更早的删除；每篇文档的备份最多占 200 MB。
 
@@ -149,6 +149,8 @@ PDF 原文件保持不变，新增批注和笔记自动保存到 PDF 所在文�
 - **找论文**：在“整个项目”里说“找一篇某领域的论文，下载到某个文件夹”，AI 会在 [OpenAlex](https://openalex.org)（各学科的论文库）和 arXiv 中查找，看标题、作者、出处、被引次数和摘要挑出合适的，再把公开的 PDF 下载到你指定的文件夹（不存在会自动新建）。下载前会显示论文标题和链接，点“应用”才下载。任何支持工具调用的模型都能用，不需要另外的 Key；查找时只把关键词发给 OpenAlex 和 arXiv。有些出版社的链接需要登录或会拦截下载，这时 AI 会换一个链接或换一篇。在“本文”里提这种要求，AI 会提醒你切换到“整个项目”。
 - 长文档超出模型一次能处理的长度时，只发送开头和与问题最相关的部分；总结和划重点会分段处理。解释、翻译、白板等功能可以在 AI 设置的「各功能的模型」里单独选服务、模型和推理强度；选的档位原样使用，不会被自动调低。
 - 对话按文档保存，下次打开还在；“整个项目”的对话单独保存。
+- 助手记得整段对话：之前的问答、没写完就停下或断开的回答、生成过的精读笔记都会一起交给模型，聊到一半换模型、换服务也能接着聊。对话长到放不下时，较早的部分会自动压缩成摘要再接着聊。文档长到放不下时，模型先拿到开头，需要别的部分时自己搜索、翻到对应的页再回答，步骤显示在回答上方；最多查 15 轮，查满了就根据已经查到的内容回答。
+- 一段对话同时只回答一个问题。精读笔记写到一半停下或断开时，点「接着写」或直接说“继续”，会从断开的地方写完。历史对话列表里，正在回答的对话前面有转圈图标，在别的对话里时回答完成的会标一个小点。
 
 隐私：API Key 只保存在这台电脑上（Windows 用系统加密保存；macOS 保存在只有当前用户能读取的应用数据文件夹），只发送给对应的服务商。第一次使用某个服务时，会先询问是否同意把文档内容发送给它。可以在 AI 设置中为某个项目停用 AI；使用本机模型时，文档不会离开电脑。
 
@@ -217,8 +219,8 @@ npm run dist:win   # 在 Mac 上交叉构建 Windows x64 安装程序和校验�
 - `src/themes.css` 与 `src/theme.ts`：界面主题的颜色变量、主题列表、跟随系统与窗口底色同步。
 - `electron/ai-providers.cjs`：OpenAI 兼容接口与 Claude（Anthropic SDK）两种协议的流式请求、工具调用和错误说明。
 - `electron/ai.cjs`：AI 服务设置、API Key 保存与请求管理。Key 只在主进程中使用，界面拿不到。
-- `electron/ai-codex.cjs`：通过本机 Codex App Server 使用 ChatGPT 账号：启动与登录、流式回答，以及把项目 Agent 的工具交给 Codex 调用。
-- `electron/ai-kimi.cjs`：通过本机 Kimi Code CLI 的 ACP 接口使用 Kimi 会员：登录、模型与额度、流式回答，以及用本机的 MCP 接口把项目 Agent 的工具交给 Kimi 调用。
+- `electron/ai-codex.cjs`：通过本机 Codex App Server 使用 ChatGPT 账号：启动与登录、流式回答，以及把项目 Agent 的工具交给 Codex 调用。App 开着时，一段对话保留同一个 Codex 线程，每次只发新的内容；对话改变了（压缩成摘要、文档变了）就用页间存的对话记录重建。
+- `electron/ai-kimi.cjs`：通过本机 Kimi Code CLI 的 ACP 接口使用 Kimi 会员：登录、模型与额度、流式回答，以及用本机的 MCP 接口把项目 Agent 的工具交给 Kimi 调用。和 Codex 一样，一段对话保留同一个会话；退出 App 时留下的会话，下次启动 CLI 时删除。
 - `electron/hearing.cjs`、`electron/hearing-worker.cjs`、`electron/cloud-hearing.cjs`：没有 macOS 语音 helper 时（Windows）的语音对话识别：界面打开麦克风，子进程用 Silero VAD 判断什么时候在说话，再用 SenseVoice 在本机识别，或交给通义百炼 / 豆包语音的流式识别。
 - `src/ai/`：对话与项目 Agent、文档上下文与长文档分段、原文引用定位、源码修改的解析与对比。
 - `electron/license.cjs`、`src/license.ts`、`server/folio-license.mjs`：会员。主进程向激活服务器激活、续期，用内置公钥校验服务器签名的会员凭证；PDF 文档和 AI 请求在主进程里先检查会员，界面在入口处弹出会员窗口。
@@ -231,4 +233,4 @@ AI 读取文档用的是阅读区本身：打开的文档直接取渲染后的�
 
 ## 许可证
 
-[MIT](LICENSE)。第三方组件遵循各自许可证；Electron 的许可证和 Chromium 开源声明随应用提供。Windows 版的本机语音识别用到 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)（Apache-2.0）、[Silero VAD](https://github.com/snakers4/silero-vad)（MIT），以及阿里巴巴通义实验室的 [SenseVoice Small](https://github.com/FunAudioLLM/SenseVoice) 模型（[FunASR 模型开源协议](https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE)，首次使用时下载）。
+闭源软件，版权所有，保留所有权利，详见 [LICENSE](LICENSE)。第三方组件遵循各自许可证；Electron 的许可证和 Chromium 开源声明随应用提供。Windows 版的本机语音识别用到 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)（Apache-2.0）、[Silero VAD](https://github.com/snakers4/silero-vad)（MIT），以及阿里巴巴通义实验室的 [SenseVoice Small](https://github.com/FunAudioLLM/SenseVoice) 模型（[FunASR 模型开源协议](https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE)，首次使用时下载）。

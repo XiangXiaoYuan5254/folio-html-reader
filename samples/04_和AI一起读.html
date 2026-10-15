@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>和 AI 一起读</title><style>
+*{box-sizing:border-box}body{margin:0;background:#faf8f3;color:#2e3835;font:18px/1.95 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}.wrap{max-width:900px;padding:60px 40px 100px;margin:auto}header{border-bottom:2px solid #d8dfd4;margin-bottom:36px;padding-bottom:28px}.tag{color:#a48034;font-size:13px;letter-spacing:.14em}h1{font-size:40px;line-height:1.4;margin:12px 0}h2{font-size:27px;color:#315d51;margin:46px 0 14px}h3{font-size:19px;margin:0 0 6px;color:#315d51}.subtitle{color:#78827c}p{margin:0 0 20px}.setup{background:#fff;border:1px solid #e3e7df;border-radius:16px;padding:26px 30px;font-size:16px;line-height:1.85}.setup h2{margin:0 0 10px;font-size:22px}.setup ul{margin:8px 0 14px;padding-left:22px}.setup li{margin:6px 0}.setup p:last-child{margin:0}article{margin-top:10px}blockquote{margin:25px 0;background:#eaf0e5;border-left:4px solid #69997d;border-radius:0 12px 12px 0;padding:24px;font-family:Georgia,"Times New Roman",serif;font-size:19px;line-height:1.8}.steps{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px;counter-reset:step}.step{background:#fff;border:1px solid #e3e7df;border-radius:14px;padding:20px 22px;font-size:16px;line-height:1.8}.step h3::before{counter-increment:step;content:counter(step) " · ";color:#a48034}.step p{margin:0}kbd{font-size:.9em;background:#eef1ec;border:1px solid #d8dfd4;padding:2px 6px;border-radius:5px}footer{font-size:14px;color:#8b948b;margin-top:50px}@media(max-width:760px){.wrap{padding:30px 24px}.steps{grid-template-columns:1fr}h1{font-size:32px}}
+</style></head><body><div class="wrap">
+<header><div class="tag">AI 练习 / 和 AI 一起读</div><h1>读不懂的地方，问一问 AI</h1><p class="subtitle">下面是一篇短文，配着几个可以直接动手的练习。AI 不会替你读完，但能帮你更快找到值得想的地方。</p></header>
+
+<section class="setup"><h2>开始之前：连上一个 AI 服务</h2>
+<p>先打开「AI 设置」：macOS 菜单「页间 → AI 设置…」（<kbd>⌘ ,</kbd>），Windows 菜单「文件 → AI 设置…」（<kbd>Ctrl ,</kbd>），也可以点右侧「助手」里的设置按钮。连接方式任选一种：</p>
+<ul>
+<li><strong>填 API Key</strong>：DeepSeek、通义千问、Kimi、智谱 GLM、豆包、Claude、OpenAI、Gemini 等，在服务商官网申请，用量费用直接付给服务商。</li>
+<li><strong>用 ChatGPT 账号</strong>：选「Codex」，用 ChatGPT 套餐里的额度。需要这台电脑上有 Codex（ChatGPT 桌面版自带）。</li>
+<li><strong>用 Kimi 账号</strong>：选「Kimi Code」，先装好 Kimi Code 命令行工具，再在设置里登录。</li>
+<li><strong>本机模型</strong>：Ollama、LM Studio，文档不会离开电脑。</li>
+</ul>
+<p>第一次把文档发给某个服务之前，页间会先问你是否同意。</p></section>
+
+<article>
+<h2>练习文章：写下来，才知道自己懂没懂</h2>
+<p>读完一章书，合上书的那一刻，我们常觉得自己都懂了。可如果马上拿出一张白纸，试着把刚才的内容讲给一个没读过的人听，往往写不到第三句就卡住。卡住的地方，就是“以为懂了”和“真的懂了”之间的距离。</p>
+<p>心理学里有一个现象叫“生成效应”：自己想出来、说出来的内容，比只读过一遍的内容记得更牢。原因并不神秘：生成答案时，你必须调动已有的知识，把新内容和它们连起来；被动阅读时，这一步很容易被跳过。</p>
+<p>另一个相关的现象是“提取练习”：与其反复重读，不如隔一段时间合上书，试着回忆。回忆的过程本身就在加固记忆，而回忆不出来的部分，正好告诉你下次该重点看哪里。</p>
+<p>所以，写批注不只是为了以后好找。每一条旁注都是一次小小的“生成”；每次回顾笔记之前先自己想一想，就是一次“提取”。笔记好不好看并不重要，重要的是它逼你用自己的话把想法说出来。</p>
+<blockquote lang="en">Writing is thinking made visible. When an idea lives only in your head, it can stay vague and comfortable. On paper, every gap in the reasoning shows. That is why a short note in your own words often teaches you more than a page of copied highlights.</blockquote>
+<p>当然，写下来也有代价：它慢，还会暴露自己的不懂。但正是这份不舒服，让阅读从“看过”变成“想过”。</p>
+</article>
+
+<h2>动手试一试</h2>
+<div class="steps">
+<section class="step"><h3>问这篇文章</h3><p>点工具栏的「AI 助手」，问“作者认为写批注有什么用？”。回答里的小编号是原文引用，点一下就跳回原文。问到最新的消息时，支持联网的服务会自己搜索并注明来源。对话按文档保存，下次打开还在。</p></section>
+<section class="step"><h3>一键操作</h3><p>助手里有「总结全文」「AI 划重点」「整理我的批注」「出几道思考题」。AI 划重点会直接在原文上加高亮，批注列表里标着「AI」；不满意按一次 <kbd>⌘ Z</kbd> 全部撤销。</p></section>
+<section class="step"><h3>划词解释与翻译</h3><p>选中上面的英文段落，点浮动工具条上的「翻译」；选中“生成效应”，点「解释」；对哪句话有疑问，选中后点「提问」。答案可以存成这段文字的高亮笔记，也可以转到助手里接着问。</p></section>
+<section class="step"><h3>制作精读笔记</h3><p>读论文或长文时，点助手里的「制作精读笔记」。页间会在原文旁边写一份「原文名-精读笔记.html」，从背景、方法、关键概念讲到结果和局限，并排在右栏打开。PDF 论文也可以，笔记里的页码点一下就跳到那一页。</p></section>
+<section class="step"><h3>让 AI 在整个项目里干活</h3><p>把助手顶部的「本文」切到「整个项目」，AI 会在所有文档里搜索、写笔记、修改或新建 HTML，每个修改都先给你看，点「应用」才执行。也可以说“找一篇关于提取练习的论文，下载到「论文」文件夹”。</p></section>
+<section class="step"><h3>用 AI 改这一页</h3><p>点顶部的「源码」，再点「AI 修改」，说说想怎么改，比如“把英文段落换成中英对照的表格”。页间先给你看改动对比和预览，你确认后才写入；改之前的版本也会自动备份。</p></section>
+</div>
+<footer>页间 · Folio / 演示文档，可自由编辑。</footer>
+</div></body></html>
