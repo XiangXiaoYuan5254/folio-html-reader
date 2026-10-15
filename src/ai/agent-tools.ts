@@ -194,6 +194,40 @@ export const agentTools: ToolDef[] = [
   },
 ];
 
+// The open document(s) only, for a long one the reading conversation holds just the start of.
+export const readingTools: ToolDef[] = [
+  {
+    name: 'search',
+    description:
+      '在正在阅读的文档中搜索关键词（多个词用空格分开，全部出现才算匹配），返回页码和上下文片段。有多篇时可以用 path 只搜一篇。',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: '要搜索的关键词' },
+        path: { type: 'string', description: '可选，只在这篇文档中搜索' },
+      },
+      required: ['query'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'read_document',
+    description:
+      '读取正在阅读的文档的一部分。offset 是起始字符位置，length 是字数（默认 12000，最多 30000）。PDF 也可以用 pages 指定页码范围，如 "3-5"。',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string' },
+        offset: { type: 'integer', minimum: 0 },
+        length: { type: 'integer', minimum: 500, maximum: 30000 },
+        pages: { type: 'string', description: '仅 PDF，例如 "1-3" 或 "7"' },
+      },
+      required: ['path'],
+      additionalProperties: false,
+    },
+  },
+];
+
 export const writeTools = new Set([
   'add_highlights',
   'write_note',

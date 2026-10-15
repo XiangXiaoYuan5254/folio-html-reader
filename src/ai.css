@@ -772,9 +772,24 @@
   border-radius: 4px;
 }
 .chat-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   color: var(--muted);
   font-size: 12px;
   margin-top: 4px;
+}
+.chat-note button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+  font-size: 12px;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.chat-note button:hover {
+  background: var(--accent-soft);
 }
 .chat-actions {
   display: flex;
@@ -795,14 +810,25 @@
 .chat-actions button:hover:not(:disabled) {
   color: var(--accent);
 }
-.chat-meta {
-  margin-left: auto;
+.chat-actions .chat-meta {
+  display: block;
+  /* As big to point at as the buttons beside it, the text where it was. */
+  margin: 0 -6px 0 auto;
+  padding: 3px 6px;
   font-size: 11px;
   color: var(--fainter);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 55%;
+  cursor: default;
+}
+.chat-actions .chat-meta:hover:not(:disabled),
+.chat-actions .chat-meta[aria-expanded='true'] {
+  color: var(--muted);
+}
+.usage-tooltip {
+  max-width: 320px;
 }
 
 /* Markdown from the model */

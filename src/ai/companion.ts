@@ -73,6 +73,28 @@ export function joinContinuation(before: string, after: string) {
     if (before.endsWith(next.slice(0, k))) return before + next.slice(k);
   return before + next;
 }
+// What the conversation remembers of a finished 精读笔记: where the page is and what it says.
+export function notesRecord(path: string, body: string) {
+  const text = draftText(body);
+  const long = text.length > 8_000;
+  return `（我为这篇文档制作了精读笔记，保存为 ${path}，已在右栏打开。下面是笔记的正文${long ? '（较长，只列出前面的部分）' : ''}：）\n\n${text.slice(0, 8_000)}`;
+}
+// And of one that didn't finish: how far it got, and that it can go on.
+export function unfinishedNotes(page: string, notes: number, stopped: boolean, why = '') {
+  const sections = [...page.matchAll(/<h2[^>]*>([\s\S]*?)<\/h2>/gi)]
+    .map((m) => draftText(m[1]))
+    .filter(Boolean);
+  const how = stopped ? '用户在中途停止了' : `中途出错断开了${why ? `（${why}）` : ''}`;
+  const done = sections.length
+    ? `页面已经写到：${sections.join('、')}`
+    : page.trim()
+      ? '页面刚开了个头'
+      : notes
+        ? `长文档已经通读了 ${notes} 部分，页面还没开始写`
+        : '还没有写出内容';
+  const next = page.trim() || notes ? '用户说“继续”或点「接着写」，就会从断开的地方接着写完。' : '';
+  return `（我在为这篇文档制作精读笔记，${how}，${done}。${next}）`;
+}
 // The page being written, as plain text, so a long wait visibly moves.
 export function draftText(html: string) {
   return html

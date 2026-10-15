@@ -7,6 +7,7 @@
 // only answers, or calls the tools Folio passes in (the project agent's tools), which the
 // server hands back as `item/tool/call` requests. Chat alone turns web search back on.
 const { execFile, spawn } = require('node:child_process');
+const crypto = require('node:crypto');
 const { levelFor, webNote } = require('./ai-providers.cjs');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -121,6 +122,9 @@ class Server {
     this.nextId = 1;
     this.pending = new Map();
     this.threads = new Map();
+    // Conversations that keep their thread while the app runs (see streamCodex), by the key
+    // their requests name.
+    this.conversations = new Map();
     this.listeners = new Set();
     this.rateLimits = null;
     this.cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'folio-codex-'));
@@ -359,6 +363,34 @@ function transcript(messages) {
   );
   return `以下是之前的对话：\n\n${earlier.join('\n\n')}\n\n---\n\n${last?.role === 'user' ? said(last) : '请继续。'}`;
 }
+// A kept session (a Codex thread, a Kimi Code session) gets only what it hasn't seen of the
+// conversation: whatever follows its reply to the last question it was asked, provided
+// that question is still where it was, unchanged. Anything else (a conversation summarized
+// to make room, a reply that didn't finish as the session has it) starts a new session.
+const hashOf = (m) =>
+  crypto
+    .createHash('sha1')
+    .update(`${m.role}\n${m.content || ''}\n${m.images?.length || 0}`)
+    .digest('hex');
+function unseenTail(kept, messages) {
+  if (!kept.seen || messages.length < kept.seen + 2) return null;
+  if (hashOf(messages[kept.seen - 1]) !== kept.last) return null;
+  if (messages[kept.seen].role !== 'assistant' || messages.at(-1).role !== 'user') return null;
+  return messages.slice(kept.seen + 1);
+}
+// What a kept session has seen, once the request is sent.
+function seen(kept, messages) {
+  kept.seen = messages.length;
+  kept.last = hashOf(messages.at(-1));
+  kept.used = Date.now();
+}
+// Sessions unused for half an hour go, and any beyond the eight used last.
+function stale(conversations) {
+  return [...conversations.entries()]
+    .sort((a, b) => b[1].used - a[1].used)
+    .filter(([, c], i) => i >= 8 || Date.now() - c.used > 30 * 60_000)
+    .map(([key]) => key);
+}
 const turnInput = (messages) => [
   ...messages.flatMap((m) =>
     m.role === 'user' ? (m.images || []).map((url) => ({ type: 'image', url })) : [],
@@ -376,9 +408,11 @@ function friendly(message) {
 // A conversation's live thread. A turn that stops to call Folio's tools stays open; the
 // next request, carrying the tool results, answers those calls and keeps streaming.
 class Thread {
-  constructor(s, id) {
+  // `kept`: a conversation's thread, which stays for its next question.
+  constructor(s, id, kept = false) {
     this.s = s;
     this.id = id;
+    this.kept = kept;
     this.turnId = '';
     this.calls = [];
     this.waiting = null;
@@ -504,8 +538,10 @@ class Thread {
       case 'turn/completed': {
         const turn = m.params?.turn || {};
         if (turn.error?.message) this.fail(new CodexError(friendly(turn.error.message)));
-        else w?.done(turn.status === 'completed' ? 'stop' : turn.status || 'stop');
-        this.close();
+        else {
+          w?.done(turn.status === 'completed' ? 'stop' : turn.status || 'stop');
+          if (!this.kept) this.close();
+        }
         break;
       }
       default:
@@ -533,10 +569,14 @@ class Thread {
     this.close();
   }
   close() {
-    this.s.threads.delete(this.id);
+    if (!this.s.threads.delete(this.id)) return;
+    if (this.s.child)
+      this.s.call('thread/unsubscribe', { threadId: this.id }, 10_000).catch(() => {});
   }
 }
 
+// A conversation (request.session) keeps its thread while the app runs and sends it only what
+// it hasn't seen, so Codex keeps the conversation itself, cached and compacted its own way.
 async function streamCodex({ provider, request, signal, onDelta, version }) {
   const s = await getServer(version);
   const messages = request.messages || [];
@@ -548,10 +588,16 @@ async function streamCodex({ provider, request, signal, onDelta, version }) {
   const idleMs = 10 * 60_000;
   // Turns left waiting on tool results (an agent run that was abandoned) are closed.
   for (const t of s.threads.values())
-    if (t !== live && !t.waiting && Date.now() - t.touched > 15 * 60_000) {
+    if (t !== live && t.calls.length && !t.waiting && Date.now() - t.touched > 15 * 60_000) {
       s.call('turn/interrupt', { threadId: t.id, turnId: t.turnId }, 10_000).catch(() => {});
       t.close();
     }
+  for (const key of stale(s.conversations)) {
+    const c = s.conversations.get(key);
+    if (c.thread.waiting) continue;
+    s.conversations.delete(key);
+    c.thread.close();
+  }
   if (live && messages.at(-1)?.role === 'tool') {
     live.touched = Date.now();
     const after = messages.slice(messages.lastIndexOf(lastAssistant) + 1);
@@ -560,36 +606,71 @@ async function streamCodex({ provider, request, signal, onDelta, version }) {
     live.answer(results);
     return pending;
   }
-  const started = await s.call('thread/start', {
-    cwd: s.cwd,
-    ephemeral: true,
-    sandbox: 'read-only',
-    approvalPolicy: 'never',
-    ...(provider.model ? { model: provider.model } : {}),
-    baseInstructions:
-      request.system ||
-      '你是「页间」阅读器里的助手。回答用户关于文档的问题。用简体中文，使用 Markdown。',
-    developerInstructions:
-      '你在一个阅读器应用里运行，不能执行命令，也不能读写文件。只根据对话中提供的内容和可用的工具工作。' +
-      (request.web ? `\n\n${webNote}` : ''),
-    // Codex's own web search, for chat only; everything else stays offline.
-    ...(request.web ? { config: { web_search: 'live' } } : {}),
-    ...(request.tools?.length
-      ? {
-          dynamicTools: request.tools.map((t) => ({
-            type: 'function',
-            name: t.name,
-            description: t.description,
-            inputSchema: t.parameters,
-          })),
-        }
-      : {}),
-    serviceName: 'folio',
-  });
-  const threadId = started?.thread?.id;
-  if (!threadId) throw new CodexError('Codex 没有创建对话');
-  const thread = new Thread(s, threadId);
-  s.threads.set(threadId, thread);
+  const system =
+    request.system ||
+    '你是「页间」阅读器里的助手。回答用户关于文档的问题。用简体中文，使用 Markdown。';
+  const tools = JSON.stringify(request.tools || []);
+  const web = !!request.web;
+  const key = request.session || '';
+  let kept = key && s.conversations.get(key);
+  const tail =
+    kept &&
+    kept.system === system &&
+    kept.tools === tools &&
+    kept.web === web &&
+    s.threads.get(kept.thread.id) === kept.thread &&
+    !kept.thread.waiting &&
+    // A turn stopped while it waited on tool results is still open; a new turn can't start.
+    !kept.thread.calls.length
+      ? unseenTail(kept, messages)
+      : null;
+  if (kept && !tail) {
+    s.conversations.delete(key);
+    if (kept.thread.calls.length)
+      s.call(
+        'turn/interrupt',
+        { threadId: kept.thread.id, turnId: kept.thread.turnId },
+        10_000,
+      ).catch(() => {});
+    kept.thread.close();
+    kept = null;
+  }
+  let thread = kept?.thread;
+  if (!thread) {
+    const started = await s.call('thread/start', {
+      cwd: s.cwd,
+      ephemeral: true,
+      sandbox: 'read-only',
+      approvalPolicy: 'never',
+      ...(provider.model ? { model: provider.model } : {}),
+      baseInstructions: system,
+      developerInstructions:
+        '你在一个阅读器应用里运行，不能执行命令，也不能读写文件。只根据对话中提供的内容和可用的工具工作。' +
+        (web ? `\n\n${webNote}` : ''),
+      // Codex's own web search, for chat only; everything else stays offline.
+      ...(web ? { config: { web_search: 'live' } } : {}),
+      ...(request.tools?.length
+        ? {
+            dynamicTools: request.tools.map((t) => ({
+              type: 'function',
+              name: t.name,
+              description: t.description,
+              inputSchema: t.parameters,
+            })),
+          }
+        : {}),
+      serviceName: 'folio',
+    });
+    const threadId = started?.thread?.id;
+    if (!threadId) throw new CodexError('Codex 没有创建对话');
+    thread = new Thread(s, threadId, !!key);
+    s.threads.set(threadId, thread);
+    if (key) {
+      kept = { thread, system, tools, web, model: provider.model || '' };
+      s.conversations.set(key, kept);
+    }
+  }
+  if (kept) seen(kept, messages);
   const pending = thread.next(onDelta, signal, idleMs);
   // The level as electron/ai-providers.cjs works it out. No model is Codex's default one,
   // listed first.
@@ -600,14 +681,18 @@ async function streamCodex({ provider, request, signal, onDelta, version }) {
     : /^(minimal|low|medium|high|xhigh|max)$/.test(provider.effort || '')
       ? provider.effort
       : '';
+  // Another model picked halfway: the thread goes on with it, from this turn.
+  const switched = tail && provider.model && provider.model !== kept.model;
   try {
     const turn = await s.call('turn/start', {
-      threadId,
-      input: turnInput(messages),
+      threadId: thread.id,
+      input: turnInput(tail || messages),
       ...(effort ? { effort } : {}),
+      ...(switched ? { model: provider.model } : {}),
       summary: 'auto',
     });
     thread.turnId = turn?.turn?.id || thread.turnId;
+    if (switched) kept.model = provider.model;
   } catch (e) {
     thread.fail(new CodexError(friendly(e.message)));
   }
@@ -734,4 +819,7 @@ module.exports = {
   CodexError,
   transcript,
   turnInput,
+  unseenTail,
+  seen,
+  stale,
 };

@@ -207,6 +207,9 @@ export type ChatMessage = {
   reasoning?: string;
   // What a long piece (a 精读笔记 page) has written so far, shown while it works; not saved.
   draft?: string;
+  // What the model is told this reply was, where that isn't the text shown: a task's result
+  // (the 精读笔记 page it wrote), or how far an unfinished one got.
+  said?: string;
   status?: 'streaming' | 'done' | 'error' | 'stopped';
   error?: string;
   model?: string;
@@ -235,5 +238,8 @@ export type ChatThread = {
   messages: ChatMessage[];
   // A reply finished while another conversation was open; cleared once this one is opened.
   unseen?: boolean;
+  // The earlier part of a long conversation, summarized to make room: the summary, and the
+  // last message it covers. The model gets the summary and what came after.
+  summary?: { text: string; upTo: string };
 };
 export type ChatHistory = { version: 1; active?: string; threads: ChatThread[] };

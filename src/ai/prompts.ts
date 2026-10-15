@@ -28,16 +28,57 @@ export function readingSystem(prefs: AiPrefs | undefined, docCount: number) {
     .filter((line) => line !== '')
     .join('\n');
 }
-export function documentBlock(doc: DocText, text: string, index: number, partial: boolean) {
+// `lookup`: the model can search and read the rest of a long document with readingTools.
+export function documentBlock(
+  doc: DocText,
+  text: string,
+  index: number,
+  partial: boolean,
+  lookup = false,
+) {
   const kind = doc.kind === 'pdf' ? 'PDF' : 'HTML';
-  const note = partial
-    ? '\n（文档较长，下面只包含开头和与问题最相关的部分，省略处已标出。回答时如果需要未包含的内容，请说明。）'
-    : '';
+  const note = !partial
+    ? ''
+    : lookup
+      ? `\n（文档较长，下面只包含开头部分。需要其他部分时，先用 search 搜索关键词，再用 read_document 读取相关的页或段落（path 写 ${escapeAttr(doc.path)}），读到依据再回答。）`
+      : '\n（文档较长，下面只包含开头和与问题最相关的部分，省略处已标出。回答时如果需要未包含的内容，请说明。）';
   return `<document index="${index}" title="${escapeAttr(doc.title || fileName(doc.path))}" path="${escapeAttr(doc.path)}" type="${kind}">${note}\n${text}\n</document>`;
 }
 const escapeAttr = (s: string) => s.replace(/[<>"]/g, ' ');
 export function withDocuments(system: string, blocks: string[]) {
   return `${system}\n\n用户正在阅读的文档：\n\n${blocks.join('\n\n')}`;
+}
+// A long conversation's earlier part, summarized (see compactPrompt), ahead of what followed.
+export function withSummary(system: string, summary?: string) {
+  return summary
+    ? `${system}\n\n这段对话较早的部分已经压缩成下面的摘要，后面的消息接着它继续：\n<earlier>\n${summary}\n</earlier>`
+    : system;
+}
+// Said after a reply that didn't finish, so the model knows where it broke off.
+export const unfinished = {
+  stopped: '（这条回答没有写完：用户在这里停止了。）',
+  error: (why: string) => `（这条回答没有写完：出错中断了${why ? `（${why}）` : ''}。）`,
+  empty: (why: string) => `（这次没有回答成功${why ? `：${why}` : ''}。）`,
+};
+export const compactSystem =
+  '你负责把一段对话的较早部分压缩成摘要，让之后的对话能接着进行。只输出摘要本身，用简体中文。';
+export function compactPrompt(previous: string, transcript: string) {
+  return [
+    previous ? `更早的部分已有摘要：\n<earlier>\n${previous}\n</earlier>\n` : '',
+    '下面是接着它的对话（用户与助手）：',
+    '<conversation>',
+    transcript,
+    '</conversation>',
+    '',
+    '把以上全部内容合成一份新的摘要，取代原来的摘要。要求：',
+    '- 按时间顺序，写清用户问过什么、关心什么，助手给出了哪些结论和解释；',
+    '- 保留关键的事实、数字、定义、原文出处和引用过的原文片段（<cite>…</cite> 照原样保留）；',
+    '- 写下生成过的东西（比如精读笔记、总结、高亮）和它们的位置，以及还没完成或用户要求以后再做的事；',
+    '- 用户表达过的偏好（回答的语言、长短、风格等）也要记下；',
+    '- 不加评论，不超过 1500 字。',
+  ]
+    .filter((line) => line !== '')
+    .join('\n');
 }
 export function selectionPrompt(selection: string, question: string) {
   return `我选中了这段原文：\n<selection>\n${selection}\n</selection>\n\n${question}`;

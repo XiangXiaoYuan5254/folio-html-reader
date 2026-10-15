@@ -17,7 +17,7 @@ const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
 const { levelFor } = require('./ai-providers.cjs');
-const { transcript } = require('./ai-codex.cjs');
+const { transcript, unseenTail, seen, stale } = require('./ai-codex.cjs');
 
 class KimiError extends Error {}
 
@@ -107,6 +107,9 @@ class Server {
     this.nextId = 1;
     this.pending = new Map();
     this.sessions = new Map();
+    // Conversations that keep their session while the app runs (see streamKimi), by the key
+    // their requests name.
+    this.conversations = new Map();
     // What the CLI last logged going wrong: a failed turn ends without saying why.
     this.lastError = null;
     this.queue = Promise.resolve();
@@ -257,6 +260,29 @@ class Server {
   }
 }
 
+// Kept sessions are written down, so the ones still there when the app quit are deleted the
+// next time the CLI starts: the CLI keeps sessions on disk.
+const keptFile = (home) => path.join(home, 'folio-sessions.json');
+function readKept(home) {
+  try {
+    const ids = JSON.parse(fs.readFileSync(keptFile(home), 'utf8'));
+    return Array.isArray(ids) ? ids.filter((id) => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+function writeKept(home, ids) {
+  try {
+    fs.writeFileSync(keptFile(home), JSON.stringify(ids));
+  } catch {}
+}
+function keep(s, id, kept) {
+  const ids = new Set(readKept(s.home));
+  if (kept) ids.add(id);
+  else ids.delete(id);
+  writeKept(s.home, [...ids]);
+}
+
 let server = null;
 let starting = null;
 function getServer(home, version) {
@@ -267,7 +293,13 @@ function getServer(home, version) {
   const next = new Server(bin, home, version);
   starting = next
     .start()
-    .then(() => (server = next))
+    .then(() => {
+      const left = readKept(home);
+      writeKept(home, []);
+      for (const sessionId of left)
+        next.serial(() => next.call('session/delete', { sessionId }, 30_000)).catch(() => {});
+      return (server = next);
+    })
     .catch((e) => {
       next.child?.kill();
       throw e;
@@ -574,10 +606,12 @@ function friendly(message) {
 // A conversation's live session. A turn that stops to call 页间's tools stays open; the next
 // request, carrying the tool results, answers those calls and keeps streaming.
 class Session {
-  constructor(s, tools) {
+  // `kept`: a conversation's session, which stays for its next question.
+  constructor(s, tools, kept = false) {
     this.s = s;
     this.id = '';
     this.tools = tools;
+    this.kept = kept;
     this.route = crypto.randomUUID();
     this.calls = [];
     this.waiting = null;
@@ -602,10 +636,7 @@ class Session {
       let idle;
       const touch = () => {
         clearTimeout(idle);
-        idle = setTimeout(
-          () => cancel(new KimiError('Kimi Code 长时间没有响应，已停止')),
-          idleMs,
-        );
+        idle = setTimeout(() => cancel(new KimiError('Kimi Code 长时间没有响应，已停止')), idleMs);
       };
       let gather = null;
       const abort = () => cancel(Object.assign(new Error('已停止'), { name: 'AbortError' }));
@@ -687,7 +718,7 @@ class Session {
       this.fail(new KimiError(error ? friendly(error) : 'Kimi Code 没有返回内容'));
     else {
       this.waiting?.done('stop');
-      this.close();
+      if (!this.kept) this.close();
     }
   }
   fail(e) {
@@ -701,10 +732,12 @@ class Session {
     routes.delete(this.route);
     if (!this.id) return;
     this.s.sessions.delete(this.id);
-    if (this.s.child)
-      this.s
-        .serial(() => this.s.call('session/delete', { sessionId: this.id }, 30_000))
-        .catch(() => {});
+    // With the CLI gone, a kept session stays written down for the next start to delete.
+    if (!this.s.child) return;
+    if (this.kept) keep(this.s, this.id, false);
+    this.s
+      .serial(() => this.s.call('session/delete', { sessionId: this.id }, 30_000))
+      .catch(() => {});
   }
 }
 
@@ -724,6 +757,8 @@ function promptBlocks(request) {
   ];
 }
 
+// A conversation (request.session) keeps its session while the app runs and sends it only
+// what it hasn't seen, so the CLI keeps the conversation itself, compacted its own way.
 async function streamKimi({ provider, request, signal, onDelta, home, version }) {
   const s = await getServer(home, version);
   const messages = request.messages || [];
@@ -735,12 +770,18 @@ async function streamKimi({ provider, request, signal, onDelta, home, version })
   const idleMs = 10 * 60_000;
   // Turns left waiting on tool results (an agent run that was abandoned) are closed.
   for (const t of s.sessions.values())
-    if (t !== live && !t.waiting && Date.now() - t.touched > 15 * 60_000) {
+    if (t !== live && t.calls.length && !t.waiting && Date.now() - t.touched > 15 * 60_000) {
       try {
         s.send({ method: 'session/cancel', params: { sessionId: t.id } });
       } catch {}
       t.close();
     }
+  for (const key of stale(s.conversations)) {
+    const c = s.conversations.get(key);
+    if (c.session.waiting) continue;
+    s.conversations.delete(key);
+    c.session.close();
+  }
   if (live && messages.at(-1)?.role === 'tool') {
     live.touched = Date.now();
     const after = messages.slice(messages.lastIndexOf(lastAssistant) + 1);
@@ -750,53 +791,123 @@ async function streamKimi({ provider, request, signal, onDelta, home, version })
     live.answer(results);
     return live.next(onDelta, signal, idleMs);
   }
-  // The CLI connects to 页间's tools while it creates the session.
-  const session = new Session(s, request.tools || []);
-  const url = session.tools.length ? (await mcpServer(version)).url : '';
-  if (url) routes.set(session.route, session);
-  let started;
-  try {
-    started = await s.serial(() =>
-      s.call('session/new', {
-        cwd: path.join(home, 'work'),
-        mcpServers: url
-          ? [{ type: 'http', name: 'folio', url: url + session.route, headers: [] }]
-          : [],
-      }),
-    );
-    if (!started?.sessionId) throw new KimiError('Kimi Code 没有创建对话');
-  } catch (e) {
-    session.close();
-    throw new KimiError(friendly(e.message));
+  const system = request.system || '';
+  const tools = JSON.stringify(request.tools || []);
+  const key = request.session || '';
+  let kept = key && s.conversations.get(key);
+  const tail =
+    kept &&
+    kept.system === system &&
+    kept.tools === tools &&
+    s.sessions.get(kept.session.id) === kept.session &&
+    !kept.session.waiting &&
+    // A prompt stopped while it waited on tool results hasn't ended; a new one can't follow it.
+    !kept.session.calls.length
+      ? unseenTail(kept, messages)
+      : null;
+  if (kept && !tail) {
+    s.conversations.delete(key);
+    kept.session.close();
+    kept = null;
   }
-  const sessionId = started.sessionId;
-  session.id = sessionId;
-  s.sessions.set(sessionId, session);
-  try {
-    // The model and level as electron/ai-providers.cjs works it out. No model is the CLI's
-    // default one, listed first.
+  // The model and level as electron/ai-providers.cjs works it out. No model is the CLI's
+  // default one, listed first.
+  const settings = async () => {
     const list = listed.length
       ? listed
       : await listModels(home)
           .then(() => listed)
           .catch(() => []);
     const model = list.find((m) => m.id === (provider.model || list[0]?.id));
-    const alias = model?.alias || provider.model;
-    const current = started.configOptions?.find((o) => o.id === 'model')?.currentValue;
-    if (alias && alias !== current)
-      await s.call('session/set_config_option', { sessionId, configId: 'model', value: alias });
-    const effort = model
-      ? levelFor(model.efforts, model.defaultEffort, provider.effort, provider.use)
-      : '';
-    if (effort)
-      await s.call('session/set_config_option', { sessionId, configId: 'thinking', value: effort });
-  } catch (e) {
-    session.close();
-    throw new KimiError(friendly(e.message));
+    return {
+      alias: model?.alias || provider.model,
+      effort: model
+        ? levelFor(model.efforts, model.defaultEffort, provider.effort, provider.use)
+        : '',
+    };
+  };
+  let session = kept?.session;
+  if (session) {
+    // Another model or level picked halfway: the session goes on with it.
+    try {
+      const { alias, effort } = await settings();
+      if (alias && alias !== kept.alias) {
+        await s.call('session/set_config_option', {
+          sessionId: session.id,
+          configId: 'model',
+          value: alias,
+        });
+        kept.alias = alias;
+      }
+      if (effort && effort !== kept.effort) {
+        await s.call('session/set_config_option', {
+          sessionId: session.id,
+          configId: 'thinking',
+          value: effort,
+        });
+        kept.effort = effort;
+      }
+    } catch (e) {
+      s.conversations.delete(key);
+      session.close();
+      throw new KimiError(friendly(e.message));
+    }
+  } else {
+    // The CLI connects to 页间's tools while it creates the session.
+    session = new Session(s, request.tools || [], !!key);
+    const url = session.tools.length ? (await mcpServer(version)).url : '';
+    if (url) routes.set(session.route, session);
+    let started;
+    try {
+      started = await s.serial(() =>
+        s.call('session/new', {
+          cwd: path.join(home, 'work'),
+          mcpServers: url
+            ? [{ type: 'http', name: 'folio', url: url + session.route, headers: [] }]
+            : [],
+        }),
+      );
+      if (!started?.sessionId) throw new KimiError('Kimi Code 没有创建对话');
+    } catch (e) {
+      session.close();
+      throw new KimiError(friendly(e.message));
+    }
+    const sessionId = started.sessionId;
+    session.id = sessionId;
+    s.sessions.set(sessionId, session);
+    if (key) keep(s, sessionId, true);
+    try {
+      const { alias, effort } = await settings();
+      const current = started.configOptions?.find((o) => o.id === 'model')?.currentValue;
+      if (alias && alias !== current)
+        await s.call('session/set_config_option', { sessionId, configId: 'model', value: alias });
+      if (effort)
+        await s.call('session/set_config_option', {
+          sessionId,
+          configId: 'thinking',
+          value: effort,
+        });
+      if (key) {
+        kept = { session, system, tools, alias, effort };
+        s.conversations.set(key, kept);
+      }
+    } catch (e) {
+      session.close();
+      throw new KimiError(friendly(e.message));
+    }
   }
+  if (kept) seen(kept, messages);
   const pending = session.next(onDelta, signal, idleMs);
   session.started = Date.now();
-  s.call('session/prompt', { sessionId, prompt: promptBlocks(request) }, 0).then(
+  session.said = false;
+  s.call(
+    'session/prompt',
+    {
+      sessionId: session.id,
+      prompt: promptBlocks(tail ? { messages: tail } : request),
+    },
+    0,
+  ).then(
     (r) => session.finish(r?.stopReason),
     (e) => session.fail(new KimiError(friendly(e.message))),
   );
@@ -804,7 +915,8 @@ async function streamKimi({ provider, request, signal, onDelta, home, version })
 }
 
 function stop() {
-  for (const session of server?.sessions.values() || []) session.close();
+  // Kept sessions are deleted the next time the CLI starts: there's no waiting for it now.
+  for (const session of server?.sessions.values() || []) if (!session.kept) session.close();
   restart();
   routes.clear();
   mcp?.then(({ httpServer }) => httpServer.close()).catch(() => {});

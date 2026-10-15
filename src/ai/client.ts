@@ -101,6 +101,9 @@ export type ChatRequest = {
   // Sends it again beside itself when its thinking stops coming in, where the service streams
   // thinking word by word (electron/ai-providers.cjs).
   resend?: boolean;
+  // The conversation it belongs to. Kimi Code and Codex keep one session per conversation and
+  // send it only what's new (electron/ai-kimi.cjs, electron/ai-codex.cjs).
+  session?: string;
 };
 export type ChatHandlers = {
   onText?: (delta: string) => void;

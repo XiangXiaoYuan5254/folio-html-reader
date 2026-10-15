@@ -387,6 +387,8 @@ function createAi({
       // Sent again when its thinking stops coming in, where the service can tell; asked for by
       // the whiteboard, which says so.
       resend: !!payload.resend,
+      // The conversation, for the services that keep a session per conversation.
+      session: typeof payload.session === 'string' ? payload.session.slice(0, 100) : '',
     };
     const controller = new AbortController();
     running.set(requestId, controller);

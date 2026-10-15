@@ -15,6 +15,8 @@ import type {
   DocText,
   MessagePart,
   Quota,
+  ToolCall,
+  ToolDef,
   Usage,
   WireMessage,
 } from './types';
@@ -45,6 +47,8 @@ import {
   translateTask,
   chunkSummaryPrompt,
   combineSummaryPrompt,
+  compactPrompt,
+  compactSystem,
   comparePrompt,
   documentBlock,
   highlightKinds,
@@ -55,9 +59,11 @@ import {
   readingSystem,
   selectionPrompt,
   summaryPrompt,
+  unfinished,
   withDocuments,
+  withSummary,
 } from './prompts';
-import { agentTools, prepareTool, writeTools } from './agent-tools';
+import { agentTools, prepareTool, readingTools, writeTools } from './agent-tools';
 import {
   cleanCompanion,
   companionChunkPrompt,
@@ -66,6 +72,8 @@ import {
   companionPrompt,
   companionSystem,
   joinContinuation,
+  notesRecord,
+  unfinishedNotes,
 } from './companion';
 import { citations, citeKey, plainCites, plainText } from './plain';
 export { citations, citeKey, plainCites, plainText } from './plain';
@@ -79,6 +87,8 @@ export type ReadingContext = {
   docs: CiteDoc[];
   selection?: string;
 };
+// Rounds of looking things up in a long document before it has to answer from what it found.
+const lookupRounds = 15;
 export type Task = 'summary' | 'highlights' | 'companion' | 'organize' | 'questions' | 'compare';
 export const taskLabels: Record<Task, string> = {
   summary: '总结全文',
@@ -147,6 +157,32 @@ function userTurn(content: string, images: string[] | undefined, vision: boolean
     };
   return { role: 'user', content, images };
 }
+const size = (list: WireMessage[]) =>
+  list.reduce(
+    (n, m) => n + estimateTokens(m.content) + (m.images?.length || 0) * imageTokens + 8,
+    0,
+  );
+// How much of the window the conversation can take before its earlier part is summarized:
+// what's left after the instructions and documents, and room for the reply.
+function historyRoom(provider: AiProvider, systemTokens: number) {
+  const reply = Math.min(32_000, Math.max(4_000, Math.floor(provider.context * 0.1)));
+  return Math.max(6_000, Math.floor(provider.context * 0.85) - systemTokens - reply);
+}
+const sum = (a: Usage | null | undefined, b: Usage | null | undefined): Usage | null =>
+  a && b
+    ? { input: a.input + b.input, output: a.output + b.output, cached: a.cached + b.cached }
+    : a || b || null;
+// “继续” on its own, after a 精读笔记 that was stopped or broke off, goes on writing it.
+const continuing = /^(继续|继续写|接着写|接着|接着来|go on|continue|keep going)[\s。.!！~～…]*$/i;
+// A reply's request: what build() in stream() gives.
+type Built = {
+  system: string;
+  messages: WireMessage[];
+  web?: boolean;
+  tools?: ToolDef[];
+  session?: string;
+  usage?: Usage | null;
+};
 
 export class Assistant {
   private state: State = {
@@ -160,8 +196,8 @@ export class Assistant {
   private listeners = new Set<() => void>();
   private frame = 0;
   private controllers = new Map<string, AbortController>();
-  // What a 精读笔记 that stopped on an error got done, by its reply, so 重试 goes on from
-  // there instead of starting over. Kept while the app is open, as the draft is.
+  // What a 精读笔记 that was stopped or broke off got done, by its reply, so 接着写 goes on
+  // from there instead of starting over. Kept while the app is open, as the draft is.
   private companionWork = new Map<string, CompanionWork>();
   private approvals = new Map<string, (ok: boolean) => void>();
   private saveTimers = new Map<Scope, ReturnType<typeof setTimeout>>();
@@ -404,7 +440,7 @@ export class Assistant {
       status: 'streaming',
       ...reply,
     };
-    const history = thread.messages.filter((m) => m.status !== 'error');
+    const history = thread.messages;
     this.updateThread(scope, thread.id, (t) => ({
       ...t,
       title: t.messages.length ? t.title : titleFrom(question),
@@ -468,6 +504,9 @@ export class Assistant {
     const question = text.trim();
     if (!question && !images.length) return;
     await this.load(ctx.scope);
+    const notes =
+      !images.length && !selection && continuing.test(question) && this.notesToGoOn(ctx.scope);
+    if (notes) return this.continueNotes(ctx, question, notes);
     const started = this.begin(
       ctx.scope,
       { text: question, selection, ...(images.length ? { images } : {}) },
@@ -477,38 +516,57 @@ export class Assistant {
     const { threadId, answerId, history, signal } = started;
     this.setDraft(ctx.scope, '');
     this.setAttachments(ctx.scope, []);
-    await this.stream(ctx, threadId, answerId, signal, async (provider, config) => {
-      const system = await this.readingSystem(
+    await this.stream(ctx, threadId, answerId, signal, async (provider, config, how) => {
+      const vision = !refusesImages(provider, loadedModelOptions(provider.id));
+      const { system, partial } = await this.readingContext(
         ctx,
         provider,
         config,
         question + ' ' + (selection || ''),
+        how.lookup,
       );
-      const vision = !refusesImages(provider, loadedModelOptions(provider.id));
-      const messages: WireMessage[] = [];
-      let budget = Math.max(4_000, provider.context * 0.15);
-      for (const m of [...history].reverse()) {
-        if (m.role === 'assistant' && m.status !== 'done' && m.status !== 'stopped') continue;
-        const content =
-          m.role === 'user'
-            ? m.selection
-              ? selectionPrompt(m.selection, m.text || imageQuestion)
-              : m.text || imageQuestion
-            : m.text || '（没有回答）';
-        budget -= estimateTokens(content) + (vision ? (m.images?.length || 0) * imageTokens : 0);
-        if (budget < 0) break;
-        messages.unshift(
-          m.role === 'user' ? userTurn(content, m.images, vision) : { role: 'assistant', content },
-        );
-      }
-      while (messages[0]?.role === 'assistant') messages.shift();
+      const fitted = await this.fit(
+        ctx.scope,
+        threadId,
+        history,
+        system,
+        provider,
+        vision,
+        signal,
+        how.busy,
+      );
       const asked = question || imageQuestion;
-      messages.push(
-        userTurn(selection ? selectionPrompt(selection, asked) : asked, images, vision),
-      );
-      // Questions about the document may need the web too, which the model decides.
-      return { system, messages, web: true };
+      return {
+        system: fitted.system,
+        messages: [
+          ...fitted.messages,
+          userTurn(selection ? selectionPrompt(selection, asked) : asked, images, vision),
+        ],
+        // Questions about the document may need the web too, which the model decides.
+        web: true,
+        tools: how.lookup && partial ? readingTools : undefined,
+        session: threadId,
+        usage: fitted.usage,
+      };
     });
+  }
+  // The conversation's last reply, when it's a 精读笔记 that can go on.
+  private notesToGoOn(scope: Scope) {
+    const last = [...(this.thread(scope)?.messages || [])]
+      .reverse()
+      .find((m) => m.role === 'assistant');
+    return last && this.companionWork.has(last.id) ? last : null;
+  }
+  // “继续” after a 精读笔记 that was stopped or broke off: a new reply writes the rest of it.
+  private continueNotes(ctx: ReadingContext, question: string, from: ChatMessage) {
+    const started = this.begin(
+      ctx.scope,
+      { text: question },
+      { docs: ctx.docs, draft: from.draft },
+    );
+    if (!started) return;
+    this.setDraft(ctx.scope, '');
+    return this.companion(ctx, started.threadId, started.answerId, started.signal, from.id);
   }
   private async readingSystem(
     ctx: ReadingContext,
@@ -516,11 +574,25 @@ export class Assistant {
     config: AiConfig,
     query: string,
   ) {
+    return (await this.readingContext(ctx, provider, config, query, false)).system;
+  }
+  // The instructions with the open documents. One too long for the window goes in from its
+  // start, the same every time, the rest to look up with readingTools (`lookup`); without
+  // those, the parts closest to the question go in instead.
+  private async readingContext(
+    ctx: ReadingContext,
+    provider: AiProvider,
+    config: AiConfig,
+    query: string,
+    lookup: boolean,
+  ) {
     const budget = documentBudget(provider) / Math.max(1, ctx.docs.length);
     const blocks: string[] = [];
+    let partial = false;
     for (const [i, d] of ctx.docs.entries()) {
       const doc = await this.host.docText(d.path);
-      const context = documentContext(doc, budget, query);
+      const context = documentContext(doc, budget, lookup ? '' : query);
+      partial ||= context.partial;
       if (!context.text.trim())
         blocks.push(
           documentBlock(
@@ -532,11 +604,118 @@ export class Assistant {
             false,
           ),
         );
-      else blocks.push(documentBlock(doc, context.text, i + 1, context.partial));
+      else blocks.push(documentBlock(doc, context.text, i + 1, context.partial, lookup));
     }
-    return withDocuments(readingSystem(config.prefs, ctx.docs.length), blocks);
+    return { system: withDocuments(readingSystem(config.prefs, ctx.docs.length), blocks), partial };
   }
-  // Runs one streamed reply into an answer message and checks its citations afterwards.
+  // A reply as the model is to see it in the conversation: what it's told the reply was, and
+  // where an unfinished one broke off.
+  private said(m: ChatMessage, vision: boolean, agent = false): WireMessage {
+    if (m.role === 'user') {
+      const asked = m.text || (agent ? imageRequest : imageQuestion);
+      return userTurn(m.selection ? selectionPrompt(m.selection, asked) : asked, m.images, vision);
+    }
+    const text = (
+      m.parts
+        ? m.parts
+            .map((p) =>
+              p.type === 'text' ? p.text : `（${p.step.title}：${p.step.detail || p.step.status}）`,
+            )
+            .join('\n')
+        : m.text
+    ).trim();
+    if (m.said !== undefined) return { role: 'assistant', content: m.said };
+    const content =
+      m.status === 'stopped'
+        ? text
+          ? `${text}\n\n${unfinished.stopped}`
+          : unfinished.stopped
+        : m.status === 'error'
+          ? text
+            ? `${text}\n\n${unfinished.error(m.error || '')}`
+            : unfinished.empty(m.error || '')
+          : text || '（没有回答）';
+    return { role: 'assistant', content };
+  }
+  // The conversation before a question, from where its summary ends, as the model sees it.
+  private conversation(thread: ChatThread, before: ChatMessage[], vision: boolean) {
+    const from = thread.summary ? before.findIndex((m) => m.id === thread.summary!.upTo) + 1 : 0;
+    const wire = before.slice(from).map((m) => this.said(m, vision, thread.mode === 'agent'));
+    while (wire[0]?.role === 'assistant') wire.shift();
+    return wire;
+  }
+  // The conversation to send with the instructions: all of it while it fits, as Codex keeps
+  // its own, the instructions and earlier turns the same from one question to the next. Once
+  // it doesn't fit, its earlier part is summarized (compactPrompt) and the summary goes into
+  // the instructions, until it outgrows the room again.
+  private async fit(
+    scope: Scope,
+    threadId: string,
+    before: ChatMessage[],
+    system: string,
+    provider: AiProvider,
+    vision: boolean,
+    signal: AbortSignal,
+    busy: () => void,
+  ): Promise<{ system: string; messages: WireMessage[]; usage?: Usage | null }> {
+    const thread = this.history(scope).threads.find((t) => t.id === threadId);
+    if (!thread) return { system, messages: [] };
+    const messages = this.conversation(thread, before, vision);
+    const withEarlier = withSummary(system, thread.summary?.text);
+    const room = historyRoom(provider, estimateTokens(withEarlier));
+    if (size(messages) <= room) return { system: withEarlier, messages };
+    // The latest turns stay as they are, about a third of the room; the rest is summarized.
+    const from = thread.summary ? before.findIndex((m) => m.id === thread.summary!.upTo) + 1 : 0;
+    const open = before.slice(from);
+    let cut = open.length;
+    for (let i = open.length - 1, kept = 0; i >= 0; i--) {
+      kept += size([this.said(open[i], vision, thread.mode === 'agent')]);
+      if (kept > room * 0.35) break;
+      if (open[i].role === 'user') cut = i;
+    }
+    if (!cut) return { system: withEarlier, messages };
+    busy();
+    const lines = open.slice(0, cut).map((m) => {
+      const turn = this.said(m, vision, thread.mode === 'agent');
+      const pictures = m.images?.length ? `（附图 ${m.images.length} 张）` : '';
+      return `${turn.role === 'user' ? '用户' : '助手'}：${pictures}${turn.content}`;
+    });
+    // What the model can read in one go; the oldest beyond that is left to the summary before.
+    let transcript = '';
+    for (const line of [...lines].reverse()) {
+      if (estimateTokens(transcript + line) > provider.context * 0.5) {
+        transcript = `（更早的部分太长，已省略）\n\n${transcript}`;
+        break;
+      }
+      transcript = transcript ? `${line}\n\n${transcript}` : line;
+    }
+    const rest = this.conversation({ ...thread, summary: undefined }, open.slice(cut), vision);
+    try {
+      const result = await chat(
+        {
+          system: compactSystem,
+          messages: [
+            { role: 'user', content: compactPrompt(thread.summary?.text || '', transcript) },
+          ],
+          maxTokens: 4_000,
+        },
+        { signal },
+      );
+      const summary = result.text.trim();
+      if (!summary) throw Error('没有生成摘要');
+      this.updateThread(scope, threadId, (t) => ({
+        ...t,
+        summary: { text: summary, upTo: open[cut - 1].id },
+      }));
+      return { system: withSummary(system, summary), messages: rest, usage: result.usage };
+    } catch (e) {
+      if (isAbort(e)) throw e;
+      // No summary this time: the earlier part is left out.
+      return { system: withEarlier, messages: rest };
+    }
+  }
+  // Runs a reply into an answer message and checks its citations afterwards. A reply that
+  // looks things up (readingTools) goes back and forth until it answers.
   private async stream(
     ctx: ReadingContext,
     threadId: string,
@@ -545,63 +724,194 @@ export class Assistant {
     build: (
       provider: AiProvider,
       config: AiConfig,
-    ) => Promise<{ system: string; messages: WireMessage[]; web?: boolean } | string>,
+      how: { lookup: boolean; busy: () => void },
+    ) => Promise<Built | string>,
     options: { canSaveNote?: boolean } = {},
   ) {
     const patch = (fn: (m: ChatMessage) => ChatMessage) =>
       this.patchMessage(ctx.scope, threadId, answerId, fn);
+    const tidying = '正在整理较早的对话…';
+    const how = { lookup: true, busy: () => patch((m) => ({ ...m, text: tidying })) };
     try {
       const { provider, config } = await this.provider();
-      const request = await build(provider, config);
+      let request = await build(provider, config, how);
       if (typeof request === 'string') {
-        patch((m) => ({ ...m, text: request, status: 'done' }));
+        patch((m) => ({ ...m, text: request as string, status: 'done' }));
         return;
       }
-      if (signal.aborted) throw new DOMException('已停止', 'AbortError');
-      const result = await chat(request, {
-        signal,
-        onText: (d) => patch((m) => ({ ...m, text: m.text + d })),
-        onReasoning: (d) => patch((m) => ({ ...m, reasoning: (m.reasoning || '') + d })),
-        // Each search it ran, shown above the answer as a step.
-        onSearch: ({ id, title, done }) =>
-          patch((m) => {
-            const step = {
-              id: `web-${id}`,
-              tool: 'web_search',
-              title,
-              status: done ? 'done' : 'running',
-            } as const;
-            const searches = m.searches || [];
-            return {
-              ...m,
-              searches: searches.some((s) => s.id === step.id)
-                ? searches.map((s) => (s.id === step.id ? step : s))
-                : [...searches, step],
-            };
-          }),
-      });
+      patch((m) => (m.text === tidying ? { ...m, text: '' } : m));
+      let usage = request.usage ?? null;
+      let wire = request.messages;
+      let result;
+      let gap = false;
+      for (let round = 0; ; round++) {
+        if (signal.aborted) throw new DOMException('已停止', 'AbortError');
+        let streamed = false;
+        try {
+          result = await chat(
+            {
+              system: request.system,
+              messages: wire,
+              web: request.web,
+              tools: request.tools,
+              session: request.session,
+            },
+            {
+              signal,
+              onText: (d) => {
+                streamed = true;
+                patch((m) => ({ ...m, text: m.text + (gap && m.text ? '\n\n' : '') + d }));
+                gap = false;
+              },
+              onReasoning: (d) => patch((m) => ({ ...m, reasoning: (m.reasoning || '') + d })),
+              // Each search it ran, shown above the answer as a step.
+              onSearch: ({ id, title, done }) =>
+                this.step(patch, {
+                  id: `web-${id}`,
+                  tool: 'web_search',
+                  title,
+                  status: done ? 'done' : 'running',
+                }),
+            },
+          );
+        } catch (e) {
+          // A service that can't take tools answers from the parts closest to the question.
+          if (
+            round === 0 &&
+            !streamed &&
+            request.tools &&
+            !isAbort(e) &&
+            /tool|function/i.test(errorText(e))
+          ) {
+            const again = await build(provider, config, { ...how, lookup: false });
+            if (typeof again === 'string') throw e;
+            request = again;
+            wire = again.messages;
+            round = -1;
+            continue;
+          }
+          throw e;
+        }
+        usage = sum(usage, result.usage);
+        if (!result.toolCalls.length) break;
+        // It asked again after being told it was out of lookups.
+        if (round > lookupRounds) {
+          patch((m) => ({ ...m, error: '查阅文档的步骤太多，已停下。可以换个问法再试。' }));
+          break;
+        }
+        // Out of lookups: its calls are answered with that, and it answers from what it found.
+        const outOfLookups = round === lookupRounds;
+        wire = [
+          ...wire,
+          {
+            role: 'assistant',
+            content: result.text,
+            toolCalls: result.toolCalls,
+            reasoning: result.reasoning,
+            raw: result.raw,
+          },
+        ];
+        for (const call of result.toolCalls) {
+          if (signal.aborted) throw new DOMException('已停止', 'AbortError');
+          wire.push({
+            role: 'tool',
+            toolCallId: call.id,
+            ...(outOfLookups
+              ? {
+                  content:
+                    '查阅次数已经用完，不能再查了。请根据已经查到的内容回答；没查到的部分，直接告诉用户没有查到。',
+                }
+              : await this.lookUp(ctx, call, patch)),
+          });
+        }
+        gap = true;
+      }
+      const looked = wire !== request.messages;
       patch((m) => ({
         ...m,
-        text: result.text || m.text,
+        text: looked ? m.text : result.text || m.text,
         reasoning: result.reasoning || m.reasoning,
         status: 'done',
         model: `${result.provider} · ${result.model}`,
         quota: result.quota,
-        usage: result.usage,
+        usage,
         canSaveNote: options.canSaveNote,
         error:
-          result.stopReason === 'max_tokens'
+          m.error ||
+          (result.stopReason === 'max_tokens'
             ? '回答达到长度上限，被截断了'
             : result.stopReason === 'refusal'
               ? '模型拒绝回答这个问题'
-              : undefined,
+              : undefined),
       }));
       void this.verify(ctx.scope, threadId, answerId);
     } catch (e) {
+      patch((m) => (m.text === tidying ? { ...m, text: '' } : m));
       if (isAbort(e)) patch((m) => ({ ...m, status: 'stopped' }));
       else patch((m) => ({ ...m, status: 'error', error: errorText(e) }));
     } finally {
       this.finish(threadId);
+    }
+  }
+  // A step shown above an answer: a web search, or a look into the document.
+  private step(patch: (fn: (m: ChatMessage) => ChatMessage) => void, step: AgentStep) {
+    patch((m) => {
+      const searches = m.searches || [];
+      return {
+        ...m,
+        searches: searches.some((s) => s.id === step.id)
+          ? searches.map((s) => (s.id === step.id ? step : s))
+          : [...searches, step],
+      };
+    });
+  }
+  // Runs one of readingTools on the open documents only.
+  private async lookUp(
+    ctx: ReadingContext,
+    call: ToolCall,
+    patch: (fn: (m: ChatMessage) => ChatMessage) => void,
+  ) {
+    if (!readingTools.some((t) => t.name === call.name))
+      return { content: `没有名为 ${call.name} 的工具。`, isError: true };
+    // The open documents, also one opened from outside the project.
+    const files = () =>
+      ctx.docs.map(
+        (d) =>
+          this.host.files().find((f) => f.path === d.path) || {
+            path: d.path,
+            kind: /\.pdf$/i.test(d.path) ? ('pdf' as const) : ('html' as const),
+          },
+      );
+    const host = new Proxy(this.host, {
+      get: (target, key) => (key === 'files' ? files : (target as any)[key]),
+    });
+    const tool = prepareTool(call.name, call.input, {
+      host,
+      text: (path) => this.text(path),
+      progress: () => {},
+    });
+    const id = `read-${call.id}`;
+    this.step(patch, { id, tool: call.name, title: tool.title, status: 'running' });
+    try {
+      const outcome = await tool.run();
+      this.step(patch, {
+        id,
+        tool: call.name,
+        title: tool.title,
+        status: outcome.isError ? 'error' : 'done',
+        detail: outcome.detail,
+      });
+      return { content: outcome.content, isError: outcome.isError };
+    } catch (e) {
+      const message = errorText(e);
+      this.step(patch, {
+        id,
+        tool: call.name,
+        title: tool.title,
+        status: 'error',
+        detail: message,
+      });
+      return { content: `出错：${message}`, isError: true };
     }
   }
   // Marks citations the document doesn't contain, so they aren't mistaken for quotes.
@@ -839,7 +1149,7 @@ export class Assistant {
       { canSaveNote: true },
     );
   }
-  // Whether a 精读笔记 that stopped on an error can go on from where it stopped.
+  // Whether a 精读笔记 that was stopped or broke off can go on from where it stopped.
   canResume(answerId: string) {
     return this.companionWork.has(answerId);
   }
@@ -902,25 +1212,26 @@ export class Assistant {
     );
   }
   // Writes a reading companion page for the document, saves it next to the document and
-  // opens it alongside.
+  // opens it alongside. `from` is a reply whose unfinished page this one goes on with.
   private async companion(
     ctx: ReadingContext,
     threadId: string,
     answerId: string,
     signal: AbortSignal,
+    from = answerId,
   ) {
     const patch = (fn: (m: ChatMessage) => ChatMessage) =>
       this.patchMessage(ctx.scope, threadId, answerId, fn);
     const source = ctx.docs[0].path;
-    // Going on from a try that stopped on an error, or starting afresh.
-    const work: CompanionWork = this.companionWork.get(answerId) || {
+    // Going on from a try that was stopped or broke off, or starting afresh.
+    const work: CompanionWork = this.companionWork.get(from) || {
       notes: [],
       reply: '',
       model: '',
       usage: { input: 0, output: 0, cached: 0 },
       quota: null,
     };
-    this.companionWork.delete(answerId);
+    this.companionWork.delete(from);
     let finished = false;
     const track = (r: {
       provider: string;
@@ -1077,16 +1388,20 @@ export class Assistant {
         .filter(Boolean)
         .join('');
       const { model, usage, quota } = work;
-      patch((m) => ({ ...m, text, draft: undefined, status: 'done', model, usage, quota }));
+      const said = notesRecord(target, cleaned.body);
+      patch((m) => ({ ...m, text, said, draft: undefined, status: 'done', model, usage, quota }));
       this.host.notify(`已生成精读笔记：${fileName(target)}`);
     } catch (e) {
-      if (isAbort(e)) patch((m) => ({ ...m, status: 'stopped' }));
-      else {
-        // Stopped before the page was all written: 重试 goes on from the parts read and the
-        // page so far.
-        if (!finished && (work.reply || work.notes.length)) this.companionWork.set(answerId, work);
-        patch((m) => ({ ...m, status: 'error', error: errorText(e) }));
-      }
+      // Stopped, or broken off, before the page was all written: 接着写 goes on from the parts
+      // read and the page so far.
+      const progress = !finished && (work.reply || work.notes.length);
+      if (progress) this.companionWork.set(answerId, work);
+      const stopped = isAbort(e);
+      const said = finished
+        ? undefined
+        : unfinishedNotes(work.reply, work.notes.length, stopped, stopped ? '' : errorText(e));
+      if (stopped) patch((m) => ({ ...m, status: 'stopped', said }));
+      else patch((m) => ({ ...m, status: 'error', error: errorText(e), said }));
     } finally {
       this.finish(threadId);
     }
@@ -1253,22 +1568,21 @@ export class Assistant {
         this.host.activePath(),
       );
       const vision = !refusesImages(provider, loadedModelOptions(provider.id));
-      const wire: WireMessage[] = [];
-      for (const m of history) {
-        if (m.role === 'user') wire.push(userTurn(m.text || imageRequest, m.images, vision));
-        else {
-          const said = (m.parts || [])
-            .map((p) =>
-              p.type === 'text' ? p.text : `（${p.step.title}：${p.step.detail || p.step.status}）`,
-            )
-            .join('\n')
-            .trim();
-          if (said) wire.push({ role: 'assistant', content: said });
-        }
-      }
-      while (wire[0]?.role === 'assistant') wire.shift();
-      wire.push(userTurn(request || imageRequest, images, vision));
-      let usage = { input: 0, output: 0, cached: 0 };
+      const fitted = await this.fit(
+        scope,
+        threadId,
+        history,
+        system,
+        provider,
+        vision,
+        signal,
+        () => {},
+      );
+      const wire: WireMessage[] = [
+        ...fitted.messages,
+        userTurn(request || imageRequest, images, vision),
+      ];
+      let usage = fitted.usage ?? { input: 0, output: 0, cached: 0 };
       let model = '';
       let quota: Quota | null = null;
       for (let round = 0; round < 40; round++) {
@@ -1276,7 +1590,13 @@ export class Assistant {
         this.trimWire(wire, provider);
         let partIndex = -1;
         const result = await chat(
-          { system, messages: wire, tools: agentTools, web: true },
+          {
+            system: fitted.system,
+            messages: wire,
+            tools: agentTools,
+            web: true,
+            session: threadId,
+          },
           {
             signal,
             // A search the model ran on its own: a step that is done when the search is.

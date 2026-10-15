@@ -126,10 +126,13 @@ async function answer(label) {
     return cls.includes('done') || cls.includes('stopped');
   }, label);
   const text = await lastAnswer().locator('.ai-markdown').allInnerTexts();
+  // What the reply used, from the tip clicking the model under it opens.
   const meta = await lastAnswer()
     .locator('.chat-meta')
-    .getAttribute('title')
+    .click()
+    .then(() => page.locator('.usage-tooltip').innerText())
     .catch(() => '');
+  await page.keyboard.press('Escape');
   console.log(
     `${label}: ${((Date.now() - started) / 1000).toFixed(1)} 秒 · ${meta?.replace(/\n/g, ' · ')}`,
   );

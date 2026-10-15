@@ -697,7 +697,21 @@ function AnswerMessage(p: {
           ) : null}
         </div>
       ) : null}
-      {m.status === 'stopped' ? <div className="chat-note">已停止</div> : null}
+      {m.status === 'stopped' ? (
+        <div className="chat-note">
+          已停止
+          {resume && m.docs?.length && !p.running ? (
+            <button
+              onClick={() =>
+                void p.store.resumeCompanion({ scope: p.scope, docs: m.docs! }, p.thread.id, m.id)
+              }
+            >
+              <RotateCcw size={12} />
+              接着写
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {!streaming && !empty ? (
         <div className="chat-actions">
           <button
@@ -737,22 +751,105 @@ function AnswerMessage(p: {
               </button>
             )
           ) : null}
-          {m.model ? (
-            <span className="chat-meta" title={usageText(m)}>
-              {m.model}
-            </span>
-          ) : null}
+          {m.model ? <UsageMeta message={m} /> : null}
         </div>
       ) : null}
     </div>
+  );
+}
+// The model under a reply. Hovering it, or clicking to keep it open, shows what the reply
+// used; the browser's own title tip came late and went at the slightest move.
+function UsageMeta({ message }: { message: ChatMessage }) {
+  const button = useRef<HTMLButtonElement>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [tip, setTip] = useState<{ left: number; top: number; above: boolean } | null>(null);
+  const [pinned, setPinned] = useState(false);
+  const place = () => {
+    const rect = button.current?.getBoundingClientRect();
+    if (!rect) return;
+    const above = rect.bottom + 110 > innerHeight;
+    setTip({
+      // Half the tip's widest, and a little: it stays inside the window.
+      left: Math.max(170, Math.min(innerWidth - 170, rect.left + rect.width / 2)),
+      top: above ? rect.top - 6 : rect.bottom + 6,
+      above,
+    });
+  };
+  const hide = () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+    setPinned(false);
+    setTip(null);
+  };
+  useEffect(() => {
+    if (!pinned) return;
+    const away = (e: PointerEvent) => {
+      if (!button.current?.contains(e.target as Node)) hide();
+    };
+    const escape = (e: KeyboardEvent) => e.key === 'Escape' && hide();
+    document.addEventListener('pointerdown', away, true);
+    document.addEventListener('keydown', escape);
+    window.addEventListener('blur', hide);
+    return () => {
+      document.removeEventListener('pointerdown', away, true);
+      document.removeEventListener('keydown', escape);
+      window.removeEventListener('blur', hide);
+    };
+  }, [pinned]);
+  useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
+  const [model, ...lines] = usageText(message).split('\n');
+  return (
+    <>
+      <button
+        ref={button}
+        type="button"
+        className="chat-meta"
+        aria-expanded={!!tip}
+        onMouseEnter={() => {
+          if (timer.current) clearTimeout(timer.current);
+          timer.current = setTimeout(place, 200);
+        }}
+        onMouseLeave={() => {
+          if (timer.current) clearTimeout(timer.current);
+          if (!pinned) setTip(null);
+        }}
+        onClick={() => {
+          if (pinned) return hide();
+          setPinned(true);
+          place();
+        }}
+      >
+        {message.model}
+      </button>
+      {tip
+        ? createPortal(
+            <div
+              role="tooltip"
+              className={`tool-tooltip usage-tooltip${tip.above ? ' above' : ''}`}
+              style={{ left: tip.left, top: tip.top }}
+            >
+              <strong>{model}</strong>
+              {lines.length ? (
+                lines.map((line) => <span key={line}>{line}</span>)
+              ) : (
+                <span>这个服务没有返回用量</span>
+              )}
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
   );
 }
 function usageText(m: ChatMessage) {
   const lines = [m.model || ''];
   if (m.usage) {
     const { input, output, cached } = m.usage;
+    // How much of the input the service had cached, as a share of it.
+    const share = input ? Math.round((cached / input) * 100) : 0;
     lines.push(
-      `输入 ${input.toLocaleString()} tokens${cached ? `（缓存命中 ${cached.toLocaleString()}）` : ''} · 输出 ${output.toLocaleString()} tokens`,
+      `输入 ${input.toLocaleString()} tokens${cached ? `（缓存命中 ${share || '<1'}%）` : ''}`,
+      `输出 ${output.toLocaleString()} tokens`,
     );
   }
   if (m.quota) {
