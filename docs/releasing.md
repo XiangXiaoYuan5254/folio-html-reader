@@ -85,7 +85,7 @@ GitHub Actions 的 `Windows` 工作流（`.github/workflows/windows.yml`）在 W
 1. 改 `package.json` 的版本号，必须比线上版本大。
 2. 在 `build/release-notes.md` 写这次更新了什么，每行一条，会显示在提示卡片里。它会写进更新清单，所以要在打包前改好。
 3. `npm run dist:mac` 和 `npm run dist:win`。
-4. `npm run website:downloads`：核对 `release/` 里的更新清单与版本号一致，再把两个安装包、mac zip、两个 `.blockmap` 和两个 `.yml` 复制到 `website/downloads/`，并写出 `release-notes.json`：这一版的说明取自 `build/release-notes.md`，之前各版的取自它们发布标签里的同一文件，所以每次发版都要打 `v版本号` 标签。
+4. `npm run website:downloads`：核对 `release/` 里的更新清单与版本号一致，再把两个安装包、mac zip、两个 `.blockmap` 和两个 `.yml` 复制到 `website/downloads/`，并写出 `release-notes.json`：这一版的说明取自 `build/release-notes.md`，之前各版的取自它们发布标签里的同一文件，所以每次发版都要打 `v版本号` 标签。发布后又改写过的旧版说明写在 `build/release-notes-rewritten.json` 里，以它为准（更新卡片不提会员相关的内容）。
 5. 上传到服务器：**先传安装包，最后传两个 `.yml`**。`.yml` 一上线，用户的页间就会开始下载它列出的文件。
 6. 旧版本的 `.blockmap` 留在服务器上，更新时靠它只下载变化的部分；旧版本的安装包和 zip 可以删。
 

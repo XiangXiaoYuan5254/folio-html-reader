@@ -31,7 +31,8 @@ await fs.mkdir('website/downloads', { recursive: true });
 for (const file of files)
   await fs.copyFile(path.join('release', file), path.join('website/downloads', file));
 
-// This version's notes from build/release-notes.md, earlier ones from their release tags.
+// This version's notes from build/release-notes.md, earlier ones from their release tags, or as
+// rewritten since in build/release-notes-rewritten.json (the card says nothing about membership).
 const newer = (a, b) => {
   const [x, y] = [a, b].map((v) => v.split('.').map(Number));
   for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0);
@@ -39,12 +40,16 @@ const newer = (a, b) => {
 };
 const git = (...args) =>
   execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+const rewritten = JSON.parse(await fs.readFile('build/release-notes-rewritten.json', 'utf8'));
 const releases = [{ version, notes: await fs.readFile('build/release-notes.md', 'utf8') }];
 for (const tag of git('tag', '--list', 'v*').split('\n')) {
   const tagged = tag.slice(1);
   if (!/^\d+\.\d+\.\d+$/.test(tagged) || !newer(version, tagged)) continue;
   try {
-    releases.push({ version: tagged, notes: git('show', `${tag}:build/release-notes.md`) });
+    releases.push({
+      version: tagged,
+      notes: rewritten[tagged] ?? git('show', `${tag}:build/release-notes.md`),
+    });
   } catch {
     // Releases from before build/release-notes.md.
   }
