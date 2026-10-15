@@ -107,6 +107,8 @@ function createLicense({ file, fetch, version, packaged, onChange }) {
     }
     const base = {
       forever: !!l?.forever,
+      // What the server last said this computer had, still there while offline or clock.
+      kind: l?.kind || null,
       expires: l?.expires || null,
       trialUsed: !!l?.trialUsed,
       codes: l?.codes || [],

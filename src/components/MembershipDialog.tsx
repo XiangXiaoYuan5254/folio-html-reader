@@ -292,13 +292,17 @@ export function MembershipDialog({
         }
       : headline(status);
   const member = status.member;
-  // A lifetime member has nothing left for an activation code to add on this computer.
-  const lifetime = member && status.forever;
+  // A paying member who can't be confirmed for now (offline, or the clock turned back): shown
+  // as a member waiting to be checked again, not offered a membership or a trial.
+  const paused = (status.state === 'offline' || status.state === 'clock') && status.kind === 'paid';
+  // No activation code entry: a lifetime member has nothing left for one to add, and a paused
+  // member can't reach the server to activate one.
+  const noCode = paused || (member && status.forever);
   const price = offer?.plans.find((p) => p.plan === picked)?.amount;
   const liveCodes = status.codes.some((c) => !c.revoked);
   const paid = status.state === 'paid';
   // Anyone not paying yet sees the cover beside the plans; a paying member sees their membership.
-  const shop = !paid;
+  const shop = !paid && !paused;
   const invite = offer?.inviteCode;
   const friend = invite?.first ? invite.friend : undefined;
   const friendOk = friend && !friend.error ? friend.code : undefined;
@@ -439,14 +443,20 @@ export function MembershipDialog({
                   type="button"
                   className="secondary-button"
                   disabled={!!busy}
-                  onClick={() => void act('renew', renewLicense)}
+                  onClick={() =>
+                    void act('renew', async () => {
+                      await renewLicense();
+                      // The prices failed to load while offline too.
+                      loadOffer();
+                    })
+                  }
                 >
                   {busy === 'renew' ? '验证中…' : '重新验证'}
                 </button>
               ) : null}
             </div>
           ) : null}
-          {status.forever || welcome ? null : offerError || (offer && !offer.ready) ? (
+          {status.forever || welcome || paused ? null : offerError || (offer && !offer.ready) ? (
             <p className="membership-offline">
               {offerError ? '连不上激活服务器，暂时不能购买。' : '暂时不能在线购买，请稍后再试。'}
               <button type="button" className="link-button" onClick={loadOffer}>
@@ -671,7 +681,7 @@ export function MembershipDialog({
               {error}
             </p>
           ) : null}
-          {typing && !lifetime ? (
+          {typing && !noCode ? (
             <div className="membership-activate">
               <input
                 ref={input}
@@ -691,7 +701,7 @@ export function MembershipDialog({
             </div>
           ) : null}
           <div className="membership-footer">
-            {typing || welcome || lifetime ? null : (
+            {typing || welcome || noCode ? null : (
               <button type="button" className="link-button" onClick={() => setTyping(true)}>
                 有激活码？
               </button>
@@ -701,7 +711,7 @@ export function MembershipDialog({
                 邀请好友
               </button>
             ) : null}
-            {!member && !status.trialUsed ? (
+            {!member && !paused && !status.trialUsed ? (
               <button
                 type="button"
                 className="link-button membership-trial"

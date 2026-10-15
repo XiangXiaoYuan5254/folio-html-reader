@@ -10,6 +10,9 @@ export type LicenseStatus = {
   state: 'trial' | 'paid' | 'offline' | 'clock' | 'expired' | 'none';
   // A lifetime membership: no `expires`.
   forever?: boolean;
+  // What the server last said this computer had: 'paid' for a paying member, also while
+  // offline or clock.
+  kind?: 'paid' | 'trial' | null;
   expires: number | null;
   trialUsed: boolean;
   codes: { code: string; plan: Plan; revoked?: boolean }[];
