@@ -1,8 +1,9 @@
 // 页间's activation server. Memberships are bought in the app with WeChat Pay or Alipay through
 // 简付 (jian-pay.com); each purchase becomes a code already activated on the buyer's computer.
-// Codes made here to give away are typed in instead. A code belongs to one computer at a time,
-// the buyer can move it to a new computer once a week, and a refunded code is revoked so the
-// membership it gave ends.
+// Codes made here to give away are typed in instead. A code belongs to one computer at a time:
+// typed in on another, it moves there, as often as asked, and the computer it left loses the
+// membership when its app next checks in (at the next use, while it runs).
+// A refunded code is revoked so the membership it gave ends.
 // Every computer also has an invite code, good for one friend: that friend's first year or
 // lifetime membership costs less with it.
 // Every answer is a lease signed with the server's Ed25519 key; the app trusts nothing else.
@@ -33,7 +34,6 @@ export const rules = {
   // How long the app keeps a membership without reaching the server, and so how long a
   // revoked code can still work on a computer kept offline.
   leaseDays: 7,
-  moveEveryDays: 7,
 };
 // Inviting friends. A computer that has never paid takes `discount[plan]` (fen) off its first
 // purchase of that plan with another computer's invite code; other plans take nothing. Each code
@@ -223,11 +223,20 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
     return null;
   }
   // The codes are given in full: the window shows them for moving to another computer.
+  // `moved`: when this computer's codes went to another computer and what that one is, while it
+  // has no code left.
   function lease(device) {
     const at = now();
     const m = membership(device);
     const expires = m.forever ? null : Math.max(m.paidUntil, m.trialUntil) || null;
     const member = m.forever || expires > at;
+    const moved = m.codes.length
+      ? null
+      : one(
+          `SELECT e.at, d.platform FROM events e LEFT JOIN devices d ON d.device = e.device
+           WHERE e.type = 'move' AND e.detail = ? ORDER BY e.id DESC LIMIT 1`,
+          device,
+        );
     const payload = JSON.stringify({
       v: 1,
       device,
@@ -246,6 +255,7 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
         plan: c.plan,
         ...(c.revoked_at ? { revoked: true } : {}),
       })),
+      ...(moved ? { moved: { at: moved.at, platform: moved.platform } } : {}),
     });
     return { payload, sig: crypto.sign(null, Buffer.from(payload), key).toString('base64') };
   }
@@ -261,18 +271,12 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
       run('UPDATE codes SET device = ?, activated_at = ? WHERE code = ?', device, now(), code);
       log('activate', code, device);
     } else if (row.device !== device) {
-      // It's on another computer: moving brings that computer's whole membership over.
-      const lastMove = one('SELECT max(moved_at) AS at FROM codes WHERE device = ?', row.device).at;
-      const canMoveAt = lastMove ? lastMove + rules.moveEveryDays * DAY : 0;
+      // It's on another computer: moving brings that computer's whole membership over, as often
+      // as asked. That computer finds out the next time its app checks in.
       const from = one('SELECT platform FROM devices WHERE device = ?', row.device)?.platform;
       if (!body.move)
         throw new Refusal(409, 'in-use', '这个激活码正在另一台电脑上使用', {
           platform: from || null,
-          canMoveAt: canMoveAt > now() ? canMoveAt : null,
-        });
-      if (canMoveAt > now())
-        throw new Refusal(429, 'move-too-soon', '这个激活码 7 天内转移过，暂时不能再转', {
-          canMoveAt,
         });
       run('UPDATE codes SET device = ?, moved_at = ? WHERE device = ?', device, now(), row.device);
       log('move', code, device, row.device);

@@ -3,8 +3,9 @@
 // in, both through the server (server/folio-license.mjs). The server answers with a lease
 // signed by its key, kept in the app's data folder and checked here against the public key
 // below, so editing the file or faking the server gives nothing. A lease lasts a week at most
-// (less if the membership ends sooner), and the app renews it while it runs, so a revoked
-// code stops working within hours online and within a week offline.
+// (less if the membership ends sooner), and the app renews it while it runs, also when it's
+// used, so a code moved to another computer or revoked stops working here at the next use
+// online and within a week offline.
 const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
 const { existsSync } = require('node:fs');
@@ -19,6 +20,8 @@ const publicKey = crypto.createPublicKey({
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 const RENEW_EVERY = 6 * HOUR;
+// Using the app asks the server again, at most this often.
+const CHECK_GAP = 60_000;
 // The clock may wobble this much backwards; more means it was turned back to stretch a lease.
 const CLOCK_SLACK = HOUR;
 // The test switches below (FOLIO_MEMBER, FOLIO_LICENSE_DEVICE) work only run from
@@ -65,6 +68,7 @@ function createLicense({ file, fetch, version, packaged, onChange }) {
   let device = '';
   let lastError = '';
   let renewing = null;
+  let tried = 0;
   let timer = null;
   const ready = (async () => {
     try {
@@ -113,6 +117,8 @@ function createLicense({ file, fetch, version, packaged, onChange }) {
       trialUsed: !!l?.trialUsed,
       codes: l?.codes || [],
       checked: l?.issued || null,
+      // The codes went to another computer: when, and what it is.
+      moved: l?.moved || null,
       error: lastError,
     };
     if (!l) return { ...base, member: false, state: 'none' };
@@ -176,6 +182,7 @@ function createLicense({ file, fetch, version, packaged, onChange }) {
   // Asks the server again; a failure keeps the lease there is, until it runs out.
   function renew() {
     if (testMember || !lease()) return Promise.resolve(status());
+    tried = Date.now();
     renewing ||= post('/refresh', {})
       .catch((e) => {
         lastError = e.offline ? e.message : '';
@@ -184,6 +191,12 @@ function createLicense({ file, fetch, version, packaged, onChange }) {
       })
       .finally(() => (renewing = null));
     return renewing;
+  }
+  // Using the app (its window to the front, a PDF opening, an AI feature) asks the server again,
+  // at most once a CHECK_GAP, so a code moved to another computer stops working here at the
+  // next use. Nothing waits for the answer, and a failure keeps the lease.
+  function check() {
+    if (lease()?.member && Date.now() - tried >= CHECK_GAP) void renew();
   }
   // Opening the membership window without a membership asks the server once: what this computer
   // has there comes back even if license.json was lost (a cleaner app, a reinstalled system).
@@ -197,15 +210,8 @@ function createLicense({ file, fetch, version, packaged, onChange }) {
     try {
       return { status: await post('/activate', { code, move: move === true }) };
     } catch (e) {
-      if (e.code !== 'in-use' && e.code !== 'move-too-soon') throw e;
-      return {
-        refusal: {
-          code: e.code,
-          message: e.message,
-          platform: e.platform || null,
-          canMoveAt: e.canMoveAt || null,
-        },
-      };
+      if (e.code !== 'in-use') throw e;
+      return { refusal: { code: e.code, message: e.message, platform: e.platform || null } };
     }
   }
   const trial = () => post('/trial', {});
@@ -258,9 +264,10 @@ function createLicense({ file, fetch, version, packaged, onChange }) {
     order,
     checkOrder,
     renew,
+    check,
     recover,
-    // While there's a membership, renews it at start and then every few hours. Without one
-    // the app doesn't contact the server at all, unless a purchase is waiting.
+    // While there's a membership, renews it at start, every few hours, and when used (check).
+    // Without one the app doesn't contact the server at all, unless a purchase is waiting.
     start() {
       void ready.then(() => {
         changed();

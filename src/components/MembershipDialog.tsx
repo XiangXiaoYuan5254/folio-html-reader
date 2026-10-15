@@ -172,6 +172,7 @@ function headline(s: LicenseStatus) {
         detail: '系统时间比上次用页间时还早。把时间调准后点「重新验证」。',
       };
     case 'expired':
+      if (s.moved) return movedAway(s.moved);
       return {
         title: s.codes.some((c) => !c.revoked)
           ? '会员已到期'
@@ -181,8 +182,15 @@ function headline(s: LicenseStatus) {
         detail: s.expires ? `${when(s.expires)} 到期` : '',
       };
     default:
+      if (s.moved) return movedAway(s.moved);
       return { title: '还没有开通会员', detail: '' };
   }
+}
+function movedAway(moved: NonNullable<LicenseStatus['moved']>) {
+  return {
+    title: '会员已转到另一台电脑',
+    detail: `${when(moved.at)} 转到了另一台${computer(moved.platform)}上。在这台输入同一个激活码，可以转回来。`,
+  };
 }
 
 export function MembershipDialog({
@@ -391,7 +399,7 @@ export function MembershipDialog({
               <X size={18} />
             </button>
           </div>
-          {status.state !== 'none' || status.codes.length || status.error ? (
+          {status.state !== 'none' || status.codes.length || status.moved || status.error ? (
             <div
               className={`membership-status${paid ? ' is-paid' : member ? ' is-member' : ''}${paid && welcome ? ' is-welcome' : ''}`}
             >
@@ -432,7 +440,7 @@ export function MembershipDialog({
               ) : null}
               {liveCodes ? (
                 <span className="membership-hint">
-                  换电脑时在新电脑上输入激活码，会员就转过去，7 天内能转一次。
+                  在另一台电脑上输入这个激活码，会员就转过去，这台随即停用。
                 </span>
               ) : null}
               {status.error && !member ? (
@@ -653,27 +661,18 @@ export function MembershipDialog({
           ) : null}
           {refusal ? (
             <div className="membership-move" role="alert">
-              {refusal.canMoveAt ? (
-                <span>
-                  这个激活码正在另一台{computer(refusal.platform)}上使用，7 天内转移过，
-                  {when(refusal.canMoveAt)} 之后才能转到这台电脑。
-                </span>
-              ) : (
-                <>
-                  <span>
-                    这个激活码正在另一台{computer(refusal.platform)}上使用。转到这台电脑后，那台
-                    {computer(refusal.platform)}上的会员会停用，之后 7 天内不能再转。
-                  </span>
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    disabled={!!busy}
-                    onClick={() => void activate(true)}
-                  >
-                    {busy === 'move' ? '转移中…' : '转到这台电脑'}
-                  </button>
-                </>
-              )}
+              <span>
+                这个激活码正在另一台{computer(refusal.platform)}上使用。转到这台电脑后，那台
+                {computer(refusal.platform)}上的会员会马上停用。
+              </span>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={!!busy}
+                onClick={() => void activate(true)}
+              >
+                {busy === 'move' ? '转移中…' : '转到这台电脑'}
+              </button>
             </div>
           ) : null}
           {error ? (
@@ -744,7 +743,9 @@ export function MemberLock() {
       <span>
         {status?.state === 'offline'
           ? '会员需要联网确认，连上网后就能继续读。'
-          : '开通会员，或免费试用 3 天，就能打开 PDF。HTML 阅读和批注一直免费。'}
+          : status?.moved && !status.member
+            ? '会员已转到另一台电脑。在这台输入同一个激活码，可以转回来。'
+            : '开通会员，或免费试用 3 天，就能打开 PDF。HTML 阅读和批注一直免费。'}
       </span>
       <button type="button" className="primary-button" onClick={() => askMembership('PDF 阅读')}>
         开通会员

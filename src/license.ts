@@ -16,15 +16,16 @@ export type LicenseStatus = {
   expires: number | null;
   trialUsed: boolean;
   codes: { code: string; plan: Plan; revoked?: boolean }[];
+  // This computer's codes went to another computer, `platform` being that one's.
+  moved?: { at: number; platform: string | null } | null;
   // Why the last check didn't reach the server, if it didn't.
   error?: string;
 };
-// A code that is on another computer: it can be moved here, at most once a week.
+// A code that is on another computer: it can be moved here.
 export type Refusal = {
-  code: 'in-use' | 'move-too-soon';
+  code: 'in-use';
   message: string;
   platform: string | null;
-  canMoveAt: number | null;
 };
 
 // What can be bought, in fen. `later`: the price after an early-bird price ends at `until`.

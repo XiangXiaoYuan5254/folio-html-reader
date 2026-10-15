@@ -12,6 +12,7 @@ const {
   safeStorage,
   systemPreferences,
   utilityProcess,
+  powerMonitor,
 } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
@@ -44,6 +45,8 @@ const memberOnly = '需要会员：PDF 阅读和 AI 功能是会员功能，开�
 const needMember = async () => {
   await license.ready;
   if (!license.member()) throw Error(memberOnly);
+  // Now and then also asks the server whether the code is still on this computer.
+  license.check();
 };
 // The teacher's sentences said by a speech service, two at a time.
 const voiceQueue = limiter(2);
@@ -832,6 +835,8 @@ app
         },
       });
       win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+      // Coming back to the window may be coming back from the other computer the code moved to.
+      win.on('focus', () => license.check());
       win.on('enter-full-screen', () => {
         if (focusWindowState) win.setWindowButtonVisibility?.(false);
       });
@@ -872,6 +877,8 @@ app
     createWindow();
     updates.start();
     license.start();
+    // The code may have moved to another computer while this one slept.
+    powerMonitor.on('resume', () => license.check());
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
