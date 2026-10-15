@@ -41,6 +41,12 @@ import {
   confetti,
   AppWin,
   PALETTES,
+  idle,
+  popIn,
+  follow,
+  showTool,
+  sparkles,
+  twinkle,
 } from './sketch.js';
 
 const BAR = 2; // 120 BPM，一小节 2 秒
@@ -86,51 +92,6 @@ function scene(id, bars, build, { enter = 'cut', at = [960, 540], tint = C.paper
   return S;
 }
 
-// Mascot defaults: breathing, blinking, ribbon swaying.
-const idle = (u, more = {}) => ({
-  blink: blinkAt(u),
-  sway: Math.sin(u * 3) * 5,
-  sq: Math.sin(u * 4.2) * 0.025,
-  ...more,
-});
-// Spring a group in at t0 (and out at t1), around its own position.
-function popIn(e, u, t0, { x = 0, y = 0, rot = 0, sc = 1, out, freq = 2.4, damp = 0.45 } = {}) {
-  const k = spring(u - t0, freq, damp);
-  let o = clamp((u - t0) * 8);
-  let q = 0;
-  if (out != null && u > out) q = E.in(clamp((u - out) / 0.3));
-  place(e, x, y - q * 30, Math.max(0, k) * sc * (1 - q * 0.5), rot + (1 - clamp(k)) * 14);
-  e.setAttribute('opacity', u < t0 ? 0 : o * (1 - q));
-}
-// Moves a tool along a path as it is drawn.
-function follow(t, path, k) {
-  const len = (path.len ||= path.getTotalLength());
-  const p = path.getPointAtLength(len * clamp(k));
-  place(t, p.x, p.y);
-}
-function showTool(t, on) {
-  t.setAttribute('opacity', on ? 1 : 0);
-}
-// Little sparkles scattered around, popping in and twinkling.
-function sparkles(parent, list, seedFill = 0) {
-  const cols = [C.yellow, C.pink, C.sky, C.mint, C.violet];
-  return list.map(([x, y, r, kind = 'sparkle'], i) => {
-    const e = g(parent);
-    const d = kind === 'star' ? starD(0, 0, r, i + 3) : kind === 'heart' ? heartD(0, 0, r) : sparkleD(0, 0, r);
-    s('path', { d, fill: cols[(i + seedFill) % cols.length], stroke: C.ink, 'stroke-width': 4, 'stroke-linejoin': 'round' }, e);
-    return { e, x, y, i };
-  });
-}
-function twinkle(list, u, t0, out) {
-  for (const { e, x, y, i } of list) {
-    const a = t0 + i * 0.09;
-    const k = spring(u - a, 2.6, 0.4);
-    let o = u < a ? 0 : 1;
-    if (out != null && u > out) o *= 1 - clamp((u - out) / 0.3);
-    place(e, x, y, Math.max(0, k) * (1 + 0.14 * Math.sin(u * 6 + i)), Math.sin(u * 2 + i) * 18);
-    e.setAttribute('opacity', o);
-  }
-}
 // Headline label: small eyebrow plus big hand-lettered lines, left aligned.
 function label(parent, x, y, eyebrow, lines, { size = 92, color = C.tealD, gap = 1.1 } = {}) {
   const eb = g(parent);

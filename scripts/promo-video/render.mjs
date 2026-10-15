@@ -6,8 +6,11 @@
 //   node scripts/promo-video/render.mjs --stills 3,12.5    只截这几秒的画面（看效果用）
 //   node scripts/promo-video/render.mjs --from 20 --to 30  只渲染这一段
 //   node scripts/promo-video/render.mjs --music            只按时间轴重新生成配乐 out/music.wav
+//                                                          （有配音的页面另出一条只有配音和音效的 out/voice-<版本>.wav）
 //   node scripts/promo-video/render.mjs --serve            只开服务，浏览器打开 /video.html?preview
 //   以上都可以加 --page cute，换成手绘可爱版（cute.html → out/页间可爱版.mp4）
+//   或 --page whiteboard，白板讲解单独一支，竖屏 3:4 发小红书（whiteboard.html → out/页间白板讲解.mp4）
+//   或 --page chalk，白板讲解的黑板粉笔版，带页老师的配音（先用 narrate.mjs 录好）
 //
 // 素材先用 capture.mjs 录好（系统临时目录/folio-promo）。
 import { chromium } from 'playwright';
@@ -56,7 +59,13 @@ const server = http.createServer((req, res) => {
 });
 await new Promise((r) => server.listen(Number(opt('port')) || 0, '127.0.0.1', r));
 const version = opt('page') || 'video';
-const title = version === 'cute' ? '页间可爱版' : '页间宣传视频';
+const PAGES = {
+  video: ['页间宣传视频', 1920, 1080],
+  cute: ['页间可爱版', 1920, 1080],
+  whiteboard: ['页间白板讲解', 1080, 1440],
+  chalk: ['页间白板讲解-黑板版', 1080, 1440],
+};
+const [title, W, H] = PAGES[version];
 const base = `http://127.0.0.1:${server.address().port}/${version}.html`;
 
 if (opt('serve')) {
@@ -74,7 +83,7 @@ if (opt('serve')) {
 }
 
 async function open(browser) {
-  const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+  const context = await browser.newContext({ viewport: { width: W, height: H } });
   const page = await context.newPage();
   page.on('pageerror', (e) => console.error('page error:', e.message));
   if (opt('stills')) page.on('console', (m) => console.log(m.text()));
@@ -98,6 +107,7 @@ async function stills(browser, times) {
 }
 
 // The soundtrack follows the timeline the page exports: scene times, clicks, transitions.
+// A page with narration also gets a track of just the voice and the sound effects.
 async function music(browser) {
   await fs.mkdir(outDir, { recursive: true });
   const { page } = await open(browser);
@@ -105,9 +115,13 @@ async function music(browser) {
   await page.context().close();
   await fs.writeFile(path.join(outDir, `timeline-${version}.json`), JSON.stringify(ev, null, 1));
   const file = path.join(outDir, `music-${version}.wav`);
-  await makeMusic(ev, file);
+  const { gain } = await makeMusic(ev, file);
   console.log(file);
-  return file;
+  if (!ev.voice?.length) return { file };
+  const voiceOnly = path.join(outDir, `voice-${version}.wav`);
+  await makeMusic(ev, voiceOnly, { music: false, gain });
+  console.log(voiceOnly);
+  return { file, voiceOnly };
 }
 
 async function video(browser) {
@@ -176,12 +190,13 @@ async function video(browser) {
     .concat(['-c:v', 'libx264', '-preset', 'slow', '-crf', '16', '-pix_fmt', 'yuv420p'])
     .concat(['-profile:v', 'high', '-movflags', '+faststart', silent]));
   console.log(silent);
-  if (track) {
-    const out = path.join(outDir, `${title}.mp4`);
-    await ff(['-i', silent, '-i', track, '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k']
+  const mux = async (audio, out) => {
+    await ff(['-i', silent, '-i', audio, '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k']
       .concat(['-shortest', '-movflags', '+faststart', out]));
     console.log(out);
-  }
+  };
+  if (track) await mux(track.file, path.join(outDir, `${title}.mp4`));
+  if (track?.voiceOnly) await mux(track.voiceOnly, path.join(outDir, `${title}-仅配音.mp4`));
   await fs.rm(tmp, { recursive: true, force: true });
   console.log(`用时 ${((Date.now() - started) / 1000).toFixed(0)} 秒`);
 }

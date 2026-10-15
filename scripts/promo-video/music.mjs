@@ -2,10 +2,11 @@
 // 拨弦琶音、铃声，加上和画面对齐的转场声和鼠标点击声。100 BPM，D 大调。
 // 时间点来自 video.html 导出的 timeline.json（render.mjs 渲染时写出）。
 //
-//   node scripts/promo-video/music.mjs [video|cute]   读 out/timeline-<版本>.json，写 out/music-<版本>.wav
+//   node scripts/promo-video/music.mjs [video|cute|whiteboard]   读 out/timeline-<版本>.json，写 out/music-<版本>.wav
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+const moduleDir = path.dirname(new URL(import.meta.url).pathname);
 const SR = 48000;
 const BEAT = 0.6;
 const BAR = BEAT * 4;
@@ -20,7 +21,9 @@ const rnd = () => {
 const noise = () => rnd() * 2 - 1;
 const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
-export async function makeMusic(ev, file) {
+// music: false leaves only the sound effects and the narration (for a version to put other music
+// under); `gain` is then the full mix's music gain, which it returns.
+export async function makeMusic(ev, file, { music = true, gain } = {}) {
   const dur = ev.duration + 2.5;
   const N = Math.ceil(dur * SR);
   const bus = () => ({ L: new Float32Array(N), R: new Float32Array(N) });
@@ -436,8 +439,9 @@ export async function makeMusic(ev, file) {
     ];
     const end = at('outro').t0;
     const sec = (t) => ev.scenes.find((x) => t >= x.t0 - 1e-6 && t < x.t1)?.id || 'outro';
-    const quiet = new Set(['hello', 'ai']);
-    const melodic = new Set(['hello', 'app', 'themes', 'ai']);
+    // A page can name its own quiet (no groove) and melodic (glockenspiel tune) scenes.
+    const quiet = new Set(ev.quiet || ['hello', 'ai']);
+    const melodic = new Set(ev.melodic || ['hello', 'app', 'themes', 'ai']);
     const bars = Math.ceil(end / BR);
     const arp = [0, 2, 1, 3, 2, 1, 3, 2];
     for (let b = 0; b < bars; b++) {
@@ -489,7 +493,282 @@ export async function makeMusic(ev, file) {
     const up = [84, 86, 88, 91, 93, 96, 98, 100, 103];
     ev.themes.forEach((t, i) => glock(t, up[i % up.length], 0.08, i % 2 ? 0.3 : -0.3));
   }
+
+  // ---------- 粉笔的声音 ----------
+  // Chalk on a board: grainy noise in quick strokes, with little ticks where it catches.
+  function chalkScratch(t0, dur, vel = 0.06) {
+    const i0 = Math.floor(t0 * SR);
+    let low = 0;
+    let band = 0;
+    let fc = 3200 + rnd() * 1600;
+    let g = 2 * Math.sin((Math.PI * fc) / SR);
+    let rate = 7 + rnd() * 6;
+    let ph = 0;
+    for (let i = 0; i < dur * SR; i++) {
+      const t = i / SR;
+      ph += (TAU * rate) / SR;
+      if (ph > TAU) {
+        ph -= TAU;
+        rate = 6 + rnd() * 8;
+        fc = 2600 + rnd() * 2600;
+        g = 2 * Math.sin((Math.PI * fc) / SR);
+      }
+      const x = noise();
+      low += g * band;
+      band += g * (x - low - 0.7 * band);
+      const stroke = 0.25 + 0.75 * Math.pow(Math.max(0, Math.sin(ph)), 1.5);
+      const grit = rnd() < 0.0009 ? 3 : 1;
+      const env = Math.min(1, t / 0.02) * Math.min(1, (dur - t) / 0.04);
+      put(fx, i0 + i, band * stroke * grit * env * vel, 0.15);
+    }
+  }
+  // Chalk set down on the board.
+  function tap(t0, vel = 0.1) {
+    const i0 = Math.floor(t0 * SR);
+    for (let i = 0; i < 0.06 * SR; i++) {
+      const t = i / SR;
+      const s = Math.sin(TAU * 2100 * t) * Math.exp(-t * 160) * 0.6 + noise() * Math.exp(-t * 500) * 0.5 + Math.sin(TAU * 180 * t) * Math.exp(-t * 60) * 0.4;
+      put(fx, i0 + i, s * vel, 0.1);
+    }
+  }
+  // The felt eraser rubbed back and forth.
+  function rub(t0, dur, vel = 0.13, sweeps = 9) {
+    const i0 = Math.floor(t0 * SR);
+    let lp = 0;
+    let lp2 = 0;
+    for (let i = 0; i < dur * SR; i++) {
+      const t = i / SR;
+      lp += 0.08 * (noise() - lp);
+      lp2 += 0.3 * (lp - lp2);
+      const k = (t / dur) * sweeps;
+      const stroke = 0.3 + 0.7 * Math.pow(Math.sin(Math.PI * (k % 1)), 0.8);
+      const env = Math.min(1, t / 0.04) * Math.min(1, (dur - t) / 0.08);
+      put(fx, i0 + i, (lp - lp2) * 6 * stroke * env * vel, Math.sin(k * Math.PI) * 0.5);
+    }
+  }
+  // A puff of chalk dust.
+  function puff(t0, vel = 0.12) {
+    whoosh(t0 + 0.15, vel, 0.12, 0.45);
+    const i0 = Math.floor(t0 * SR);
+    for (let i = 0; i < 0.3 * SR; i++) {
+      const t = i / SR;
+      put(fx, i0 + i, Math.sin(TAU * (90 + 60 * Math.exp(-t * 20)) * t) * Math.exp(-t * 14) * vel * 1.2, 0);
+    }
+  }
+  // Nylon-string guitar: a plucked string (Karplus–Strong) picked a little off the bridge,
+  // through the low resonances of a wooden body.
+  function nylon(t0, midi, vel = 0.2, pan = 0, len = 2.2) {
+    const f = mtof(midi);
+    const P = Math.max(2, Math.round(SR / f));
+    const buf = new Float32Array(P);
+    let lp = 0;
+    for (let i = 0; i < P; i++) {
+      lp += 0.35 * (noise() - lp);
+      buf[i] = lp;
+    }
+    // picked at about a fifth of the string: that harmonic and its multiples go quiet
+    const pick = Math.max(1, Math.round(P / 5));
+    const ex = Float32Array.from(buf, (x, i) => x - 0.8 * buf[(i + pick) % P]);
+    buf.set(ex);
+    const decay = Math.min(0.9985, 0.996 + midi * 0.00002);
+    const body = [
+      [105, 0.0045],
+      [210, 0.006],
+      [2600, 0.02],
+    ].map(([fc, bw]) => ({ g: 2 * Math.sin((Math.PI * fc) / SR), q: bw * 60, low: 0, band: 0 }));
+    const i0 = Math.floor(t0 * SR);
+    let p = 0;
+    let prev = 0;
+    for (let i = 0; i < len * SR; i++) {
+      const a = buf[p];
+      const nx = buf[(p + 1) % P];
+      const y = decay * (0.5 * (a + nx) * 0.8 + prev * 0.2);
+      prev = y;
+      buf[p] = y;
+      p = (p + 1) % P;
+      let res = 0;
+      for (const r of body) {
+        r.low += r.g * r.band;
+        r.band += r.g * (a - r.low - r.q * r.band);
+        res += r.band;
+      }
+      const env = Math.min(1, i / 40) * (i / SR > len - 0.15 ? (len - i / SR) / 0.15 : 1);
+      put(keys, i0 + i, (a * 0.8 + res * 0.12) * env * vel, pan);
+    }
+  }
+  // A whistled note: a pure tone with a little breath in it, gliding in from the last note,
+  // vibrato coming in as it is held.
+  function whistle(t0, midi, len, vel = 0.1, from = null) {
+    const f1 = mtof(midi);
+    const f0 = from ? mtof(from) : f1 * 0.985;
+    const i0 = Math.floor(t0 * SR);
+    let ph = 0;
+    let low = 0;
+    let band = 0;
+    for (let i = 0; i < (len + 0.1) * SR; i++) {
+      const t = i / SR;
+      const glide = Math.min(1, t / 0.05);
+      const f = f0 * Math.pow(f1 / f0, glide) * (1 + 0.007 * Math.sin(TAU * 5.6 * t) * Math.min(1, Math.max(0, t - 0.12) / 0.25));
+      ph += (TAU * f) / SR;
+      const g = 2 * Math.sin((Math.PI * Math.min(f, 6000)) / SR);
+      low += g * band;
+      band += g * (noise() - low - 0.08 * band);
+      const env = Math.min(1, t / 0.03) * (t > len ? Math.exp(-(t - len) * 40) : 1) * (0.94 + 0.06 * Math.sin(TAU * 2.3 * t));
+      put(bells, i0 + i, (Math.sin(ph) + 0.06 * Math.sin(2 * ph) + band * 0.05) * env * vel, 0.12);
+    }
+  }
+  // Brushes on a snare: a soft swish rather than a crack.
+  function brush(t0, vel = 0.1, long = false) {
+    const i0 = Math.floor(t0 * SR);
+    let lp = 0;
+    let prev = 0;
+    let hp = 0;
+    for (let i = 0; i < (long ? 0.35 : 0.18) * SR; i++) {
+      const t = i / SR;
+      const x = noise();
+      hp = 0.8 * (hp + x - prev);
+      prev = x;
+      lp += 0.35 * (hp - lp);
+      const env = Math.min(1, t / (long ? 0.04 : 0.006)) * Math.exp(-t * (long ? 9 : 22));
+      put(drums, i0 + i, lp * env * vel, -0.1);
+    }
+  }
+  // ---------- 编曲：黑板粉笔版（原声小清新，D 大调，96 BPM） ----------
+  // Fingerpicked nylon guitar, a bass, brushes and a shaker; a whistled tune that answers
+  // the narration in its pauses rather than talking over it.
+  function arrangeChalk() {
+    const B = 60 / 96;
+    const BR = B * 4;
+    // Dmaj7 – F#m7 – Gmaj7 – A | Dmaj7 – Bm7 – Em7 – A7
+    const CH = [
+      { bass: 38, pick: [50, 57, 61, 66], keys: [61, 66, 69] },
+      { bass: 42, pick: [54, 61, 64, 69], keys: [61, 64, 69] },
+      { bass: 43, pick: [55, 62, 66, 71], keys: [62, 66, 71] },
+      { bass: 45, pick: [57, 64, 69, 73], keys: [61, 64, 69] },
+      { bass: 38, pick: [50, 57, 61, 66], keys: [61, 66, 69] },
+      { bass: 47, pick: [59, 62, 66, 69], keys: [62, 66, 69] },
+      { bass: 40, pick: [52, 59, 62, 67], keys: [62, 67, 71] },
+      { bass: 45, pick: [57, 64, 67, 73], keys: [61, 64, 67] },
+    ];
+    // the tune, a bar at a time: [beat, beats, note]
+    const TUNE = [
+      [[0, 0.5, 69], [0.5, 0.5, 74], [1, 1, 78], [2, 0.5, 76], [2.5, 1.5, 74]],
+      [[0, 0.5, 73], [0.5, 0.5, 74], [1, 1, 76], [2, 2, 78]],
+      [[0, 1, 83], [1, 0.5, 81], [1.5, 0.5, 79], [2, 1, 78], [3, 1, 76]],
+      [[0, 1.5, 76], [1.5, 0.5, 78], [2, 1, 76], [3, 1, 73]],
+      [[0, 0.5, 69], [0.5, 0.5, 74], [1, 1, 78], [2, 0.5, 81], [2.5, 1.5, 83]],
+      [[0, 1, 81], [1, 1, 78], [2, 2, 74]],
+      [[0, 0.5, 74], [0.5, 0.5, 76], [1, 0.5, 78], [1.5, 0.5, 79], [2, 1, 81], [3, 1, 83]],
+      [[0, 1, 81], [1, 0.5, 79], [1.5, 0.5, 76], [2, 2, 74]],
+    ];
+    // Where the narration is, in 20 ms steps, to keep the tune out of its way.
+    const STEP = 0.02;
+    const talk = new Uint8Array(Math.ceil(N / SR / STEP) + 1);
+    for (let i = 0; i < N; i += SR * STEP) {
+      let m = 0;
+      for (let j = i; j < Math.min(N, i + SR * STEP); j++) m = Math.max(m, Math.abs(voice[j]));
+      if (m > 0.02) talk[Math.floor(i / SR / STEP)] = 1;
+    }
+    const quiet = (a, b) => {
+      for (let k = Math.max(0, Math.floor(a / STEP)); k <= Math.min(talk.length - 1, Math.ceil(b / STEP)); k++) if (talk[k]) return false;
+      return true;
+    };
+    const lineAt = (id) => (ev.voice || []).find(([, f]) => f.endsWith(`/${id}.wav`))?.[0];
+    const voiceEnd = Math.max(0, ...(ev.voice || []).map(([t]) => t)) + 4.2;
+    const sceneOf = (t) => ev.scenes.find((x) => t >= x.t0 - 1e-6 && t < x.t1)?.id || 'bye';
+    const hello = at('hello')?.t0 ?? 4;
+    const pick = at('pick')?.t0 ?? 8;
+    const again = lineAt('again');
+    // the last bar the band plays: the one where the narration has ended
+    const last = Math.ceil(Math.min(voiceEnd, ev.duration - 2) / BR);
+    const bars = music ? last : 0;
+    let prevNote = null;
+    for (let b = 0; b < bars; b++) {
+      const t0 = b * BR;
+      const ch = CH[b % 8];
+      const id = sceneOf(t0 + 0.01);
+      const full = t0 >= pick - 0.01;
+      const broke = again != null && t0 >= again - BR * 0.5 && t0 < again + BR * 0.5;
+      // fingerpicking: the bass string on one and three, the others in between
+      const pat = [0, 2, 1, 3, 0, 2, 1, 3];
+      pat.forEach((k, j) => {
+        const m = j % 4 === 0 ? ch.bass + 12 : ch.pick[k];
+        nylon(t0 + j * (B / 2) + (rnd() - 0.5) * 0.008, m, (j % 2 ? 0.13 : 0.17) * (id === 'stuck' ? 0.85 : 1), (k - 1.5) * 0.25);
+      });
+      if (t0 >= hello - 0.01) {
+        softBass(t0, ch.bass, 0.3);
+        softBass(t0 + 2 * B, ch.bass + 7, 0.22);
+        softBass(t0 + 3.5 * B, (CH[(b + 1) % 8].bass + ch.bass) / 2 > ch.bass ? ch.bass + 2 : ch.bass - 1, 0.14);
+        for (let k = 0; k < 16; k++) shaker(t0 + k * (B / 4), k % 4 === 2 ? 0.045 : k % 2 ? 0.018 : 0.03);
+      }
+      if (full && !broke) {
+        // electric piano on the offbeats
+        [1.5, 3.5].forEach((x) => ch.keys.forEach((m, i) => ep(t0 + x * B + i * 0.01, m, B * 0.35, 0.07, (i - 1) * 0.3)));
+        kick(t0, 0.36);
+        kick(t0 + 2.5 * B, 0.24);
+        brush(t0 + B, 0.11);
+        brush(t0 + 3 * B, 0.11, true);
+      }
+      // the tune, where nobody is talking
+      for (const [x, len, m] of TUNE[b % 8]) {
+        const a = t0 + x * B;
+        const d = len * B * 0.92;
+        if (t0 < 1.5 || !quiet(a - 0.25, a + d + 0.15)) {
+          prevNote = null;
+          continue;
+        }
+        whistle(a, m + 12, d, 0.075, prevNote ? prevNote + 12 : null);
+        prevNote = m;
+      }
+    }
+    // the ending: a strum of the home chord left to ring, and a little run up on top
+    if (music) {
+      const tEnd = last * BR;
+      [38, 50, 57, 62, 66, 69, 74].forEach((m, i) => nylon(tEnd + i * 0.03, m, 0.2, (i - 3) * 0.2, 3.5));
+      softBass(tEnd, 38, 0.3);
+      [74, 78, 81, 86].forEach((m, i) => glock(tEnd + 0.4 + i * 0.16, m, 0.06, (i - 1.5) * 0.3));
+    }
+    // sound effects, lined up with the picture
+    for (const [t, d] of ev.chalk || []) chalkScratch(t, d);
+    for (const t of ev.tap || []) tap(t);
+    for (const [t, d] of ev.erase || []) rub(t, d);
+    for (const t of ev.poof || []) puff(t);
+    for (const t of ev.pluck || []) {
+      const ch = CH[Math.floor(Math.max(0, t) / BR) % 8];
+      glock(t, ch.keys[Math.floor(rnd() * 3)] + 12, 0.05, (rnd() - 0.5) * 0.6);
+    }
+    for (const t of ev.click || []) click(t, 0.1);
+    for (const t of ev.ding || []) glock(t, 86, 0.09);
+    for (const t of ev.sparkle || []) [81, 85, 88, 93, 97].forEach((m, i) => glock(t + i * 0.05, m, 0.04, (i - 2) * 0.3));
+  }
+  // The narration: each line's recording where it is said.
+  const voice = new Float32Array(N);
+  for (const [t, file] of ev.voice || []) {
+    const buf = await fs.readFile(path.resolve(moduleDir, file));
+    let at0 = 12;
+    let rate = SR;
+    while (at0 + 8 <= buf.length) {
+      const id = buf.toString('ascii', at0, at0 + 4);
+      const size = buf.readUInt32LE(at0 + 4);
+      if (id === 'fmt ') rate = buf.readUInt32LE(at0 + 12);
+      if (id === 'data') {
+        const n = Math.floor(size / 2);
+        const i0 = Math.floor(t * SR);
+        for (let i = 0; i < (n * SR) / rate; i++) {
+          const x = (i * rate) / SR;
+          const j = Math.floor(x);
+          if (j + 1 >= n || i0 + i >= N) break;
+          const a = buf.readInt16LE(at0 + 8 + j * 2);
+          const b = buf.readInt16LE(at0 + 10 + j * 2);
+          voice[i0 + i] += ((a + (b - a) * (x - j)) / 32768);
+        }
+        break;
+      }
+      at0 += 8 + size + (size % 2);
+    }
+  }
   if (ev.style === 'cute') arrangeCute();
+  else if (ev.style === 'chalk') arrangeChalk();
   else arrangeReal();
 
   // ---------- 混音 ----------
@@ -507,11 +786,27 @@ export async function makeMusic(ev, file) {
     }
   // Ping-pong echo on the plucks, dotted eighth.
   {
-    const d = Math.round((ev.style === 'cute' ? 0.5 : BEAT) * 0.75 * SR);
+    const d = Math.round((ev.style === 'cute' ? 0.5 : ev.style === 'chalk' ? 60 / 96 : BEAT) * 0.75 * SR);
     for (let i = d; i < N; i++) {
       pluck.L[i] += pluck.R[i - d] * 0.32;
       pluck.R[i] += pluck.L[i - d] * 0.32;
     }
+  }
+  // Under the narration the music steps back (the effects a little less).
+  if (ev.voice?.length) {
+    let env = 0;
+    const duckV = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      const a = Math.abs(voice[i]);
+      env = a > env ? env + (a - env) * 0.02 : env * 0.99995;
+      duckV[i] = 1 - 0.62 * Math.min(1, env / 0.06);
+    }
+    for (let i = 0; i < N; i++)
+      for (const [b, k] of [[keys, 1], [pluck, 1], [bells, 1], [drums, 1], [fx, 0.5]]) {
+        const g = 1 - k * (1 - duckV[i]);
+        b.L[i] *= g;
+        b.R[i] *= g;
+      }
   }
   const out = bus();
   const mix = (b, g) => {
@@ -554,8 +849,8 @@ export async function makeMusic(ev, file) {
       }
     }
   }
-  // A little air: lift what is above ~3 kHz.
-  for (const side of ['L', 'R']) {
+  // A little air: lift what is above ~3 kHz. (Not under narration, where it would hiss.)
+  for (const side of ev.style === 'chalk' ? [] : ['L', 'R']) {
     const x = out[side];
     const g = 1 - Math.exp((-TAU * 3000) / SR);
     let lp = 0;
@@ -574,7 +869,52 @@ export async function makeMusic(ev, file) {
     out.R[i] = Math.tanh(out.R[i] * 1.1 * g);
     peak = Math.max(peak, Math.abs(out.L[i]), Math.abs(out.R[i]));
   }
-  const norm = 0.89 / peak;
+  let norm = 0.89 / peak;
+  // The voice goes on top, untouched by the soft clipper. Levels by loudness rather than peaks:
+  // speech at about -18 dBFS RMS, the music on its own about 7 dB under it (the version without
+  // music is handed the full mix's gain, so its effects sit the same). A look-ahead limiter
+  // catches the peaks that would go over.
+  let musicGain = null;
+  if (ev.voice?.length) {
+    let env = 0;
+    let vs = 0;
+    let vn = 0;
+    let ms = 0;
+    let mn = 0;
+    for (let i = 0; i < N; i++) {
+      const a = Math.abs(voice[i]);
+      env = a > env ? a : env * 0.9997;
+      if (env > 0.02) {
+        vs += voice[i] * voice[i];
+        vn++;
+      } else {
+        ms += out.L[i] * out.L[i] + out.R[i] * out.R[i];
+        mn += 2;
+      }
+    }
+    const vg = 0.126 / Math.sqrt(vs / vn);
+    const mg = gain ?? 0.056 / Math.sqrt(ms / mn);
+    musicGain = mg;
+    const ceil = 0.89;
+    const need = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      out.L[i] = out.L[i] * mg + voice[i] * vg;
+      out.R[i] = out.R[i] * mg + voice[i] * vg;
+      const m = Math.max(Math.abs(out.L[i]), Math.abs(out.R[i]));
+      need[i] = m > ceil ? ceil / m : 1;
+    }
+    const look = Math.round(0.003 * SR);
+    const back = 1 / (0.08 * SR);
+    let held = 1;
+    for (let i = 0; i < N; i++) {
+      let want = 1;
+      for (let j = i; j < Math.min(N, i + look); j++) want = Math.min(want, need[j]);
+      held = want < held ? want : Math.min(want, held + back);
+      out.L[i] *= held;
+      out.R[i] *= held;
+    }
+    norm = 1;
+  }
   const wav = Buffer.alloc(44 + N * 4);
   wav.write('RIFF', 0);
   wav.writeUInt32LE(36 + N * 4, 4);
@@ -593,6 +933,7 @@ export async function makeMusic(ev, file) {
     wav.writeInt16LE(Math.round(clamp1(out.R[i] * norm) * 32767), 46 + i * 4);
   }
   await fs.writeFile(file, wav);
+  return { gain: musicGain };
 }
 const clamp1 = (x) => Math.max(-1, Math.min(1, x));
 

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>页间 Folio · 白板讲解 · 手绘可爱版（竖屏）</title>
+    <link rel="stylesheet" href="cute.css" />
+    <style>
+      #stage {
+        width: 1080px;
+        height: 1440px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage">
+      <svg id="paper" viewBox="0 0 1080 1440" width="1080" height="1440">
+        <defs>
+          <pattern id="dots" width="36" height="36" patternUnits="userSpaceOnUse">
+            <circle cx="18" cy="18" r="2.2" fill="#e9dcc4" />
+          </pattern>
+          <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+            <circle cx="24" cy="24" r="2.4" fill="#d8e6df" />
+          </pattern>
+          <radialGradient id="vignette" cx="50%" cy="50%" r="75%">
+            <stop offset="60%" stop-color="#000" stop-opacity="0" />
+            <stop offset="100%" stop-color="#6b4f2a" stop-opacity=".12" />
+          </radialGradient>
+          <filter id="boil" x="-10%" y="-10%" width="120%" height="120%">
+            <feTurbulence type="fractalNoise" baseFrequency="0.022" numOctaves="2" seed="1" />
+            <feDisplacementMap in="SourceGraphic" scale="4.5" xChannelSelector="R" yChannelSelector="G" />
+          </filter>
+        </defs>
+        <rect width="1080" height="1440" fill="url(#dots)" />
+      </svg>
+      <div id="scenes"></div>
+      <svg id="over" viewBox="0 0 1080 1440" width="1080" height="1440"></svg>
+      <svg id="vig" viewBox="0 0 1080 1440" width="1080" height="1440">
+        <rect width="1080" height="1440" fill="url(#vignette)" />
+      </svg>
+    </div>
+    <div id="scrub" hidden>
+      <button id="play">▶</button><input id="time" type="range" min="0" step="0.001" /><span
+        id="clock"
+      ></span>
+    </div>
+    <script type="module" src="whiteboard.js"></script>
+  </body>
+</html>

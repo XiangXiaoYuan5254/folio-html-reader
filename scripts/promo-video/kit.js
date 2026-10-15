@@ -103,8 +103,8 @@ export function fadeOut(e, k, { dy = -24, blur = 12, scale = 1 } = {}) {
 
 // ?preview: a scrub bar to drag through the timeline or play it.
 export function startPreview(stage, seek, total, from = 0) {
-  const W = 1920;
-  const H = 1080;
+  const W = stage.offsetWidth;
+  const H = stage.offsetHeight;
   const bar = document.getElementById('scrub');
   bar.hidden = false;
   const range = document.getElementById('time');

@@ -252,49 +252,51 @@ export function place(e, x, y, sc = 1, rot = 0) {
 // ---------- 小页：页间图标变成的吉祥物 ----------
 const PAGE = 'M260 295c94-17 167 5 252 55 85-50 158-72 252-55v420c-91-22-173-7-252 37-79-44-161-59-252-37z';
 export class Mascot {
-  constructor(parent, { color = C.teal, seed = 3 } = {}) {
+  // ink: outlines; eye: eyes, mouth and glasses on the page face; page: the face itself.
+  constructor(parent, { color = C.teal, seed = 3, ink = C.ink, eye = C.ink, page = '#fffdf6', feet = C.tealD, shadow = 'rgba(61,58,75,.14)' } = {}) {
+    this.ink = ink;
     this.root = g(parent);
-    this.shadow = s('ellipse', { cx: 0, cy: 0, rx: 96, ry: 15, fill: 'rgba(61,58,75,.14)' }, this.root);
+    this.shadow = s('ellipse', { cx: 0, cy: 0, rx: 96, ry: 15, fill: shadow }, this.root);
     this.lift = g(this.root);
     this.body = g(this.lift);
     this.armL = this.arm(-1);
     this.armR = this.arm(1);
     this.feet = [-42, 42].map((x) =>
-      s('ellipse', { cx: x, cy: -19, rx: 30, ry: 16, fill: C.tealD, stroke: C.ink, 'stroke-width': 4.5 }, this.body),
+      s('ellipse', { cx: x, cy: -19, rx: 30, ry: 16, fill: feet, stroke: ink, 'stroke-width': 4.5 }, this.body),
     );
     this.ribbon = g(this.body);
-    s('path', { d: 'M28 -222 L28 -272 L40 -261 L52 -272 L52 -222 Z', fill: C.gold, stroke: C.ink, 'stroke-width': 4.5, 'stroke-linejoin': 'round' }, this.ribbon);
+    s('path', { d: 'M28 -222 L28 -272 L40 -261 L52 -272 L52 -222 Z', fill: C.gold, stroke: ink, 'stroke-width': 4.5, 'stroke-linejoin': 'round' }, this.ribbon);
     const torso = rectD(-96, -234, 192, 206, 74, seed, 1.6);
     this.fill = s('path', { d: torso, fill: color, transform: 'translate(4 5)' }, this.body);
-    s('path', { d: torso, fill: 'none', stroke: C.ink, 'stroke-width': 5, 'stroke-linejoin': 'round' }, this.body);
-    s('path', { d: PAGE, transform: 'translate(-153.6 -286) scale(.3)', fill: '#fffdf6', stroke: C.ink, 'stroke-width': 15 }, this.body);
+    s('path', { d: torso, fill: 'none', stroke: ink, 'stroke-width': 5, 'stroke-linejoin': 'round' }, this.body);
+    s('path', { d: PAGE, transform: 'translate(-153.6 -286) scale(.3)', fill: page, stroke: ink, 'stroke-width': 15 }, this.body);
     s('path', { d: 'M0 -178 L0 -156', stroke: '#b6cfc4', 'stroke-width': 4, 'stroke-linecap': 'round' }, this.body);
     this.face = g(this.body);
     this.blushes = [-50, 50].map((x) => s('ellipse', { cx: x, cy: -103, rx: 13, ry: 7.5, fill: C.blush, opacity: 0.75 }, this.face));
     this.eyes = [-35, 35].map((x) => {
       const e = g(this.face, { transform: `translate(${x} -132)` });
-      const ball = s('ellipse', { cx: 0, cy: 0, rx: 10, ry: 13, fill: C.ink }, e);
+      const ball = s('ellipse', { cx: 0, cy: 0, rx: 10, ry: 13, fill: eye }, e);
       const shine = s('circle', { cx: 3.5, cy: -5, r: 3.6, fill: '#fff' }, e);
       return { e, ball, shine, x };
     });
     this.happyEyes = g(this.face);
     for (const x of [-35, 35])
-      s('path', { d: `M${x - 11} -128 Q${x} -144 ${x + 11} -128`, fill: 'none', stroke: C.ink, 'stroke-width': 5, 'stroke-linecap': 'round' }, this.happyEyes);
+      s('path', { d: `M${x - 11} -128 Q${x} -144 ${x + 11} -128`, fill: 'none', stroke: eye, 'stroke-width': 5, 'stroke-linecap': 'round' }, this.happyEyes);
     this.dizzyEyes = g(this.face);
     for (const x of [-35, 35])
-      s('path', { d: `M${x} -132 m-2 0 a2 2 0 1 1 4 0 a5 5 0 1 1 -9 0 a8 8 0 1 1 15 1 a11 11 0 1 1 -20 -2`, fill: 'none', stroke: C.ink, 'stroke-width': 3.2, 'stroke-linecap': 'round' }, this.dizzyEyes);
-    this.winkEye = s('path', { d: 'M24 -130 Q35 -140 46 -130', fill: 'none', stroke: C.ink, 'stroke-width': 5, 'stroke-linecap': 'round' }, this.face);
+      s('path', { d: `M${x} -132 m-2 0 a2 2 0 1 1 4 0 a5 5 0 1 1 -9 0 a8 8 0 1 1 15 1 a11 11 0 1 1 -20 -2`, fill: 'none', stroke: eye, 'stroke-width': 3.2, 'stroke-linecap': 'round' }, this.dizzyEyes);
+    this.winkEye = s('path', { d: 'M24 -130 Q35 -140 46 -130', fill: 'none', stroke: eye, 'stroke-width': 5, 'stroke-linecap': 'round' }, this.face);
     this.mouths = {
-      smile: s('path', { d: 'M-10 -110 Q0 -100 10 -110', fill: 'none', stroke: C.ink, 'stroke-width': 4.5, 'stroke-linecap': 'round' }, this.face),
-      open: s('path', { d: 'M-12 -112 Q0 -93 12 -112 Z', fill: '#d9536b', stroke: C.ink, 'stroke-width': 4, 'stroke-linejoin': 'round' }, this.face),
-      o: s('ellipse', { cx: 0, cy: -106, rx: 7, ry: 9, fill: '#d9536b', stroke: C.ink, 'stroke-width': 4 }, this.face),
-      wavy: s('path', { d: 'M-14 -106 q5 -6 9 0 t9 0 t9 0', fill: 'none', stroke: C.ink, 'stroke-width': 4, 'stroke-linecap': 'round' }, this.face),
+      smile: s('path', { d: 'M-10 -110 Q0 -100 10 -110', fill: 'none', stroke: eye, 'stroke-width': 4.5, 'stroke-linecap': 'round' }, this.face),
+      open: s('path', { d: 'M-12 -112 Q0 -93 12 -112 Z', fill: '#d9536b', stroke: eye, 'stroke-width': 4, 'stroke-linejoin': 'round' }, this.face),
+      o: s('ellipse', { cx: 0, cy: -106, rx: 7, ry: 9, fill: '#d9536b', stroke: eye, 'stroke-width': 4 }, this.face),
+      wavy: s('path', { d: 'M-14 -106 q5 -6 9 0 t9 0 t9 0', fill: 'none', stroke: eye, 'stroke-width': 4, 'stroke-linecap': 'round' }, this.face),
     };
     this.glasses = g(this.face);
     for (const x of [-35, 35])
-      s('circle', { cx: x, cy: -132, r: 21, fill: 'rgba(255,255,255,.25)', stroke: C.ink, 'stroke-width': 4.5 }, this.glasses);
-    s('path', { d: 'M-14 -134 Q0 -142 14 -134', fill: 'none', stroke: C.ink, 'stroke-width': 4.5 }, this.glasses);
-    this.sweat = s('path', { d: 'M78 -200 q10 16 0 22 q-10 -6 0 -22z', fill: '#9fd3ff', stroke: C.ink, 'stroke-width': 3.5 }, this.body);
+      s('circle', { cx: x, cy: -132, r: 21, fill: 'rgba(255,255,255,.25)', stroke: eye, 'stroke-width': 4.5 }, this.glasses);
+    s('path', { d: 'M-14 -134 Q0 -142 14 -134', fill: 'none', stroke: eye, 'stroke-width': 4.5 }, this.glasses);
+    this.sweat = s('path', { d: 'M78 -200 q10 16 0 22 q-10 -6 0 -22z', fill: '#9fd3ff', stroke: ink, 'stroke-width': 3.5 }, this.body);
     this.mood = null;
     this.set({});
   }
@@ -302,7 +304,7 @@ export class Mascot {
     const a = g(this.body, { transform: `translate(${side * 90} -118)` });
     const inner = g(a);
     const d = side > 0 ? 'M0 0 Q22 10 30 38' : 'M0 0 Q-22 10 -30 38';
-    s('path', { d, fill: 'none', stroke: C.ink, 'stroke-width': 25, 'stroke-linecap': 'round' }, inner);
+    s('path', { d, fill: 'none', stroke: this.ink, 'stroke-width': 25, 'stroke-linecap': 'round' }, inner);
     const f = s('path', { d, fill: 'none', stroke: C.teal, 'stroke-width': 15, 'stroke-linecap': 'round' }, inner);
     const hand = g(inner, { transform: `translate(${side * 30} 38)` });
     (this.armFills ||= []).push(f);
@@ -540,6 +542,52 @@ export function ripple(parent, color = C.violet) {
   return c;
 }
 
+// ---------- 动画小工具 ----------
+// Mascot defaults: breathing, blinking, ribbon swaying.
+export const idle = (u, more = {}) => ({
+  blink: blinkAt(u),
+  sway: Math.sin(u * 3) * 5,
+  sq: Math.sin(u * 4.2) * 0.025,
+  ...more,
+});
+// Spring a group in at t0 (and out at t1), around its own position.
+export function popIn(e, u, t0, { x = 0, y = 0, rot = 0, sc = 1, out, freq = 2.4, damp = 0.45 } = {}) {
+  const k = spring(u - t0, freq, damp);
+  let o = clamp((u - t0) * 8);
+  let q = 0;
+  if (out != null && u > out) q = E.in(clamp((u - out) / 0.3));
+  place(e, x, y - q * 30, Math.max(0, k) * sc * (1 - q * 0.5), rot + (1 - clamp(k)) * 14);
+  e.setAttribute('opacity', u < t0 ? 0 : o * (1 - q));
+}
+// Moves a tool along a path as it is drawn.
+export function follow(t, path, k) {
+  const len = (path.len ||= path.getTotalLength());
+  const p = path.getPointAtLength(len * clamp(k));
+  place(t, p.x, p.y);
+}
+export function showTool(t, on) {
+  t.setAttribute('opacity', on ? 1 : 0);
+}
+// Little sparkles scattered around, popping in and twinkling.
+export function sparkles(parent, list, seedFill = 0) {
+  const cols = [C.yellow, C.pink, C.sky, C.mint, C.violet];
+  return list.map(([x, y, r, kind = 'sparkle'], i) => {
+    const e = g(parent);
+    const d = kind === 'star' ? starD(0, 0, r, i + 3) : kind === 'heart' ? heartD(0, 0, r) : sparkleD(0, 0, r);
+    s('path', { d, fill: cols[(i + seedFill) % cols.length], stroke: C.ink, 'stroke-width': 4, 'stroke-linejoin': 'round' }, e);
+    return { e, x, y, i };
+  });
+}
+export function twinkle(list, u, t0, out) {
+  for (const { e, x, y, i } of list) {
+    const a = t0 + i * 0.09;
+    const k = spring(u - a, 2.6, 0.4);
+    let o = u < a ? 0 : 1;
+    if (out != null && u > out) o *= 1 - clamp((u - out) / 0.3);
+    place(e, x, y, Math.max(0, k) * (1 + 0.14 * Math.sin(u * 6 + i)), Math.sin(u * 2 + i) * 18);
+    e.setAttribute('opacity', o);
+  }
+}
 // ---------- 撒花 ----------
 export function confetti(parent, { x, y, n = 46, seed = 9 }) {
   const r = rng(seed);
