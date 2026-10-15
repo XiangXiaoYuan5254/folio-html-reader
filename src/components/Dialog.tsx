@@ -6,6 +6,8 @@ export type DialogOptions = {
   initial?: string;
   input?: boolean;
   confirmLabel?: string;
+  // A cancel that does something of its own, e.g. 打开已有译文.
+  cancelLabel?: string;
   danger?: boolean;
   onConfirm: (value: string) => unknown | Promise<unknown>;
   // Called when the dialog is dismissed without confirming.
@@ -78,7 +80,7 @@ export function Dialog({ options, onClose }: { options: DialogOptions; onClose: 
         ) : null}
         <div className="dialog-actions">
           <button type="button" className="secondary-button" disabled={busy} onClick={cancel}>
-            取消
+            {options.cancelLabel || '取消'}
           </button>
           <button className={`primary-button ${options.danger ? 'danger' : ''}`} disabled={busy}>
             {busy ? '处理中…' : options.confirmLabel || '确定'}

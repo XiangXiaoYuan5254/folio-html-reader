@@ -15,6 +15,7 @@ import {
   FileText,
   Highlighter,
   ImagePlus,
+  Languages,
   Lightbulb,
   ListChecks,
   LoaderCircle,
@@ -32,7 +33,7 @@ import {
 } from 'lucide-react';
 import { invoke } from '../api';
 import { activeProvider, providerReady, useAiConfig } from '../ai/client';
-import type { AgentStep, ChatMessage, ChatThread } from '../ai/types';
+import type { AgentStep, ChatMessage, ChatThread, PairThreads } from '../ai/types';
 import { citeKey, plainCites, taskLabels, useAssistantState } from '../ai/assistant';
 import type { Assistant, ReadingContext, Task } from '../ai/assistant';
 import { Markdown } from '../ai/Markdown';
@@ -53,6 +54,7 @@ const taskIcons: Record<Task, typeof FileText> = {
   companion: BookOpenText,
   organize: ListChecks,
   questions: Lightbulb,
+  translate: Languages,
   compare: Scale,
 };
 const agentExamples = [
@@ -69,6 +71,8 @@ export function AssistantPanel(p: {
   selection: string;
   onClearSelection: () => void;
   onOpenSettings: () => void;
+  // Opens `other` beside the document and shows a conversation the two had.
+  onOpenPair: (other: string, scope: string, threadId: string) => void;
   hasFiles: boolean;
 }) {
   const config = useAiConfig();
@@ -91,6 +95,17 @@ export function AssistantPanel(p: {
   const stick = useRef(true);
   const input = useRef<HTMLTextAreaElement>(null);
   const [threadsOpen, setThreadsOpen] = useState(false);
+  // With one document open, its conversations with others read beside it are listed too.
+  const single = p.mode === 'doc' && p.reading?.docs.length === 1;
+  const [pairs, setPairs] = useState<PairThreads[]>([]);
+  useEffect(() => {
+    if (!single || !scope) return setPairs([]);
+    let live = true;
+    void p.store.pairs(scope).then((list) => live && setPairs(list));
+    return () => {
+      live = false;
+    };
+  }, [scope, single, threadsOpen]);
   const images = state.attachments[scope] || [];
   const [capturing, setCapturing] = useState(false);
   const [viewing, setViewing] = useState('');
@@ -136,7 +151,14 @@ export function AssistantPanel(p: {
     stick.current = true;
     void p.store.runTask(p.reading, t);
   }
-  const tasks: Task[] = ['summary', 'highlights', 'companion', 'organize', 'questions'];
+  const tasks: Task[] = [
+    'summary',
+    'highlights',
+    'companion',
+    'organize',
+    'questions',
+    'translate',
+  ];
   if ((p.reading?.docs.length || 0) > 1) tasks.push('compare');
   const noDocument = p.mode === 'doc' && !p.reading;
   return (
@@ -186,7 +208,7 @@ export function AssistantPanel(p: {
         <div className="assistant-threads">
           <button
             className="assistant-thread-button"
-            disabled={!history?.threads.length}
+            disabled={!history?.threads.length && !pairs.length}
             onClick={() => setThreadsOpen((v) => !v)}
             aria-expanded={threadsOpen}
             title="历史对话"
@@ -197,10 +219,15 @@ export function AssistantPanel(p: {
           {threadsOpen && history ? (
             <ThreadMenu
               threads={history.threads}
+              pairs={pairs}
               active={thread?.id}
               running={state.running}
               onPick={(id) => {
                 p.store.selectThread(scope, id);
+                setThreadsOpen(false);
+              }}
+              onPickPair={(pair, id) => {
+                p.onOpenPair(pair.other, pair.key, id);
                 setThreadsOpen(false);
               }}
               onDelete={(id) => p.store.deleteThread(scope, id)}
@@ -467,14 +494,25 @@ function SetupCard({ onOpen }: { onOpen: () => void }) {
 
 function ThreadMenu(p: {
   threads: ChatThread[];
+  pairs: PairThreads[];
   active?: string;
   // Conversations with a reply going, marked so none runs out of sight.
   running: Record<string, true>;
   onPick: (id: string) => void;
+  onPickPair: (pair: PairThreads, id: string) => void;
   onDelete: (id: string) => void;
   onClose: () => void;
 }) {
   const menu = useRef<HTMLDivElement>(null);
+  // In a narrow panel the menu moves left just enough to stay inside it.
+  useLayoutEffect(() => {
+    const el = menu.current;
+    const panel = el?.closest('.assistant-panel')?.getBoundingClientRect();
+    if (!el || !panel) return;
+    const box = el.getBoundingClientRect();
+    const over = box.right - (panel.right - 8);
+    if (over > 0) el.style.left = `${-Math.min(over, box.left - (panel.left + 8))}px`;
+  }, []);
   useEffect(() => {
     const dismiss = (e: PointerEvent) => {
       if (!menu.current?.parentElement?.contains(e.target as Node)) p.onClose();
@@ -485,28 +523,57 @@ function ThreadMenu(p: {
   const shown = p.threads.filter((t) => t.messages.length);
   return (
     <div className="assistant-thread-menu" ref={menu} role="menu">
-      {shown.length ? (
-        shown.map((t) => (
-          <div key={t.id} className={`assistant-thread-item ${t.id === p.active ? 'active' : ''}`}>
-            <button role="menuitem" onClick={() => p.onPick(t.id)}>
-              <span>
-                {p.running[t.id] ? (
-                  <LoaderCircle className="spin" size={11} aria-label="正在回答" />
-                ) : t.unseen ? (
-                  <i className="assistant-thread-unseen" aria-label="有新回复，还没看" />
-                ) : null}
-                {t.title}
-              </span>
-              <time>{when(t.updatedAt)}</time>
-            </button>
-            <IconButton label="删除这段对话" onClick={() => p.onDelete(t.id)}>
-              <Trash2 size={12} />
-            </IconButton>
-          </div>
-        ))
-      ) : (
-        <p>还没有历史对话</p>
-      )}
+      {shown.length || !p.pairs.length
+        ? shown.map((t) => (
+            <div
+              key={t.id}
+              className={`assistant-thread-item ${t.id === p.active ? 'active' : ''}`}
+            >
+              <button role="menuitem" onClick={() => p.onPick(t.id)}>
+                <span>
+                  {p.running[t.id] ? (
+                    <LoaderCircle className="spin" size={11} aria-label="正在回答" />
+                  ) : t.unseen ? (
+                    <i className="assistant-thread-unseen" aria-label="有新回复，还没看" />
+                  ) : null}
+                  {t.title}
+                </span>
+                <time>{when(t.updatedAt)}</time>
+              </button>
+              <IconButton label="删除这段对话" onClick={() => p.onDelete(t.id)}>
+                <Trash2 size={12} />
+              </IconButton>
+            </div>
+          ))
+        : null}
+      {!shown.length && !p.pairs.length ? <p>还没有历史对话</p> : null}
+      {p.pairs.length ? (
+        <>
+          <div className="assistant-thread-heading">和其他文档并排时的对话</div>
+          {p.pairs.flatMap((pair) =>
+            pair.threads.map((t) => (
+              <div key={`${pair.key}:${t.id}`} className="assistant-thread-item">
+                <button
+                  role="menuitem"
+                  title={`和《${fileName(pair.other)}》并排打开，接着这段对话`}
+                  onClick={() => p.onPickPair(pair, t.id)}
+                >
+                  <span className="assistant-thread-pair">
+                    <b>
+                      {p.running[t.id] ? (
+                        <LoaderCircle className="spin" size={11} aria-label="正在回答" />
+                      ) : null}
+                      {t.title}
+                    </b>
+                    <small>与《{fileName(pair.other)}》一起读</small>
+                  </span>
+                  <time>{when(t.updatedAt)}</time>
+                </button>
+              </div>
+            )),
+          )}
+        </>
+      ) : null}
     </div>
   );
 }
@@ -683,16 +750,18 @@ function AnswerMessage(p: {
               onClick={() => {
                 const reading = m.docs?.length ? { scope: p.scope, docs: m.docs } : null;
                 if (!reading) return;
-                if (resume) return void p.store.resumeCompanion(reading, p.thread.id, m.id);
+                if (resume) return void p.store.resume(reading, p.thread.id, m.id);
                 const task = (Object.keys(taskLabels) as Task[]).find(
-                  (t) => taskLabels[t] === question.label,
+                  (t) =>
+                    question.label === taskLabels[t] ||
+                    !!question.label?.startsWith(`${taskLabels[t]} · `),
                 );
                 if (task) void p.store.runTask(reading, task);
                 else void p.store.ask(reading, question.text, question.selection, question.images);
               }}
             >
               <RotateCcw size={12} />
-              {resume ? '接着写' : '重试'}
+              {resume ? p.store.resumeLabel(m.id) : '重试'}
             </button>
           ) : null}
         </div>
@@ -703,11 +772,11 @@ function AnswerMessage(p: {
           {resume && m.docs?.length && !p.running ? (
             <button
               onClick={() =>
-                void p.store.resumeCompanion({ scope: p.scope, docs: m.docs! }, p.thread.id, m.id)
+                void p.store.resume({ scope: p.scope, docs: m.docs! }, p.thread.id, m.id)
               }
             >
               <RotateCcw size={12} />
-              接着写
+              {p.store.resumeLabel(m.id)}
             </button>
           ) : null}
         </div>

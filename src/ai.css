@@ -187,6 +187,29 @@
   vertical-align: -1px;
   color: var(--muted);
 }
+.assistant-thread-heading {
+  margin: 8px 8px 2px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.assistant-thread-item .assistant-thread-pair {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.assistant-thread-pair b,
+.assistant-thread-pair small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.assistant-thread-pair b {
+  font-weight: inherit;
+}
+.assistant-thread-pair small {
+  color: var(--muted);
+  font-size: 11px;
+}
 .assistant-thread-unseen {
   display: inline-block;
   width: 6px;

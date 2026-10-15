@@ -42,6 +42,8 @@ export type ReaderProps = {
   zoom: number;
   zoomable?: boolean;
   linkedScroll?: boolean;
+  // Scrolls along with the other pane paragraph by paragraph: a translation and its PDF.
+  paired?: boolean;
   scroll: number;
   onEvent: (e: FrameEvent) => void;
 };
@@ -201,6 +203,7 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
         sendAppearance();
         send('restore', { scroll: live.current.scroll });
         send('scroll-link-state', { enabled: !!live.current.linkedScroll });
+        send('pair-state', { enabled: !!live.current.paired });
       }
       live.current.onEvent(
         e.data.type === 'zoom-wheel'
@@ -228,6 +231,9 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
   useEffect(() => {
     if (ready) send('scroll-link-state', { enabled: !!p.linkedScroll });
   }, [ready, p.linkedScroll]);
+  useEffect(() => {
+    if (ready) send('pair-state', { enabled: !!p.paired });
+  }, [ready, p.paired]);
   useEffect(() => {
     if (ready) sendAppearance();
   }, [ready, theme]);

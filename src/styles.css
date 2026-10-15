@@ -817,6 +817,45 @@ button.brand {
   background: var(--surface-3);
   color: var(--text-4);
 }
+/* Room for the swap button that sits on the divider between the two headers. */
+.reading-column[data-pane='left'] > .reading-column-header {
+  padding-right: 18px;
+}
+.reading-column[data-pane='right'] > .reading-column-header {
+  padding-left: 18px;
+}
+.reading-column-header.swappable {
+  cursor: grab;
+  user-select: none;
+}
+.pane-pressing iframe {
+  pointer-events: none;
+}
+.document-workbench.pane-dragging,
+.document-workbench.pane-dragging * {
+  cursor: grabbing;
+}
+.pane-swap.icon-button {
+  position: absolute;
+  top: 5px;
+  z-index: 7;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: 0 1px 3px rgb(var(--shadow-rgb) / calc(0.12 * var(--shadow-k)));
+  transform: translateX(-50%);
+}
+.pane-swap.icon-button:hover:not(:disabled) {
+  border-color: var(--accent-line-strong);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  color: var(--accent);
+}
+.pane-swap-overlay {
+  pointer-events: none;
+}
 .active-column > .reading-column-header {
   background: var(--accent-soft);
   border-bottom-color: var(--accent-line-strong);
@@ -883,6 +922,9 @@ button.brand {
   touch-action: none;
   background: var(--line-soft);
   z-index: 6;
+}
+.split-reading > .reading-resizer {
+  order: 1;
 }
 .reading-resizer::after {
   content: '';
@@ -3446,6 +3488,7 @@ button.brand {
 .focus-mode .titlebar,
 .focus-mode .document-tab-row,
 .focus-mode .reading-column-header,
+.focus-mode .pane-swap,
 .app-shell.focus-mode .file-sidebar,
 .app-shell.focus-mode .inspector,
 .focus-mode .focus-hide {

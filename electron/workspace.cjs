@@ -243,12 +243,45 @@ class Workspace {
     });
   }
   // Assistant conversations sit beside the document's annotations; project-wide ones at the root.
+  // Two documents read side by side ("pair:<id>+<id>") share one, beside the first of them.
   async aiHistoryPath(key) {
     if (key === 'project') return path.join(this.meta, 'ai', 'project.json');
-    const relative = Object.keys(this.index.files).find((p) => this.index.files[p].id === key);
-    if (!relative) throw Error('文档不属于当前项目');
-    const full = await this.resolve(relative);
-    return path.join(path.dirname(full), '.html-reader', 'ai', `${key}.json`);
+    const pair = /^pair:([\w-]+)\+([\w-]+)$/.exec(key);
+    const ids = pair ? [pair[1], pair[2]] : [key];
+    const relative = ids.map((id) =>
+      Object.keys(this.index.files).find((p) => this.index.files[p].id === id),
+    );
+    if (relative.some((r) => !r)) throw Error('文档不属于当前项目');
+    const full = await this.resolve(relative[0]);
+    const name = pair ? `pair-${ids[0]}+${ids[1]}.json` : `${key}.json`;
+    return path.join(path.dirname(full), '.html-reader', 'ai', name);
+  }
+  // The conversations a document had with others read beside it (pair-<id>+<id>.json, beside
+  // the first of the two): the other document and each conversation's title.
+  async aiPairs({ id }) {
+    return this.serial(async () => {
+      const files = this.index.files;
+      const pathOf = (doc) => Object.keys(files).find((p) => files[p].id === doc);
+      const found = [];
+      for (const dir of new Set(Object.keys(files).map((p) => path.dirname(p)))) {
+        const base = dir === '.' ? this.root : await this.resolve(dir).catch(() => null);
+        if (!base) continue;
+        const folder = path.join(base, '.html-reader', 'ai');
+        for (const name of await fs.readdir(folder).catch(() => [])) {
+          const m = /^pair-([\w-]+)\+([\w-]+)\.json$/.exec(name);
+          const other = m && (m[1] === id || m[2] === id) && pathOf(m[1] === id ? m[2] : m[1]);
+          if (!other) continue;
+          try {
+            const data = JSON.parse(await fs.readFile(path.join(folder, name), 'utf8'));
+            const threads = (Array.isArray(data?.threads) ? data.threads : [])
+              .filter((t) => t.messages?.length)
+              .map((t) => ({ id: t.id, title: t.title, updatedAt: t.updatedAt }));
+            if (threads.length) found.push({ key: `pair:${m[1]}+${m[2]}`, other, threads });
+          } catch {}
+        }
+      }
+      return found;
+    });
   }
   async aiHistory({ key }) {
     return this.serial(async () => {

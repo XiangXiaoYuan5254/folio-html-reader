@@ -80,8 +80,8 @@ export function compactPrompt(previous: string, transcript: string) {
     .filter((line) => line !== '')
     .join('\n');
 }
-export function selectionPrompt(selection: string, question: string) {
-  return `我选中了这段原文：\n<selection>\n${selection}\n</selection>\n\n${question}`;
+export function selectionPrompt(selection: string, question: string, from = '') {
+  return `我${from ? `在《${from}》里` : ''}选中了这段原文：\n<selection>\n${selection}\n</selection>\n\n${question}`;
 }
 
 export function explainTask(selection: string, context: string) {

@@ -24,6 +24,9 @@ export type AiHost = {
   showNote(path: string, find?: string): Promise<void>;
   setSource(path: string, source: string): Promise<{ saved: boolean }>;
   createHtml(path: string, content: string): Promise<void>;
+  // Replaces an HTML file the AI wrote, as a source save does (backup included), and shows the
+  // new version where it's open. Fails while it has edits not saved yet.
+  writeHtml(path: string, content: string): Promise<void>;
   // Papers from OpenAlex and arXiv; `notes` says which of them could not be reached.
   searchPapers(options: {
     query: string;
@@ -34,9 +37,15 @@ export type AiHost = {
   // Downloads a PDF into the project, creating folders on the way; resolves with its size.
   savePdf(url: string, path: string): Promise<number>;
   open(path: string): Promise<void>;
-  // Shows `path` in two-column reading next to `beside` (e.g. a notes page next to its paper).
-  openBeside(path: string, beside: string): Promise<void>;
-  confirm(options: { title: string; message: string; confirmLabel: string }): Promise<boolean>;
+  // Shows `path` in two-column reading next to `beside` (e.g. a notes page next to its paper);
+  // `linked` also turns on 同步滚动, for a translation and its PDF.
+  openBeside(path: string, beside: string, options?: { linked?: boolean }): Promise<void>;
+  confirm(options: {
+    title: string;
+    message: string;
+    confirmLabel: string;
+    cancelLabel?: string;
+  }): Promise<boolean>;
   notify(text: string, error?: boolean): void;
   openSettings(): void;
 };

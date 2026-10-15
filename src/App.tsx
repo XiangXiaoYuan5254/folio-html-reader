@@ -1,5 +1,6 @@
-import { Fragment, lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
+import { flushSync } from 'react-dom';
 import {
   BookOpen,
   Check,
@@ -22,6 +23,7 @@ import {
   Presentation,
   Crown,
   ArrowUpToLine,
+  ArrowLeftRight,
 } from 'lucide-react';
 import { invoke, subscribe, useWorkspace, isDesktop, documentUrl } from './api';
 import { isMac, shortcut, trashName } from './platform';
@@ -81,7 +83,7 @@ import { ThemePicker } from './components/ThemePicker';
 import { MembershipDialog, MemberLock } from './components/MembershipDialog';
 import { memberNow, renewLicense, useLicense } from './license';
 import { setThemesUnlocked } from './theme';
-import { Exit, objectKey } from './motion';
+import { Exit, objectKey, prefersReducedMotion } from './motion';
 import type { ScreenBox, ToolbarSide } from './components/SelectionToolbar';
 const SourceEditor = lazy(() => import('./components/SourceEditor'));
 const Whiteboard = lazy(() => import('./components/Whiteboard'));
@@ -110,6 +112,19 @@ function readableFiles(tree: WorkspaceInfo['tree']): string[] {
     n.kind === 'html' || n.kind === 'pdf' ? [n.path] : readableFiles(n.children || []),
   );
 }
+// A translation (全文翻译) or 精读笔记 page made from `of`: named after it, next to it, or
+// naming it itself (`pairOf`).
+function companionOf(page: OpenDocument, of: OpenDocument, pairOf?: string) {
+  if (pairOf === of.path) return true;
+  const dir = of.path.slice(0, of.path.lastIndexOf('/') + 1);
+  const stem = of.path.slice(dir.length).replace(/\.[^.]+$/, '');
+  const name = page.path.slice(dir.length);
+  return (
+    page.path.startsWith(dir) &&
+    name.startsWith(`${stem}-`) &&
+    /^(精读笔记|译文)(（\d+）)?\.html$/.test(name.slice(stem.length + 1))
+  );
+}
 // What the reader's ai-text reply looks like for HTML and PDF.
 function docText(path: string, raw: { title?: string; text?: string; pages?: string[] }): DocText {
   const kind = /\.pdf$/i.test(path) ? 'pdf' : 'html';
@@ -133,6 +148,8 @@ type ReaderState = {
   // Annotation ids in reading order, as the document last reported them.
   order: string[];
   progress: number;
+  // For a translation (全文翻译), the path of the document it was made from.
+  pairOf?: string;
 };
 const emptyReaderState: ReaderState = {
   selected: null,
@@ -144,6 +161,8 @@ const emptyReaderState: ReaderState = {
   order: [],
   progress: 0,
 };
+// How long an update card put off with “稍后” stays hidden.
+const updateRemindAfter = 24 * 60 * 60 * 1000;
 export default function App() {
   const [workspace, setWorkspace] = useState<WorkspaceInfo | null>(null);
   const [notice, setNotice] = useState<{
@@ -214,6 +233,8 @@ export default function App() {
   });
   const [readingDrag, setReadingDrag] = useState<string | null>(null);
   const [readingDropSide, setReadingDropSide] = useState<PaneSide | null>(null);
+  // A column header pressed, and once it moves, the column it's over.
+  const [paneDrag, setPaneDrag] = useState<{ side: PaneSide; over: PaneSide | null } | null>(null);
   function activateTool(next: Tool) {
     const history = recentTools.current;
     if (next !== history.current) {
@@ -382,10 +403,20 @@ export default function App() {
   }
   const [appVersion, setAppVersion] = useState('');
   const [update, setUpdate] = useState<UpdateState>({ status: 'idle' });
-  // “稍后” hides the card; the title bar keeps a button to bring it back.
+  // “稍后” hides the card; the title bar keeps a button to bring it back, and the card comes back
+  // by itself a day later if 页间 is still open.
   const [updateHidden, setUpdateHidden] = useState(false);
   const updateVersion = update.status === 'idle' ? '' : update.version;
   useEffect(() => setUpdateHidden(false), [update.status, updateVersion]);
+  useEffect(() => {
+    if (!updateHidden) return;
+    // Checked against the clock, since timers don't run while the computer sleeps.
+    const due = Date.now() + updateRemindAfter;
+    const timer = setInterval(() => {
+      if (Date.now() >= due) setUpdateHidden(false);
+    }, 60 * 1000);
+    return () => clearInterval(timer);
+  }, [updateHidden]);
   useEffect(() => {
     if (isDesktop)
       invoke<{ version: string; update: UpdateState }>('update-state')
@@ -750,6 +781,80 @@ export default function App() {
     });
     model.setActive(id);
   }
+  // The two columns slide past each other into their new places, the current one on top.
+  function swapSides() {
+    if (!split?.right) return;
+    const columns = [...document.querySelectorAll<HTMLElement>('.reading-column')];
+    const before = columns.map((el) => el.getBoundingClientRect().left);
+    focusedSide.current = focusedSide.current === 'left' ? 'right' : 'left';
+    flushSync(() => setSplit((s) => (s?.right ? { left: s.right, right: s.left } : s)));
+    if (prefersReducedMotion()) return;
+    const timing = { duration: 380, easing: 'cubic-bezier(0.32, 0.72, 0, 1)' };
+    const shadow = getComputedStyle(document.documentElement).getPropertyValue('--shadow-rgb');
+    columns.forEach((el, i) => {
+      el.getAnimations().forEach((a) => a.cancel());
+      const from = `translateX(${before[i] - el.getBoundingClientRect().left}px)`;
+      const lifted = el.classList.contains('active-column');
+      el.animate(
+        lifted
+          ? [
+              { transform: from, zIndex: 2 },
+              { boxShadow: `0 14px 36px rgb(${shadow} / 0.22)`, offset: 0.45 },
+              { transform: 'none', zIndex: 2 },
+            ]
+          : [{ transform: from }, { opacity: 0.75, offset: 0.45 }, { transform: 'none' }],
+        timing,
+      );
+    });
+    document
+      .querySelector('.pane-swap svg')
+      ?.animate([{ transform: 'rotate(0)' }, { transform: 'rotate(180deg)' }], timing);
+    // The divider would cut across the columns as they pass; only the swap button stays.
+    document
+      .querySelector('.split-reading > .reading-resizer')
+      ?.animate(
+        [{ opacity: 1 }, { opacity: 0, offset: 0.15 }, { opacity: 0, offset: 0.8 }, { opacity: 1 }],
+        timing,
+      );
+  }
+  // Dragging a column header to the other side swaps the two documents. While a header is
+  // pressed the iframes ignore the pointer (see .pane-pressing), so its moves reach this window.
+  function dragPaneHeader(e: ReactPointerEvent<HTMLElement>, side: PaneSide) {
+    if (e.button !== 0 || !split?.right) return;
+    const workbench = e.currentTarget.closest('.document-workbench')!;
+    const { pointerId, clientX: x, clientY: y } = e;
+    let over: PaneSide | null = null;
+    const move = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
+      if (!(ev.buttons & 1)) return end(false);
+      if (!over && Math.hypot(ev.clientX - x, ev.clientY - y) < 6) return;
+      const bounds = workbench.getBoundingClientRect();
+      over = ev.clientX < bounds.left + bounds.width * splitRatio ? 'left' : 'right';
+      setPaneDrag({ side, over });
+    };
+    const up = (ev: PointerEvent) => {
+      if (ev.pointerId === pointerId) end(!!over && over !== side);
+    };
+    const cancel = () => end(false);
+    const escape = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') end(false);
+    };
+    function end(swap: boolean) {
+      removeEventListener('pointermove', move);
+      removeEventListener('pointerup', up);
+      removeEventListener('pointercancel', cancel);
+      removeEventListener('blur', cancel);
+      removeEventListener('keydown', escape, true);
+      setPaneDrag(null);
+      if (swap) swapSides();
+    }
+    addEventListener('pointermove', move);
+    addEventListener('pointerup', up);
+    addEventListener('pointercancel', cancel);
+    addEventListener('blur', cancel);
+    addEventListener('keydown', escape, true);
+    setPaneDrag({ side, over: null });
+  }
   function toggleSplit() {
     setMode('read');
     if (split) {
@@ -989,8 +1094,9 @@ export default function App() {
           : { left: id, right: beside },
     );
   }
-  // Page links in notes (paper.pdf#page=3) open the PDF next to the note at that page.
-  async function openPdfPage(path: string, page: number, from: string) {
+  // Page links in notes (paper.pdf#page=3) open the PDF next to the note at that page; a
+  // translation's links (#page=3&find=…, or #find=… for HTML) also mark the passage there.
+  async function openSourceAt(path: string, from: string, page: number, find: string) {
     const visible = split && [split.left, split.right];
     const id = await model.open(path, false, keepPanes());
     setMode('read');
@@ -1001,7 +1107,8 @@ export default function App() {
     for (let i = 0; i < 60 && !(reader = readers.current.get(id)); i++)
       await new Promise((r) => setTimeout(r, 100));
     await reader?.whenReady();
-    reader?.send('pdf-page', { page });
+    if (page) reader?.send('pdf-page', { page });
+    if (find) await reader?.request('ai-flash', { quote: find, page }, 30_000).catch(() => {});
   }
   function openAiCard(cardMode: 'explain' | 'translate' | 'ask') {
     if (!doc || !selection) return;
@@ -1140,6 +1247,21 @@ export default function App() {
       case 'activate':
         if (model.active !== id) selectDocument(id);
         break;
+      case 'ready': {
+        // A translation names the document it was made from, which sits next to it.
+        const name =
+          typeof e.pairOf === 'string' && !/[\\/]|^\.\.?$/.test(e.pairOf) ? e.pairOf : '';
+        const dir = doc.path.includes('/') ? doc.path.slice(0, doc.path.lastIndexOf('/') + 1) : '';
+        const pairOf = name ? dir + name : undefined;
+        if (readerStates[id]?.pairOf !== pairOf) patchReader(id, { pairOf });
+        break;
+      }
+      case 'pair-scroll': {
+        const other = pairedIds?.find((x) => x !== id);
+        if (other && pairedIds?.includes(id) && Number.isFinite(e.at))
+          readers.current.get(other)?.send('pair-follow', { at: e.at });
+        break;
+      }
       case 'pointerdown':
         window.getSelection()?.removeAllRanges();
         if (assistant.get().card) assistant.closeCard();
@@ -1279,8 +1401,11 @@ export default function App() {
             const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
             if (parts.shift() !== workspace?.token) return;
             const path = parts.join('/');
-            const page = Number(url.hash.match(/^#page=(\d+)$/)?.[1]);
-            if (/\.pdf$/i.test(path) && page > 0) await openPdfPage(path, page, id);
+            const hash = new URLSearchParams(url.hash.slice(1));
+            const page = Number(hash.get('page')) || 0;
+            const find = hash.get('find') || '';
+            if (/\.pdf$/i.test(path) && page > 0) await openSourceAt(path, id, page, find);
+            else if (/\.html?$/i.test(path) && find) await openSourceAt(path, id, 0, find);
             else if (/\.(html?|pdf)$/i.test(path))
               await openDocument(path, split?.right === id ? 'right' : 'left');
             else notify('该链接不是 HTML 或 PDF 文档');
@@ -1357,6 +1482,9 @@ export default function App() {
         { side: 'right', doc: model.docs.find((d) => d.id === readingSplit.right) },
       ]
     : [{ side: 'left', doc }];
+  // The columns render in a fixed order and CSS `order` places them, so swapping sides moves
+  // no iframe (a moved iframe reloads) and both documents stay where they were read.
+  const paneOrder = [...panes].sort((a, b) => ((a.doc?.id || '') < (b.doc?.id || '') ? -1 : 1));
   const existingDragPane = readingDrag
     ? panes.find((pane) => pane.doc?.path === readingDrag)
     : undefined;
@@ -1365,12 +1493,42 @@ export default function App() {
   const otherPane = readingSplit
     ? panes.find((pane) => pane.doc && pane.doc.id !== doc?.id)?.doc
     : undefined;
-  const reading = doc
-    ? {
-        scope: doc.id,
-        docs: [doc, ...(otherPane ? [otherPane] : [])].map((d) => ({ id: d.id, path: d.path })),
-      }
-    : null;
+  // A translation and the PDF it was made from, side by side with 同步滚动 on, scroll together
+  // paragraph by paragraph instead of by the same distance.
+  const pairIds = (() => {
+    if (!readingSplit) return null;
+    const [a, b] = panes.map((pane) => pane.doc);
+    if (!a || !b) return null;
+    const pair = (t: OpenDocument, s: OpenDocument) =>
+      s.kind === 'pdf' && readerStates[t.id]?.pairOf === s.path;
+    return pair(a, b) || pair(b, a) ? [a.id, b.id] : null;
+  })();
+  const pairedIds = linkedScroll ? pairIds : null;
+  // What the assistant reads, and which conversation it's in. Two documents side by side share
+  // one, numbered left then right whichever is clicked; a document beside its own translation
+  // or 精读笔记 keeps its own conversation, so a task that opens one stays in view.
+  const reading = (() => {
+    if (!doc) return null;
+    const ref = (d: OpenDocument) => ({ id: d.id, path: d.path });
+    const [left, right] = panes.map((pane) => pane.doc);
+    if (!otherPane || !left || !right) return { scope: doc.id, docs: [ref(doc)], active: doc.id };
+    const source = companionOf(right, left, readerStates[right.id]?.pairOf)
+      ? left
+      : companionOf(left, right, readerStates[left.id]?.pairOf)
+        ? right
+        : null;
+    return source
+      ? {
+          scope: source.id,
+          docs: [source, source === left ? right : left].map(ref),
+          active: doc.id,
+        }
+      : {
+          scope: `pair:${[left.id, right.id].sort().join('+')}`,
+          docs: [left, right].map(ref),
+          active: doc.id,
+        };
+  })();
   const keepPanes = () => (split ? [split.left, split.right] : []);
   // The reader showing `path`; with `show`, the document is opened first.
   async function readerFor(path: string, show = false) {
@@ -1452,6 +1610,13 @@ export default function App() {
     async createHtml(path, content) {
       setWorkspace(await invoke<WorkspaceInfo>('create', { path, kind: 'file', content }));
     },
+    async writeHtml(path, content) {
+      const open = model.docsRef.current.find((d) => d.path === path);
+      if (open && open.draft !== open.source) throw Error(`「${path}」有没保存的修改`);
+      const version = open?.version ?? (await invoke<OpenDocument>('document', { path })).version;
+      await invoke('save-source', { path, source: content, version });
+      if (open) await model.reload(open.id);
+    },
     searchPapers: (options) => invoke('papers-search', options),
     async savePdf(url, path) {
       const saved = await invoke<{ workspace: WorkspaceInfo; size: number }>('save-pdf', {
@@ -1465,7 +1630,8 @@ export default function App() {
       await openDocument(path);
       setMode('read');
     },
-    async openBeside(path, beside) {
+    async openBeside(path, beside, options = {}) {
+      if (options.linked) setLinkedScroll(true);
       const other = model.docsRef.current.find((d) => d.path === beside);
       const id = await model.open(path, false, keepPanes());
       setMode('read');
@@ -1680,6 +1846,7 @@ export default function App() {
               color={color}
               onColor={setColor}
               canLinkScroll={!!readingSplit && !!readingSplit.right}
+              pairScroll={!!pairIds}
               linkedScroll={linkedScroll}
               onLinkedScroll={() => setLinkedScroll((v) => !v)}
               zoom={doc?.data.zoom || 0}
@@ -1755,7 +1922,7 @@ export default function App() {
           ) : null}
           {doc ? (
             <div
-              className={`document-workbench ${mode === 'source' ? 'split-editor' : ''} ${readingSplit ? 'split-reading' : ''}`}
+              className={`document-workbench ${mode === 'source' ? 'split-editor' : ''} ${readingSplit ? 'split-reading' : ''}${paneDrag ? ' pane-pressing' : ''}${paneDrag?.over ? ' pane-dragging' : ''}`}
             >
               {mode === 'source' ? (
                 <div
@@ -1808,240 +1975,272 @@ export default function App() {
               {mode === 'source' ? (
                 <ReadingResizer ratio={sourceRatio} onChange={setSourceRatio} />
               ) : null}
-              {panes.map(({ side, doc: paneDoc }, index) => (
-                <Fragment key={side}>
-                  {index === 1 ? (
-                    <ReadingResizer ratio={splitRatio} onChange={setSplitRatio} />
-                  ) : null}
-                  <div
-                    className={`reader-pane${readingSplit ? ' reading-column' : ''}${paneDoc?.id === doc.id ? ' active-column' : ''}`}
-                    data-pane={side}
-                    data-document-id={paneDoc?.id}
-                    style={
-                      readingSplit && index === 0
-                        ? { flex: `0 0 calc(${splitRatio * 100}% - 3px)` }
-                        : undefined
-                    }
-                  >
-                    {readingSplit ? (
-                      <div
-                        className="reading-column-header"
-                        onPointerDown={() => {
-                          focusedSide.current = side;
+              {readingSplit ? <ReadingResizer ratio={splitRatio} onChange={setSplitRatio} /> : null}
+              {readingSplit && readingSplit.right ? (
+                <IconButton
+                  className="pane-swap"
+                  label="交换左右栏"
+                  help="两篇文档左右互换，各自的阅读位置不变；也可以把栏标题拖到另一侧"
+                  style={{ left: `${splitRatio * 100}%` }}
+                  onClick={swapSides}
+                >
+                  <ArrowLeftRight size={14} />
+                </IconButton>
+              ) : null}
+              {paneOrder.map(({ side, doc: paneDoc }) => (
+                <div
+                  key={paneDoc?.id || side}
+                  className={`reader-pane${readingSplit ? ' reading-column' : ''}${paneDoc?.id === doc.id ? ' active-column' : ''}`}
+                  data-pane={side}
+                  data-document-id={paneDoc?.id}
+                  style={
+                    readingSplit
+                      ? side === 'left'
+                        ? { order: 0, flex: `0 0 calc(${splitRatio * 100}% - 3px)` }
+                        : { order: 2 }
+                      : undefined
+                  }
+                >
+                  {readingSplit ? (
+                    <div
+                      className={`reading-column-header${readingSplit.right ? ' swappable' : ''}`}
+                      onPointerDown={(e) => {
+                        focusedSide.current = side;
+                        if (paneDoc) selectDocument(paneDoc.id);
+                        dragPaneHeader(e, side);
+                      }}
+                    >
+                      <button
+                        className="pane-focus"
+                        aria-label={`激活${side === 'left' ? '左' : '右'}栏`}
+                        onClick={() => {
                           if (paneDoc) selectDocument(paneDoc.id);
                         }}
                       >
+                        <BookOpen size={14} />
+                        {side === 'left' ? '左栏' : '右栏'}
+                      </button>
+                      {paneDoc ? (
                         <button
-                          className="pane-focus"
-                          aria-label={`激活${side === 'left' ? '左' : '右'}栏`}
-                          onClick={() => {
-                            if (paneDoc) selectDocument(paneDoc.id);
+                          className="pane-document-title"
+                          title={paneDoc.path}
+                          onClick={() => selectDocument(paneDoc.id)}
+                        >
+                          {paneDoc.path.split('/').at(-1)}
+                        </button>
+                      ) : (
+                        <select
+                          aria-label={`${side === 'left' ? '左' : '右'}栏文档`}
+                          value=""
+                          onChange={(e) => {
+                            if (e.target.value) run(() => openDocument(e.target.value, side));
                           }}
                         >
-                          <BookOpen size={14} />
-                          {side === 'left' ? '左栏' : '右栏'}
-                        </button>
-                        {paneDoc ? (
-                          <button
-                            className="pane-document-title"
-                            title={paneDoc.path}
-                            onClick={() => selectDocument(paneDoc.id)}
-                          >
-                            {paneDoc.path.split('/').at(-1)}
-                          </button>
-                        ) : (
-                          <select
-                            aria-label={`${side === 'left' ? '左' : '右'}栏文档`}
-                            value=""
-                            onChange={(e) => {
-                              if (e.target.value) run(() => openDocument(e.target.value, side));
-                            }}
-                          >
-                            <option value="" disabled>
-                              选择另一篇文档…
-                            </option>
-                            {files
-                              .filter(
-                                (path) =>
-                                  !panes.some((p) => p.side !== side && p.doc?.path === path),
-                              )
-                              .map((path) => (
-                                <option key={path} value={path}>
-                                  {path}
-                                </option>
-                              ))}
-                          </select>
-                        )}
-                        <span className="pane-active-label">
-                          {paneDoc?.id === doc.id ? '当前' : ''}
-                        </span>
-                        <IconButton
-                          label={`关闭${side === 'left' ? '左' : '右'}栏文档`}
-                          help="关闭这篇文档，另一篇继续单栏阅读"
-                          onPointerDown={(e) => e.stopPropagation()}
-                          onClick={() =>
-                            paneDoc ? requestCloseDocument(paneDoc.id) : setSplit(null)
-                          }
-                        >
-                          <X size={14} />
-                        </IconButton>
-                      </div>
-                    ) : mode === 'source' ? (
-                      <div className="pane-caption">
-                        <BookOpen size={13} />
-                        实时预览
-                        <span>
-                          {inspecting ? '指向元素定位源码 · 点击选中 · Esc 退出' : '修改后自动更新'}
-                        </span>
-                      </div>
-                    ) : null}
-                    {paneDoc?.kind === 'pdf' && isDesktop && !license?.member ? (
-                      license ? (
-                        <MemberLock />
-                      ) : (
-                        <div className="reading-column-empty" />
-                      )
-                    ) : paneDoc ? (
-                      <DocumentReader
-                        key={paneDoc.id}
-                        live={mode === 'source'}
-                        override={mode === 'source' && paneDoc.id === doc.id ? aiPreview : null}
-                        inspect={mode === 'source' && inspecting}
-                        ref={(handle) => {
-                          if (handle) readers.current.set(paneDoc.id, handle);
-                          else readers.current.delete(paneDoc.id);
-                        }}
-                        doc={paneDoc}
-                        onError={onError}
-                        annotations={paneDoc.data.annotations}
-                        selected={readerStates[paneDoc.id]?.selected || null}
-                        tool={mode === 'source' ? 'select' : tool}
-                        color={color}
-                        strokeWidth={strokeWidth}
-                        eraserSize={eraserSize}
-                        eraserMode={eraserMode}
-                        stickySize={stickySize}
-                        textWidth={textWidth}
-                        noteFontSize={noteFontSize}
-                        zoom={mode === 'source' ? 0 : paneDoc.data.zoom}
-                        zoomable={mode === 'read'}
-                        linkedScroll={!!readingSplit && !!readingSplit.right && linkedScroll}
-                        scroll={paneDoc.data.scroll}
-                        onEvent={(e) => event(paneDoc.id, e)}
-                      />
-                    ) : (
-                      <div className="reading-column-empty">
-                        <BookOpen size={30} />
-                        <strong>选择另一篇文档</strong>
-                        <span>从工作空间拖入 HTML 或 PDF，也可以在上方选择。</span>
-                      </div>
-                    )}
-                    {paneDoc?.id === doc.id && selection && mode === 'read' ? (
-                      <SelectionToolbar
-                        box={selectionBox}
-                        side={toolbarSide}
-                        onMouseDown={(e) => e.preventDefault()}
-                      >
-                        <span>已选 {selection.exact.length} 字</span>
-                        {rebind ? (
-                          <button
-                            onClick={() => {
-                              model.annotate(doc.id, (all) =>
-                                all.map((a) => (a.id === rebind ? { ...a, quote: selection } : a)),
-                              );
-                              clearSelection();
-                              setRebind(null);
-                              notify('批注已关联到新的原文');
-                            }}
-                          >
-                            <MessageSquare size={15} />
-                            关联此批注
-                          </button>
-                        ) : null}
-                        <button onClick={() => annotateSelection('highlight')}>
-                          <Highlighter size={15} />
-                          高亮
-                        </button>
-                        <button onClick={() => annotateSelection('underline')}>
-                          <Underline size={15} />
-                          划线
-                        </button>
-                        {isDesktop ? (
-                          <>
-                            <i className="selection-divider" aria-hidden="true" />
-                            <button
-                              className="selection-ai"
-                              onClick={() => openAiCard('explain')}
-                              title="AI 解释选中的文字"
-                            >
-                              <Lightbulb size={15} />
-                              解释
-                            </button>
-                            <button
-                              className="selection-ai"
-                              onClick={() => openAiCard('translate')}
-                              title="AI 翻译选中的文字"
-                            >
-                              <Languages size={15} />
-                              翻译
-                            </button>
-                            <button
-                              className="selection-ai"
-                              onClick={() => openAiCard('ask')}
-                              title="就选中的文字向 AI 提问"
-                            >
-                              <MessageCircleQuestion size={15} />
-                              提问
-                            </button>
-                            <button
-                              className="selection-ai"
-                              onClick={() => openWhiteboard()}
-                              title="页老师在白板上边写边讲这段内容，可以随时圈出来打断提问"
-                            >
-                              <Presentation size={15} />
-                              白板
-                            </button>
-                          </>
-                        ) : null}
-                        <IconButton
-                          className="toolbar-side-button"
-                          data-side={toolbarSide}
-                          label={toolbarSide === 'below' ? '放到文字上方' : '放到文字下方'}
-                          help="以后选中文字时，工具栏都出现在这一侧"
-                          onClick={() =>
-                            setToolbarSide(toolbarSide === 'below' ? 'above' : 'below')
-                          }
-                        >
-                          <ArrowUpToLine size={13} />
-                        </IconButton>
-                        <IconButton label="取消文字选择" onClick={clearSelection}>
-                          <X size={13} />
-                        </IconButton>
-                      </SelectionToolbar>
-                    ) : null}
-                    {aiCard && paneDoc?.id === aiCard.docId && mode === 'read' ? (
-                      <AiSelectionCard
-                        card={aiCard}
-                        onAsk={(q) => assistant.askCard(q)}
-                        onStop={() => assistant.stopCard()}
-                        onClose={() => assistant.closeCard()}
-                        onOpenSettings={() => setAiSettingsOpen(true)}
-                        onSave={() =>
-                          run(async () => {
-                            await assistant.saveCard(color);
-                            clearSelection();
-                          })
+                          <option value="" disabled>
+                            选择另一篇文档…
+                          </option>
+                          {files
+                            .filter(
+                              (path) => !panes.some((p) => p.side !== side && p.doc?.path === path),
+                            )
+                            .map((path) => (
+                              <option key={path} value={path}>
+                                {path}
+                              </option>
+                            ))}
+                        </select>
+                      )}
+                      <span className="pane-active-label">
+                        {paneDoc?.id === doc.id ? '当前' : ''}
+                      </span>
+                      <IconButton
+                        label={`关闭${side === 'left' ? '左' : '右'}栏文档`}
+                        help="关闭这篇文档，另一篇继续单栏阅读"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={() =>
+                          paneDoc ? requestCloseDocument(paneDoc.id) : setSplit(null)
                         }
-                        onContinue={() => {
-                          if (reading) assistant.continueCard(reading.docs);
-                          setAssistantMode('doc');
-                          openAssistant();
-                        }}
-                      />
-                    ) : null}
-                  </div>
-                </Fragment>
+                      >
+                        <X size={14} />
+                      </IconButton>
+                    </div>
+                  ) : mode === 'source' ? (
+                    <div className="pane-caption">
+                      <BookOpen size={13} />
+                      实时预览
+                      <span>
+                        {inspecting ? '指向元素定位源码 · 点击选中 · Esc 退出' : '修改后自动更新'}
+                      </span>
+                    </div>
+                  ) : null}
+                  {paneDoc?.kind === 'pdf' && isDesktop && !license?.member ? (
+                    license ? (
+                      <MemberLock />
+                    ) : (
+                      <div className="reading-column-empty" />
+                    )
+                  ) : paneDoc ? (
+                    <DocumentReader
+                      key={paneDoc.id}
+                      live={mode === 'source'}
+                      override={mode === 'source' && paneDoc.id === doc.id ? aiPreview : null}
+                      inspect={mode === 'source' && inspecting}
+                      ref={(handle) => {
+                        if (handle) readers.current.set(paneDoc.id, handle);
+                        else readers.current.delete(paneDoc.id);
+                      }}
+                      doc={paneDoc}
+                      onError={onError}
+                      annotations={paneDoc.data.annotations}
+                      selected={readerStates[paneDoc.id]?.selected || null}
+                      tool={mode === 'source' ? 'select' : tool}
+                      color={color}
+                      strokeWidth={strokeWidth}
+                      eraserSize={eraserSize}
+                      eraserMode={eraserMode}
+                      stickySize={stickySize}
+                      textWidth={textWidth}
+                      noteFontSize={noteFontSize}
+                      zoom={mode === 'source' ? 0 : paneDoc.data.zoom}
+                      zoomable={mode === 'read'}
+                      linkedScroll={
+                        !!readingSplit && !!readingSplit.right && linkedScroll && !pairedIds
+                      }
+                      paired={!!pairedIds?.includes(paneDoc.id)}
+                      scroll={paneDoc.data.scroll}
+                      onEvent={(e) => event(paneDoc.id, e)}
+                    />
+                  ) : (
+                    <div className="reading-column-empty">
+                      <BookOpen size={30} />
+                      <strong>选择另一篇文档</strong>
+                      <span>从工作空间拖入 HTML 或 PDF，也可以在上方选择。</span>
+                    </div>
+                  )}
+                  {paneDoc?.id === doc.id && selection && mode === 'read' ? (
+                    <SelectionToolbar
+                      box={selectionBox}
+                      side={toolbarSide}
+                      onMouseDown={(e) => e.preventDefault()}
+                    >
+                      <span>已选 {selection.exact.length} 字</span>
+                      {rebind ? (
+                        <button
+                          onClick={() => {
+                            model.annotate(doc.id, (all) =>
+                              all.map((a) => (a.id === rebind ? { ...a, quote: selection } : a)),
+                            );
+                            clearSelection();
+                            setRebind(null);
+                            notify('批注已关联到新的原文');
+                          }}
+                        >
+                          <MessageSquare size={15} />
+                          关联此批注
+                        </button>
+                      ) : null}
+                      <button onClick={() => annotateSelection('highlight')}>
+                        <Highlighter size={15} />
+                        高亮
+                      </button>
+                      <button onClick={() => annotateSelection('underline')}>
+                        <Underline size={15} />
+                        划线
+                      </button>
+                      {isDesktop ? (
+                        <>
+                          <i className="selection-divider" aria-hidden="true" />
+                          <button
+                            className="selection-ai"
+                            onClick={() => openAiCard('explain')}
+                            title="AI 解释选中的文字"
+                          >
+                            <Lightbulb size={15} />
+                            解释
+                          </button>
+                          <button
+                            className="selection-ai"
+                            onClick={() => openAiCard('translate')}
+                            title="AI 翻译选中的文字"
+                          >
+                            <Languages size={15} />
+                            翻译
+                          </button>
+                          <button
+                            className="selection-ai"
+                            onClick={() => openAiCard('ask')}
+                            title="就选中的文字向 AI 提问"
+                          >
+                            <MessageCircleQuestion size={15} />
+                            提问
+                          </button>
+                          <button
+                            className="selection-ai"
+                            onClick={() => openWhiteboard()}
+                            title="页老师在白板上边写边讲这段内容，可以随时圈出来打断提问"
+                          >
+                            <Presentation size={15} />
+                            白板
+                          </button>
+                        </>
+                      ) : null}
+                      <IconButton
+                        className="toolbar-side-button"
+                        data-side={toolbarSide}
+                        label={toolbarSide === 'below' ? '放到文字上方' : '放到文字下方'}
+                        help="以后选中文字时，工具栏都出现在这一侧"
+                        onClick={() => setToolbarSide(toolbarSide === 'below' ? 'above' : 'below')}
+                      >
+                        <ArrowUpToLine size={13} />
+                      </IconButton>
+                      <IconButton label="取消文字选择" onClick={clearSelection}>
+                        <X size={13} />
+                      </IconButton>
+                    </SelectionToolbar>
+                  ) : null}
+                  {aiCard && paneDoc?.id === aiCard.docId && mode === 'read' ? (
+                    <AiSelectionCard
+                      card={aiCard}
+                      onAsk={(q) => assistant.askCard(q)}
+                      onStop={() => assistant.stopCard()}
+                      onClose={() => assistant.closeCard()}
+                      onOpenSettings={() => setAiSettingsOpen(true)}
+                      onSave={() =>
+                        run(async () => {
+                          await assistant.saveCard(color);
+                          clearSelection();
+                        })
+                      }
+                      onContinue={() => {
+                        if (reading) assistant.continueCard(reading);
+                        setAssistantMode('doc');
+                        openAssistant();
+                      }}
+                    />
+                  ) : null}
+                </div>
               ))}
+              {paneDrag?.over && paneDrag.over !== paneDrag.side ? (
+                <div className="reading-drop-overlay pane-swap-overlay" aria-hidden="true">
+                  <div
+                    className="reading-drop-preview hovered"
+                    style={
+                      paneDrag.over === 'left'
+                        ? { left: 0, right: `${(1 - splitRatio) * 100}%` }
+                        : { left: `${splitRatio * 100}%`, right: 0 }
+                    }
+                  >
+                    <ArrowLeftRight size={30} />
+                    <strong>松开，两栏互换</strong>
+                    <span>
+                      {panes
+                        .find((pane) => pane.side === paneDrag.side)
+                        ?.doc?.path.split('/')
+                        .at(-1)}
+                    </span>
+                  </div>
+                </div>
+              ) : null}
               {readingDrag ? (
                 <div
                   className="reading-drop-overlay"
@@ -2157,6 +2356,13 @@ export default function App() {
                 selection={mode === 'read' ? selection?.exact || '' : ''}
                 onClearSelection={clearSelection}
                 onOpenSettings={() => setAiSettingsOpen(true)}
+                onOpenPair={(other, scope, threadId) =>
+                  run(async () => {
+                    await assistant.load(scope);
+                    assistant.selectThread(scope, threadId);
+                    if (doc) await hostImpl.current!.openBeside(other, doc.path);
+                  })
+                }
                 hasFiles={files.length > 0}
               />
             ) : (

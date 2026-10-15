@@ -12,6 +12,7 @@ import type {
   ChatMessage,
   ChatThread,
   CiteDoc,
+  PairThreads,
   DocText,
   MessagePart,
   Quota,
@@ -32,10 +33,12 @@ import {
 } from './client';
 import {
   chunkDocument,
+  docBody,
   documentBudget,
   documentContext,
   estimateTokens,
   fileName,
+  mostlyChinese,
   surrounding,
 } from './context';
 import type { Chunk } from './context';
@@ -76,6 +79,24 @@ import {
   notesRecord,
   unfinishedNotes,
 } from './companion';
+import {
+  fillGap,
+  gapPrompt,
+  hanzi,
+  isTranslationSaid,
+  partContinue,
+  partPrompt,
+  translationBody,
+  translationNext,
+  translationPage,
+  translationProgress,
+  takeGlossary,
+  translationRecord,
+  translationSystem,
+  unfinishedTranslation,
+  untranslated,
+} from './translation';
+import type { Glossary } from './translation';
 import { citations, citeKey, plainCites, plainText } from './plain';
 export { citations, citeKey, plainCites, plainText } from './plain';
 import { imageTokens, maxImages, refusesImages } from './images';
@@ -83,20 +104,27 @@ import { loadedModelOptions } from './levels';
 import type { PreparedTool } from './agent-tools';
 
 export type Scope = string; // a document id, or 'project' for the agent
+// The open document(s) and the conversation about them. Two documents side by side share one
+// (scope "pair:<id>+<id>"); `active` is the one clicked, which one-document tasks act on.
 export type ReadingContext = {
   scope: Scope;
   docs: CiteDoc[];
   selection?: string;
+  active?: string;
 };
+// The document clicked among the open ones.
+const activeDoc = (ctx: ReadingContext) => ctx.docs.find((d) => d.id === ctx.active) || ctx.docs[0];
 // Rounds of looking things up in a long document before it has to answer from what it found.
 const lookupRounds = 15;
-export type Task = 'summary' | 'highlights' | 'companion' | 'organize' | 'questions' | 'compare';
+export type Task =
+  'summary' | 'highlights' | 'companion' | 'organize' | 'questions' | 'translate' | 'compare';
 export const taskLabels: Record<Task, string> = {
   summary: '总结全文',
   highlights: 'AI 划重点',
   companion: '制作精读笔记',
   organize: '整理我的批注',
   questions: '出几道思考题',
+  translate: '全文翻译',
   compare: '对比两篇文档',
 };
 // The card that answers about selected text: explain, translate or a quick question.
@@ -132,6 +160,18 @@ type CompanionWork = {
   notes: string[];
   ask?: WireMessage;
   reply: string;
+  model: string;
+  usage: Usage;
+  quota: Quota | null;
+};
+// A 全文翻译 under way: the document's parts and those translated so far, the terms they
+// share, and the page they go into (once written), so 接着翻 translates only what's left.
+type TranslationWork = {
+  chunks: Chunk[];
+  parts: (string | undefined)[];
+  glossary?: Glossary;
+  target?: string;
+  created?: boolean;
   model: string;
   usage: Usage;
   quota: Quota | null;
@@ -200,6 +240,8 @@ export class Assistant {
   // What a 精读笔记 that was stopped or broke off got done, by its reply, so 接着写 goes on
   // from there instead of starting over. Kept while the app is open, as the draft is.
   private companionWork = new Map<string, CompanionWork>();
+  // Likewise for a 全文翻译, so 接着翻 goes on with the parts left.
+  private translationWork = new Map<string, TranslationWork>();
   private approvals = new Map<string, (ok: boolean) => void>();
   private saveTimers = new Map<Scope, ReturnType<typeof setTimeout>>();
   private loading = new Map<Scope, Promise<void>>();
@@ -233,6 +275,7 @@ export class Assistant {
   reset() {
     for (const c of this.controllers.values()) c.abort();
     this.companionWork.clear();
+    this.translationWork.clear();
     for (const resolve of this.approvals.values()) resolve(false);
     this.approvals.clear();
     this.texts.clear();
@@ -354,6 +397,10 @@ export class Assistant {
     };
     this.putHistory(scope, { ...h, active: thread.id, threads: [thread, ...h.threads] }, true);
     return thread.id;
+  }
+  // The conversations a document had with others read beside it.
+  pairs(docId: string) {
+    return invoke<PairThreads[]>('ai-pairs', { id: docId }).catch(() => [] as PairThreads[]);
   }
   selectThread(scope: Scope, id: string) {
     this.putHistory(scope, { ...this.history(scope), active: id }, true);
@@ -508,9 +555,16 @@ export class Assistant {
     const notes =
       !images.length && !selection && continuing.test(question) && this.notesToGoOn(ctx.scope);
     if (notes) return this.continueNotes(ctx, question, notes);
+    const selectionFrom =
+      selection && ctx.docs.length > 1 ? fileName(activeDoc(ctx).path) : undefined;
     const started = this.begin(
       ctx.scope,
-      { text: question, selection, ...(images.length ? { images } : {}) },
+      {
+        text: question,
+        selection,
+        ...(selectionFrom ? { selectionFrom } : {}),
+        ...(images.length ? { images } : {}),
+      },
       { docs: ctx.docs },
     );
     if (!started) return;
@@ -541,7 +595,11 @@ export class Assistant {
         system: fitted.system,
         messages: [
           ...fitted.messages,
-          userTurn(selection ? selectionPrompt(selection, asked) : asked, images, vision),
+          userTurn(
+            selection ? selectionPrompt(selection, asked, selectionFrom) : asked,
+            images,
+            vision,
+          ),
         ],
         // Questions about the document may need the web too, which the model decides.
         web: true,
@@ -551,14 +609,14 @@ export class Assistant {
       };
     });
   }
-  // The conversation's last reply, when it's a 精读笔记 that can go on.
+  // The conversation's last reply, when it's a 精读笔记 or 全文翻译 that can go on.
   private notesToGoOn(scope: Scope) {
     const last = [...(this.thread(scope)?.messages || [])]
       .reverse()
       .find((m) => m.role === 'assistant');
-    return last && this.companionWork.has(last.id) ? last : null;
+    return last && this.canResume(last.id) ? last : null;
   }
-  // “继续” after a 精读笔记 that was stopped or broke off: a new reply writes the rest of it.
+  // “继续” after a 精读笔记 or 全文翻译 that was stopped or broke off: a new reply finishes it.
   private continueNotes(ctx: ReadingContext, question: string, from: ChatMessage) {
     const started = this.begin(
       ctx.scope,
@@ -567,7 +625,10 @@ export class Assistant {
     );
     if (!started) return;
     this.setDraft(ctx.scope, '');
-    return this.companion(ctx, started.threadId, started.answerId, started.signal, from.id);
+    const { threadId, answerId, signal } = started;
+    return this.translationWork.has(from.id)
+      ? this.translate(ctx, threadId, answerId, signal, from.id)
+      : this.companion(ctx, threadId, answerId, signal, from.id);
   }
   private async readingSystem(
     ctx: ReadingContext,
@@ -614,7 +675,11 @@ export class Assistant {
   private said(m: ChatMessage, vision: boolean, agent = false, latest = false): WireMessage {
     if (m.role === 'user') {
       const asked = m.text || (agent ? imageRequest : imageQuestion);
-      return userTurn(m.selection ? selectionPrompt(m.selection, asked) : asked, m.images, vision);
+      return userTurn(
+        m.selection ? selectionPrompt(m.selection, asked, m.selectionFrom) : asked,
+        m.images,
+        vision,
+      );
     }
     const text = (
       m.parts
@@ -625,14 +690,18 @@ export class Assistant {
             .join('\n')
         : m.text
     ).trim();
-    if (m.said !== undefined)
+    if (m.said !== undefined) {
+      const next = this.canResume(m.id) ? 'go-on' : latest ? 'start-over' : '';
       return {
         role: 'assistant',
         content:
           m.status === 'stopped' || m.status === 'error'
-            ? notesNext(m.said, this.companionWork.has(m.id) ? 'go-on' : latest ? 'start-over' : '')
+            ? isTranslationSaid(m.said)
+              ? translationNext(m.said, next)
+              : notesNext(m.said, next)
             : m.said,
       };
+    }
     const content =
       m.status === 'stopped'
         ? text
@@ -992,7 +1061,10 @@ export class Assistant {
   }
   // Appends an answer to its document's note with the question it answers (see answerNote).
   async saveToNote(scope: Scope, threadId: string, message: ChatMessage, question?: ChatMessage) {
-    const path = message.docs?.[0]?.path || this.host.activePath();
+    // An answer about two documents goes to the note of the one being read.
+    const open = this.host.activePath();
+    const path =
+      message.docs?.find((d) => d.path === open)?.path || message.docs?.[0]?.path || open;
     if (!path) return;
     // A picture that can't be kept (an unusual format) is left out rather than failing the rest.
     const pictures: string[] = [];
@@ -1112,15 +1184,21 @@ export class Assistant {
     this.patchCard(card.id, (c) => ({ ...c, saved: true }));
   }
   // Moves the card's exchange into the document's conversation to keep asking there.
-  continueCard(docs: CiteDoc[]) {
+  continueCard(ctx: ReadingContext) {
     const card = this.state.card;
     if (!card) return;
     const label = card.mode === 'ask' ? card.question || '' : `${cardLabels[card.mode]}选中的文字`;
-    void this.load(card.docId).then(() => {
+    const selectionFrom = ctx.docs.length > 1 ? fileName(card.path) : undefined;
+    void this.load(ctx.scope).then(() => {
       this.keepExchange(
-        card.docId,
-        docs,
-        { text: label, label: card.mode === 'ask' ? undefined : label, selection: card.selection },
+        ctx.scope,
+        ctx.docs,
+        {
+          text: label,
+          label: card.mode === 'ask' ? undefined : label,
+          selection: card.selection,
+          ...(selectionFrom ? { selectionFrom } : {}),
+        },
         card.text,
       );
       this.closeCard();
@@ -1128,16 +1206,22 @@ export class Assistant {
   }
 
   async runTask(ctx: ReadingContext, task: Task) {
+    // A task on one document acts on the one clicked, and says which when the conversation
+    // isn't that document's own (two documents side by side).
+    const one = activeDoc(ctx);
+    const both = task === 'questions' || task === 'compare';
+    if (!both) ctx = { ...ctx, docs: [one] };
+    const label =
+      both || ctx.scope === one.id
+        ? taskLabels[task]
+        : `${taskLabels[task]} · ${fileName(one.path)}`;
     await this.load(ctx.scope);
-    const started = this.begin(
-      ctx.scope,
-      { text: taskLabels[task], label: taskLabels[task] },
-      { docs: ctx.docs },
-    );
+    const started = this.begin(ctx.scope, { text: label, label }, { docs: ctx.docs });
     if (!started) return;
     const { threadId, answerId, signal } = started;
     if (task === 'highlights') return this.highlights(ctx, threadId, answerId, signal);
     if (task === 'companion') return this.companion(ctx, threadId, answerId, signal);
+    if (task === 'translate') return this.translate(ctx, threadId, answerId, signal);
     if (task === 'summary') return this.summary(ctx, threadId, answerId, signal);
     await this.stream(
       ctx,
@@ -1160,20 +1244,25 @@ export class Assistant {
       { canSaveNote: true },
     );
   }
-  // Whether a 精读笔记 that was stopped or broke off can go on from where it stopped.
+  // Whether a 精读笔记 or 全文翻译 that was stopped or broke off can go on from where it stopped.
   canResume(answerId: string) {
-    return this.companionWork.has(answerId);
+    return this.companionWork.has(answerId) || this.translationWork.has(answerId);
   }
-  // Goes on writing it in the same reply.
-  resumeCompanion(ctx: ReadingContext, threadId: string, answerId: string) {
-    if (this.controllers.has(threadId) || !this.companionWork.has(answerId)) return;
+  resumeLabel(answerId: string) {
+    return this.translationWork.has(answerId) ? '接着翻' : '接着写';
+  }
+  // Goes on with it in the same reply.
+  resume(ctx: ReadingContext, threadId: string, answerId: string) {
+    if (this.controllers.has(threadId) || !this.canResume(answerId)) return;
     const signal = this.start(threadId);
     this.patchMessage(ctx.scope, threadId, answerId, (m) => ({
       ...m,
       status: 'streaming',
       error: undefined,
     }));
-    return this.companion(ctx, threadId, answerId, signal);
+    return this.translationWork.has(answerId)
+      ? this.translate(ctx, threadId, answerId, signal)
+      : this.companion(ctx, threadId, answerId, signal);
   }
   private async summary(
     ctx: ReadingContext,
@@ -1413,6 +1502,362 @@ export class Assistant {
         : unfinishedNotes(work.reply, work.notes.length, stopped, stopped ? '' : errorText(e));
       if (stopped) patch((m) => ({ ...m, status: 'stopped', said }));
       else patch((m) => ({ ...m, status: 'error', error: errorText(e), said }));
+    } finally {
+      this.finish(threadId);
+    }
+  }
+  // Translates the document into Chinese part by part, into a page of its own beside it. The
+  // page opens once the title and terms are settled and fills in as parts come back, several
+  // at a time. `from` is a reply whose unfinished translation this one goes on with.
+  private async translate(
+    ctx: ReadingContext,
+    threadId: string,
+    answerId: string,
+    signal: AbortSignal,
+    from = answerId,
+  ) {
+    const patch = (fn: (m: ChatMessage) => ChatMessage) =>
+      this.patchMessage(ctx.scope, threadId, answerId, fn);
+    const source = ctx.docs[0].path;
+    // Going on from a try that was stopped or broke off, or starting afresh.
+    const work: TranslationWork = this.translationWork.get(from) || {
+      chunks: [],
+      parts: [],
+      model: '',
+      usage: { input: 0, output: 0, cached: 0 },
+      quota: null,
+    };
+    this.translationWork.delete(from);
+    const resuming = work.chunks.length > 0;
+    const track = (r: {
+      provider: string;
+      model: string;
+      usage?: Usage | null;
+      quota?: Quota | null;
+    }) => {
+      work.model = `${r.provider} · ${r.model}`;
+      work.quota = r.quota ?? work.quota;
+      if (r.usage)
+        work.usage = {
+          input: work.usage.input + r.usage.input,
+          output: work.usage.output + r.usage.output,
+          cached: work.usage.cached + r.usage.cached,
+        };
+    };
+    const dir = source.includes('/') ? source.slice(0, source.lastIndexOf('/') + 1) : '';
+    const stem = fileName(source).replace(/\.[^.]+$/, '');
+    const done = () => work.parts.filter((p) => p !== undefined).length;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let writing: Promise<void> = Promise.resolve();
+    let markStopped: (() => Promise<void>) | null = null;
+    let finished = false;
+    try {
+      const doc = await this.host.docText(source);
+      const pdf = doc.kind === 'pdf';
+      // Nothing to translate (a scanned PDF, a document already in Chinese) is said before any
+      // AI settings or consent come up.
+      if (!resuming) {
+        if (!doc.text.trim() && !doc.pages?.some((p) => p.trim()))
+          throw Error('这篇文档没有可读取的文字（可能是扫描版 PDF），无法翻译');
+        if (mostlyChinese(docBody(doc).slice(0, 20_000))) {
+          patch((m) => ({ ...m, text: '这篇文档主要是中文，不用再翻译成中文。', status: 'done' }));
+          return;
+        }
+      }
+      const { provider } = await this.provider();
+      const name = `${provider.name} · ${provider.model}`;
+      // Whether this run has shown the page beside the document yet.
+      let opened = false;
+      const status = (line: string) =>
+        patch((m) => ({
+          ...m,
+          text: [
+            `正在全文翻译${work.chunks.length > 1 ? `（共 ${work.chunks.length} 部分）` : ''}。`,
+            opened ? '译文已在右栏打开，译好的部分会陆续出现。' : '',
+            line,
+          ]
+            .filter(Boolean)
+            .join('\n\n'),
+        }));
+      if (!resuming) {
+        // An earlier translation: open it, or translate again, in its place when it didn't
+        // finish and next to it when it did.
+        const earlier = `${dir}${stem}-译文.html`;
+        if (this.host.files().some((f) => f.path === earlier)) {
+          const progress = translationProgress((await this.host.documentData(earlier)).source);
+          const again = await this.host.confirm({
+            title: '这篇已经翻译过了',
+            message: progress
+              ? `「${fileName(earlier)}」上次没有译完（译完 ${progress.done}/${progress.total} 部分）。可以打开看看，也可以重新翻译，没译完的这份会被换掉。`
+              : `「${fileName(earlier)}」是之前译好的。可以直接打开，也可以重新翻译一份，之前的会留着。`,
+            confirmLabel: '重新翻译',
+            cancelLabel: '打开已有译文',
+          });
+          if (!again) {
+            await this.host.openBeside(earlier, source, { linked: pdf });
+            patch((m) => ({
+              ...m,
+              text: `已在右栏打开之前的译文 **${fileName(earlier)}**。`,
+              said: translationRecord(earlier),
+              status: 'done',
+            }));
+            return;
+          }
+          if (progress) {
+            work.target = earlier;
+            work.created = true;
+          }
+        }
+        const tokens = estimateTokens(docBody(doc));
+        if (tokens > 60_000) {
+          const ok = await this.host.confirm({
+            title: '这篇文档比较长',
+            message: `${doc.pages ? `全文 ${doc.pages.length} 页，` : ''}翻译下来大约要用 ${Math.ceil((tokens * 2.5) / 10_000)} 万 token，可能要十几分钟。中途可以随时停下，之后接着翻。`,
+            confirmLabel: '开始翻译',
+          });
+          if (!ok) throw new DOMException('已取消', 'AbortError');
+        }
+        // Parts small enough that one reply holds their translation.
+        const size = provider.maxOutput
+          ? Math.max(1_200, Math.min(3_000, Math.floor(provider.maxOutput * 0.35)))
+          : 2_500;
+        work.chunks = chunkDocument(doc, size);
+        work.parts = [];
+      }
+      const total = work.chunks.length;
+      let thought = 0;
+      const date = new Date().toLocaleDateString('zh-CN');
+      // The parts translated so far in a row, which is what the page shows.
+      const shown = () => {
+        let n = 0;
+        while (n < total && work.parts[n] !== undefined) n++;
+        return n;
+      };
+      let written = '';
+      let last = 0;
+      // Writes the page, creating it next to the document the first time. Until the terms are
+      // settled it has the document's own title.
+      const save = async (state: 'progress' | 'stopped' | 'final') => {
+        const n = shown();
+        const key = `${n}:${!!work.glossary}`;
+        if (state === 'progress' && key === written) return;
+        written = key;
+        const body = translationBody(work.parts.slice(0, n) as string[], {
+          name: fileName(source),
+          pages: pdf ? doc.pages : undefined,
+        });
+        const page = translationPage({
+          body: body.html,
+          glossary: work.glossary || {
+            title: doc.title || stem,
+            original: '',
+            authors: '',
+            terms: [],
+          },
+          source,
+          pdf,
+          date,
+          model: work.model || name,
+          progress:
+            state === 'final' ? undefined : { done: n, total, stopped: state === 'stopped' },
+        });
+        // An earlier page that can't be written any more (deleted, or edited and not saved) is
+        // left as it is, and a new one made.
+        if (work.created && work.target)
+          await this.host.writeHtml(work.target, page).catch((e) => {
+            if (opened) throw e;
+            work.created = false;
+          });
+        if (!work.created) {
+          const taken = new Set(this.host.files().map((f) => f.path));
+          let target = `${dir}${stem}-译文.html`;
+          for (let k = 2; taken.has(target); k++) target = `${dir}${stem}-译文（${k}）.html`;
+          await this.host.createHtml(target, page);
+          work.target = target;
+          work.created = true;
+        }
+        // The first write of a run shows the page beside the document, whether it's new,
+        // translated again in place or gone on with.
+        if (!opened) {
+          await this.host.openBeside(work.target!, source, { linked: pdf });
+          opened = true;
+        }
+        last = Date.now();
+      };
+      // Writes go one after another. One that fails while parts are still coming (the page
+      // has edits not saved, say) is left for the next.
+      const queue = (state: 'progress' | 'stopped' | 'final') => {
+        const next = writing.then(() => save(state));
+        writing = next.catch(() => {
+          written = '';
+        });
+        return next;
+      };
+      // At most every few seconds, so reading it isn't interrupted by reloads all the time.
+      const soon = () => {
+        if (timer) return;
+        timer = setTimeout(
+          () => {
+            timer = undefined;
+            void queue('progress').catch(() => {});
+          },
+          Math.max(0, last + 8_000 - Date.now()),
+        );
+      };
+      markStopped = () => queue('stopped');
+      // The page opens at once, and fills in as parts come.
+      await queue('progress');
+      const live = new Map<number, number>();
+      let translated = work.parts.reduce((n, p) => n + (p ? hanzi(p) : 0), 0);
+      const report = () => {
+        let chars = translated;
+        for (const n of live.values()) chars += n;
+        status(
+          chars
+            ? `已译完 ${done()}/${total} 部分 · 已译 ${chars.toLocaleString()} 字`
+            : `正在翻译第一部分，顺带定下标题和术语的译法…${thought ? `（已想 ${thought.toLocaleString()} 字）` : ''}`,
+        );
+      };
+      report();
+      const translatePart = async (i: number) => {
+        const chunk = work.chunks[i];
+        const ask: WireMessage = {
+          role: 'user',
+          content: partPrompt(chunk, total, i ? work.chunks[i - 1].text.slice(-400) : ''),
+        };
+        const request = (system: string, messages: WireMessage[]) =>
+          chat(
+            { system, messages, maxTokens: 16_000 },
+            {
+              signal,
+              onText: (d) => {
+                live.set(i, (live.get(i) || 0) + hanzi(d));
+                report();
+              },
+              onReasoning: (d) => {
+                thought += d.length;
+                if (!translated && ![...live.values()].some(Boolean)) report();
+              },
+            },
+          ).then((r) => {
+            track(r);
+            return r;
+          });
+        let reply = '';
+        live.set(i, 0);
+        try {
+          // A part cut off at the service's output limit goes on where it stopped.
+          for (let round = 0; round < 4; round++) {
+            if (signal.aborted) throw new DOMException('已停止', 'AbortError');
+            const r = await request(
+              translationSystem(i ? work.glossary : undefined),
+              reply
+                ? [
+                    ask,
+                    { role: 'assistant', content: reply },
+                    { role: 'user', content: partContinue },
+                  ]
+                : [ask],
+            );
+            reply = reply ? joinContinuation(reply, r.text) : r.text;
+            if (r.stopReason !== 'max_tokens') break;
+          }
+          if (!reply.trim()) throw Error('模型没有返回译文');
+          // The first part's title and terms, for the page and the parts after it.
+          if (!i) ({ reply, glossary: work.glossary } = takeGlossary(reply, doc.title || stem));
+          // Text the model left out is translated on its own and put back in its place, the
+          // last first so the places before it stay where they are.
+          for (const gap of untranslated(reply, chunk.text, !i).reverse()) {
+            if (signal.aborted) throw new DOMException('已停止', 'AbortError');
+            const r = await request(translationSystem(work.glossary), [
+              { role: 'user', content: gapPrompt(gap) },
+            ]);
+            if (r.text.trim()) reply = fillGap(reply, gap.after, r.text);
+          }
+        } finally {
+          live.delete(i);
+        }
+        work.parts[i] = reply;
+        translated += hanzi(reply);
+        report();
+        soon();
+      };
+      // A part that fails is tried once more before the translation stops.
+      const attempt = async (i: number) => {
+        try {
+          await translatePart(i);
+        } catch (e) {
+          if (isAbort(e) || signal.aborted) throw e;
+          await new Promise((r) => setTimeout(r, 2_000));
+          await translatePart(i);
+        }
+      };
+      const todo = work.chunks.map((_, i) => i).filter((i) => work.parts[i] === undefined);
+      // The first part goes alone, as the others follow its terms; then several at once
+      // through an API, while Codex and Kimi Code take one at a time.
+      if (todo[0] === 0) await attempt(todo.shift()!);
+      const lanes = provider.kind === 'codex' || provider.kind === 'kimi' ? 1 : 3;
+      let failure: unknown = null;
+      await Promise.all(
+        Array.from({ length: Math.min(lanes, todo.length) }, async () => {
+          while (todo.length && !failure)
+            await attempt(todo.shift()!).catch((e) => {
+              failure ??= e;
+            });
+        }),
+      );
+      if (failure) throw failure;
+      clearTimeout(timer);
+      timer = undefined;
+      await writing;
+      // The page can't be written where it was (deleted, or edited and not saved): a new one.
+      await save('final').catch(() => {
+        work.created = false;
+        opened = false;
+        return save('final');
+      });
+      finished = true;
+      const target = work.target!;
+      const text = [
+        `已译完，译文 **${fileName(target)}** 在右栏和原文并排打开。`,
+        pdf
+          ? '鼠标移到译文段落上，点左边的页码，原文会跳到这一段；同步滚动已打开，两边按段落对齐着一起滚。'
+          : '鼠标移到译文段落上，点左边的「原文」，原文会跳到这一段。',
+        '术语对照在译文开头。译文是普通的 HTML 文档，可以照常批注。',
+      ].join('\n\n');
+      const { model, usage, quota } = work;
+      patch((m) => ({
+        ...m,
+        text,
+        said: translationRecord(target),
+        status: 'done',
+        model,
+        usage,
+        quota,
+      }));
+      this.host.notify(`全文翻译完成：${fileName(target)}`);
+    } catch (e) {
+      clearTimeout(timer);
+      const stopped = isAbort(e);
+      const total = work.chunks.length;
+      // Stopped, or broken off, once the parts were planned: 接着翻 translates the ones left,
+      // and the page says it stopped instead of waiting for them.
+      if (!finished && work.chunks.length) {
+        this.translationWork.set(answerId, work);
+        if (work.created) await markStopped?.().catch(() => {});
+      }
+      const said =
+        finished || !total
+          ? undefined
+          : unfinishedTranslation(work.target, done(), total, stopped, stopped ? '' : errorText(e));
+      const text =
+        work.created && work.target
+          ? `已译完 ${done()}/${total} 部分，译好的部分在 **${fileName(work.target)}**。`
+          : '';
+      const { model, usage, quota } = work;
+      const spent = model ? { model, usage, quota } : {};
+      if (stopped) patch((m) => ({ ...m, text, status: 'stopped', said, ...spent }));
+      else patch((m) => ({ ...m, text, status: 'error', error: errorText(e), said, ...spent }));
     } finally {
       this.finish(threadId);
     }

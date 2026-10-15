@@ -786,6 +786,8 @@ app
         }
         case 'ai-history':
           return workspace.aiHistory(payload);
+        case 'ai-pairs':
+          return workspace.aiPairs(payload);
         case 'ai-save-history':
           return workspace.saveAiHistory(payload);
         case 'boards':

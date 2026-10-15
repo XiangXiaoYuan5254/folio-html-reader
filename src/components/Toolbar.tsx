@@ -86,6 +86,8 @@ export function Toolbar(p: {
   onColor: (v: string) => void;
   canLinkScroll: boolean;
   linkedScroll: boolean;
+  // The two panes are a translation and its PDF, which scroll together by paragraph.
+  pairScroll?: boolean;
   onLinkedScroll: () => void;
   zoom: number;
   onZoom: (v: number) => void;
@@ -425,7 +427,11 @@ export function Toolbar(p: {
           className="linked-scroll-toggle"
           aria-label="同步滚动"
           aria-pressed={p.linkedScroll}
-          title="保留两栏当前的位置，滚动任一栏时两篇一起移动；关闭后可分别定位"
+          title={
+            p.pairScroll
+              ? '译文和原文按段落对齐，滚动任一栏时另一栏跟到对应的地方；关闭后可分别定位'
+              : '保留两栏当前的位置，滚动任一栏时两篇一起移动；关闭后可分别定位'
+          }
           onClick={p.onLinkedScroll}
         >
           <Link2 size={16} />

@@ -242,7 +242,10 @@ function styleLetters(style: string, text: string) {
 // LaTeX in the text becomes MathML, which shows without scripts or fonts. A formula KaTeX
 // can't read stays as the model wrote it.
 const mathPattern = /\\\[([\s\S]+?)\\\]|\$\$([\s\S]+?)\$\$|\\\(([\s\S]+?)\\\)/g;
-function renderMath(root: Element) {
+// A comparison like \(r<d\) would otherwise read as a tag when the reply is parsed.
+export const protectMath = (html: string) =>
+  html.replace(mathPattern, (m) => m.replace(/</g, '&lt;').replace(/>/g, '&gt;'));
+export function renderMath(root: Element) {
   const doc = root.ownerDocument;
   const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const texts: Text[] = [];
@@ -287,8 +290,7 @@ export function cleanCompanion(reply: string, pdf?: string) {
   let html = reply.trim();
   const fenced = html.match(/```(?:html)?\s*\n([\s\S]*?)```/i);
   if (fenced) html = fenced[1];
-  // A comparison like \(r<d\) would otherwise read as a tag.
-  html = html.replace(mathPattern, (m) => m.replace(/</g, '&lt;').replace(/>/g, '&gt;'));
+  html = protectMath(html);
   // Parsing never runs scripts; a full document from the model collapses into <main>.
   const doc = new DOMParser().parseFromString(`<main>${html}</main>`, 'text/html');
   const main = doc.querySelector('main')!;
@@ -371,7 +373,7 @@ export function cleanCompanion(reply: string, pdf?: string) {
   const title = (main.querySelector('h1')?.textContent || '').trim();
   return { body: main.innerHTML, title, sections: toc.length };
 }
-const escapeHtml = (s: string) =>
+export const escapeHtml = (s: string) =>
   s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 export function companionPage(options: {

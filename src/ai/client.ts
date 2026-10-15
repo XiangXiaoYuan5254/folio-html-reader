@@ -48,7 +48,7 @@ export function activeProvider(c: AiConfig | null): AiProvider | undefined {
 }
 // The parts of the app that can each have their own model and reasoning level.
 export const useInfo: Record<AiUse, { label: string; hint: string }> = {
-  chat: { label: '助手聊天', hint: '右侧助手的对话、总结、划重点、精读笔记和项目助手' },
+  chat: { label: '助手聊天', hint: '右侧助手的对话、总结、划重点、精读笔记、全文翻译和项目助手' },
   explain: { label: '解释与提问', hint: '选中文字后的“解释”和“提问”' },
   translate: { label: '翻译', hint: '选中文字后的“翻译”' },
   board: { label: '白板讲解', hint: '页老师在白板上边写边讲' },

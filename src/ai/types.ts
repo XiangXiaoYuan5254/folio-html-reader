@@ -202,6 +202,8 @@ export type ChatMessage = {
   // A quick action's name shown instead of its long prompt, e.g. “总结全文”.
   label?: string;
   selection?: string;
+  // With two documents open, the one the selection is from (its file name).
+  selectionFrom?: string;
   // Pictures sent with a question (pasted, dropped, or a region of the page), as data: URLs.
   images?: string[];
   reasoning?: string;
@@ -241,5 +243,12 @@ export type ChatThread = {
   // The earlier part of a long conversation, summarized to make room: the summary, and the
   // last message it covers. The model gets the summary and what came after.
   summary?: { text: string; upTo: string };
+};
+// A document's conversations with another read beside it, for its history list.
+export type PairThreads = {
+  key: string;
+  // The other document's path.
+  other: string;
+  threads: { id: string; title: string; updatedAt: number }[];
 };
 export type ChatHistory = { version: 1; active?: string; threads: ChatThread[] };

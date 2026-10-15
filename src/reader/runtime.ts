@@ -274,16 +274,101 @@ import { findQuote } from '../ai/quote-match';
       return anchor;
     });
   }
+  // 同步滚动 between a translation (全文翻译) and the PDF it was made from: each side turns its
+  // scroll position into one measure, the original's page number plus how far into the page
+  // (a translation's blocks carry theirs as data-at), and follows the other side's.
+  let paired = false;
+  let followUntil = 0;
+  let pairFrame = 0;
+  let marks: { key: string; points: { y: number; at: number }[] } | null = null;
+  // The line the eyes are on, a little below the top.
+  const readingLine = () => innerHeight * 0.3;
+  // A PDF page's blank margin at the top and the bottom.
+  const pageMargin = 0.07;
+  const pairOf = () =>
+    document.querySelector<HTMLMetaElement>('meta[name="folio-translation"]')?.content || '';
+  function translationPoints() {
+    const key = `${document.documentElement.scrollHeight}:${innerWidth}`;
+    if (marks?.key === key) return marks.points;
+    const points = Array.from(document.querySelectorAll<HTMLElement>('[data-at]'))
+      .map((el) => ({ y: el.getBoundingClientRect().top + scrollY, at: Number(el.dataset.at) }))
+      .filter((p) => Number.isFinite(p.y) && Number.isFinite(p.at));
+    // The top of the translation goes with the top of the first page.
+    if (points.length) points.unshift({ y: 0, at: Math.floor(points[0].at) });
+    marks = { key, points };
+    return points;
+  }
+  // Between two known points, both measures move in step.
+  function along(
+    points: { y: number; at: number }[],
+    from: 'y' | 'at',
+    to: 'y' | 'at',
+    value: number,
+  ) {
+    let i = -1;
+    while (i + 1 < points.length && points[i + 1][from] <= value) i++;
+    if (i < 0) return points[0]?.[to] ?? NaN;
+    const a = points[i];
+    const b = points[i + 1];
+    if (!b || b[from] === a[from]) return a[to];
+    return a[to] + ((b[to] - a[to]) * (value - a[from])) / (b[from] - a[from]);
+  }
+  function pdfPages() {
+    return Array.from(document.querySelectorAll<HTMLElement>('[data-pdf-page]')).map((el) => {
+      const r = el.getBoundingClientRect();
+      return { n: Number(el.dataset.pdfPage), top: r.top + scrollY, height: r.height };
+    });
+  }
+  // The measure at a point down the document, and the point for a measure.
+  function measureAt(y: number) {
+    if (!isPdf()) return along(translationPoints(), 'y', 'at', y);
+    const pages = pdfPages();
+    let page = pages[0];
+    for (const p of pages) if (p.top <= y) page = p;
+    if (!page) return NaN;
+    const f = ((y - page.top) / Math.max(1, page.height) - pageMargin) / (1 - 2 * pageMargin);
+    return page.n + Math.max(0, Math.min(0.999, f));
+  }
+  function pointFor(at: number) {
+    if (!isPdf()) return along(translationPoints(), 'at', 'y', at);
+    const pages = pdfPages();
+    const page = pages.find((p) => p.n === Math.floor(at)) || (at < 1 ? pages[0] : pages.at(-1));
+    if (!page) return NaN;
+    const f = Math.max(0, Math.min(1, at - page.n));
+    return page.top + page.height * (pageMargin + (1 - 2 * pageMargin) * f);
+  }
+  function pairScrolled() {
+    if (!paired || pairFrame || Date.now() < followUntil) return;
+    pairFrame = requestAnimationFrame(() => {
+      pairFrame = 0;
+      const at = measureAt(scrollY + readingLine());
+      if (Number.isFinite(at)) send('pair-scroll', { at });
+    });
+  }
+  // Following the other side doesn't report back, or the two would chase each other.
+  function pairFollow(at: number) {
+    const y = paired && Number.isFinite(at) ? pointFor(at) : NaN;
+    if (!Number.isFinite(y)) return;
+    followUntil = Date.now() + 250;
+    cancelAnimationFrame(pairFrame);
+    pairFrame = 0;
+    scrollTo({ top: Math.max(0, y - readingLine()), behavior: 'instant' });
+  }
   // Jumps the reader asks for (a heading, an annotation, a cited passage) glide there.
   const glide = (): ScrollBehavior =>
     matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
   // Briefly marks a cited passage without saving anything.
   let citeLayer: SVGGElement | null = null;
   let citeTimer: ReturnType<typeof setTimeout> | undefined;
-  async function flashQuote(quote: string) {
+  async function flashQuote(quote: string, page = 0) {
     await whenTextReady();
     const index = textIndex();
-    const found = findQuote(index.text, quote);
+    // In a PDF, the passage on that page rather than the same words somewhere else.
+    const near =
+      page && isPdf()
+        ? index.nodes.find((n) => n.node.parentElement?.closest(`[data-pdf-page="${page}"]`))?.start
+        : undefined;
+    const found = findQuote(index.text, quote, near);
     const range = found && rangeAt(found.start, found.end, index.nodes);
     const rects = Array.from(range?.getClientRects() || []).filter((r) => r.width && r.height);
     if (!rects.length) return false;
@@ -1039,6 +1124,7 @@ import { findQuote } from '../ai/quote-match';
         citeLayer?.setAttribute('transform', `translate(${-scrollX},${-scrollY})`);
         notes.reposition();
         popup.reposition();
+        pairScrolled();
         const now = Date.now();
         if (now - lastScroll > 150) {
           lastScroll = now;
@@ -1195,7 +1281,7 @@ import { findQuote } from '../ai/quote-match';
       cursor.style.display = 'none';
     });
     outline();
-    send('ready', { title: document.title, url: location.href });
+    send('ready', { title: document.title, url: location.href, pairOf: pairOf() });
   }
   window.addEventListener('message', (e) => {
     if (e.source !== parent || e.data?.channel !== channel) return;
@@ -1203,10 +1289,14 @@ import { findQuote } from '../ai/quote-match';
     if (!ready) return;
     if (m.type === 'request-ready') {
       outline();
-      send('ready', { title: document.title, url: location.href });
+      send('ready', { title: document.title, url: location.href, pairOf: pairOf() });
     }
     if (m.type === 'zoom-state') readerZoom.apply(m.scale, m.enabled);
     if (m.type === 'scroll-link-state') linkedScroll.setEnabled(!!m.enabled);
+    if (m.type === 'pair-state') paired = !!m.enabled;
+    if (m.type === 'pair-follow') pairFollow(Number(m.at));
+    // A jump the app asks for (a page, a passage) is not for the other side to follow.
+    if (m.type === 'pdf-page' || m.type === 'ai-flash') followUntil = Date.now() + 1500;
     if (m.type === 'appearance' && document.documentElement.dataset.folioPdf) {
       const color = (value: unknown) =>
         typeof value === 'string' && /^#[\da-f]{3,8}$/i.test(value) ? value : '';
@@ -1256,7 +1346,8 @@ import { findQuote } from '../ai/quote-match';
       );
     if (m.type === 'ai-text') reply(aiText());
     if (m.type === 'ai-anchors') reply(aiAnchors(Array.isArray(m.quotes) ? m.quotes : []));
-    if (m.type === 'ai-flash') reply(flashQuote(String(m.quote || '')));
+    if (m.type === 'ai-flash')
+      reply(flashQuote(String(m.quote || ''), Math.max(0, Math.floor(Number(m.page) || 0))));
     if (m.type === 'ai-region') reply(Promise.resolve().then(() => regionText(m.box)));
     if (m.type === 'clear-selection') {
       window.getSelection()?.removeAllRanges();
