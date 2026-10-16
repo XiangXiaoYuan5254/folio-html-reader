@@ -665,6 +665,9 @@ import { findQuote } from '../ai/quote-match';
       tool,
     );
     svg.style.pointerEvents = drawing ? 'auto' : 'none';
+    // On a touchscreen, a finger or pen drag would otherwise scroll the page
+    // and cancel the stroke; drawing tools keep the drag for themselves.
+    svg.style.touchAction = drawing ? 'none' : '';
     svg.style.cursor =
       tool === 'pen'
         ? penCursor(color)
@@ -1016,6 +1019,8 @@ import { findQuote } from '../ai/quote-match';
       )
         return;
       e.preventDefault();
+      // A second finger landing mid-stroke must not restart the gesture.
+      if (activePointer >= 0) return;
       svg.focus({ preventScroll: true });
       window.getSelection()?.removeAllRanges();
       const p = point(e);
@@ -1082,6 +1087,7 @@ import { findQuote } from '../ai/quote-match';
       }
     });
     svg.addEventListener('pointermove', (e) => {
+      if (activePointer >= 0 && e.pointerId !== activePointer) return;
       pointerCursor(e);
       if (!isDrawing && !isErasing) return;
       const samples = e.getCoalescedEvents?.();
@@ -1098,6 +1104,7 @@ import { findQuote } from '../ai/quote-match';
       if (isDrawing) schedulePreview();
     });
     svg.addEventListener('pointerup', (e) => {
+      if (activePointer >= 0 && e.pointerId !== activePointer) return;
       if (isErasing && eraseLast) erase(eraseLast, point(e));
       if (isDrawing) {
         if (['pen', 'laser'].includes(strokeTool)) points.push(point(e));
@@ -1105,7 +1112,10 @@ import { findQuote } from '../ai/quote-match';
       }
       finishGesture();
     });
-    svg.addEventListener('pointercancel', () => finishGesture(true));
+    svg.addEventListener('pointercancel', (e) => {
+      if (activePointer >= 0 && e.pointerId !== activePointer) return;
+      finishGesture(true);
+    });
     svg.addEventListener('pointerleave', () => {
       if (activePointer < 0) cursor.style.display = 'none';
     });
