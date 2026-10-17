@@ -37,6 +37,7 @@ import { findQuote } from '../ai/quote-match';
   let isDrawing = false;
   let isErasing = false;
   let activePointer = -1;
+  let activePointerType = '';
   let strokeTool: Tool = 'pen';
   let strokeColor = color;
   let strokeSize = strokeWidth;
@@ -880,6 +881,20 @@ import { findQuote } from '../ai/quote-match';
       });
     points = [];
   }
+  // Whether a stroke ignores this event: a second finger or a palm. A pen or
+  // mouse has a single pointer, so a new one means the stroke's pointer was
+  // released outside the reader; a pen lifted over the app shell comes back
+  // with a new pointerId. That, or the stroke's own pointer pressing again or
+  // moving with no button down, ends the stroke instead.
+  function ignoredPointer(e: PointerEvent) {
+    if (activePointer < 0) return false;
+    if (e.pointerId !== activePointer) {
+      if (e.pointerType === 'touch' || activePointerType === 'touch') return true;
+      finishGesture();
+    } else if (e.type === 'pointerdown' || (e.type === 'pointermove' && !e.buttons))
+      finishGesture();
+    return false;
+  }
   function outline() {
     if (document.documentElement.dataset.folioPdf) {
       document.dispatchEvent(new Event('folio:pdf-outline'));
@@ -1020,7 +1035,7 @@ import { findQuote } from '../ai/quote-match';
         return;
       e.preventDefault();
       // A second finger landing mid-stroke must not restart the gesture.
-      if (activePointer >= 0) return;
+      if (ignoredPointer(e)) return;
       svg.focus({ preventScroll: true });
       window.getSelection()?.removeAllRanges();
       const p = point(e);
@@ -1067,6 +1082,7 @@ import { findQuote } from '../ai/quote-match';
         return;
       }
       activePointer = e.pointerId;
+      activePointerType = e.pointerType;
       svg.setPointerCapture(e.pointerId);
       pointerCursor(e);
       if (tool === 'eraser') {
@@ -1087,7 +1103,7 @@ import { findQuote } from '../ai/quote-match';
       }
     });
     svg.addEventListener('pointermove', (e) => {
-      if (activePointer >= 0 && e.pointerId !== activePointer) return;
+      if (ignoredPointer(e)) return;
       pointerCursor(e);
       if (!isDrawing && !isErasing) return;
       const samples = e.getCoalescedEvents?.();
@@ -1347,6 +1363,9 @@ import { findQuote } from '../ai/quote-match';
         setTool('pen');
       }
     }
+    // The pen was lifted over the app shell, which this frame never hears about.
+    if (m.type === 'pointerup' && activePointer >= 0 && activePointerType === 'pen')
+      finishGesture();
     if (m.type === 'annotate') annotate(m.tool);
     // Requests from the app's AI features answer with a reply to the same id.
     const reply = (work: Promise<unknown>) =>

@@ -237,6 +237,15 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
   useEffect(() => {
     if (ready) sendAppearance();
   }, [ready, theme]);
+  // A pen keeps no capture outside the reader's frame. Dragged out over the AI
+  // panel and lifted there, its pointerup lands here, so pass it on.
+  useEffect(() => {
+    const up = (e: PointerEvent) => {
+      if (e.pointerType === 'pen') send('pointerup');
+    };
+    window.addEventListener('pointerup', up, true);
+    return () => window.removeEventListener('pointerup', up, true);
+  }, []);
   useEffect(() => {
     if (ready)
       send('sync', {
