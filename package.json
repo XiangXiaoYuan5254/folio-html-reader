@@ -1,7 +1,7 @@
 {
   "name": "folio-html-reader",
   "productName": "页间",
-  "version": "0.23.2",
+  "version": "0.24.0",
   "description": "本地 HTML / PDF 阅读、批注与项目管理",
   "type": "module",
   "main": "electron/main.cjs",
@@ -28,6 +28,7 @@
     "test:open-file": "npm run build && node tests/open-file.e2e.mjs",
     "test:ai": "npm run build && node tests/ai.e2e.mjs",
     "test:ai-live": "npm run build && node tests/ai-live.mjs",
+    "test:board-attachments": "npm run build && node tests/board-attachments.e2e.mjs",
     "test:windows": "node tests/windows.e2e.mjs",
     "test:voice": "npm run build && node tests/voice.e2e.mjs",
     "test:update": "npm run build && node tests/update.e2e.mjs",

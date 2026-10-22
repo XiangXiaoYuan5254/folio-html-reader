@@ -171,6 +171,23 @@ export type DocText = {
   text: string;
   pages?: string[];
 };
+// A figure or table cut out of a PDF page, found by its caption ("Figure 2:", "Table 1.").
+export type PdfFigure = {
+  kind: 'figure' | 'table';
+  // As the caption numbers it: "2", "A.1", "IV".
+  number: string;
+  page: number;
+  // How far down the page it starts, 0 at the top.
+  top: number;
+  // The original caption, for when the translation has none.
+  caption: string;
+  // A data: URL, and its size on the page in CSS pixels.
+  src: string;
+  width: number;
+  height: number;
+  // A table's cells as read off the page, row by row, for the model to retype it.
+  rows?: string[][];
+};
 
 export type AgentPreview =
   | {

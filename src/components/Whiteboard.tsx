@@ -17,14 +17,15 @@ import {
   Check,
   Copy,
   Eraser,
+  FileText,
   GraduationCap,
   History,
-  ImagePlus,
   LoaderCircle,
   Maximize2,
   Minus,
   NotebookPen,
   Pause,
+  Paperclip,
   Play,
   Presentation,
   RotateCcw,
@@ -36,6 +37,13 @@ import { invoke } from '../api';
 import { providerFor, useAiConfig, useChoice } from '../ai/client';
 import { effortLabel, levelsFor, loadedModelOptions, lowerLevel } from '../ai/levels';
 import { isImageFile, maxImages, prepareImage } from '../ai/images';
+import {
+  documentAccept,
+  isBoardDocument,
+  maxDocuments,
+  readBoardDocument,
+} from '../ai/board-documents';
+import type { BoardDocument } from '../ai/board-documents';
 import { plainText, segments, texWithRefs, useTutor } from '../ai/board';
 import type {
   Block,
@@ -59,10 +67,12 @@ import {
   underlinePath,
 } from '../ai/board-ink';
 import type { Box } from '../ai/board-ink';
+import { loadSound } from '../ai/board-sound';
 import {
   canTalk,
   listener,
   onVoiceProblem,
+  replayVoice,
   stopSpeech,
   useSpeechSupport,
   useVoiceSettings,
@@ -82,6 +92,13 @@ const speeds = [1, 1.5, 2];
 
 type Vars = CSSProperties & Record<`--${string}`, string | number>;
 type P = [number, number];
+type Attachment = {
+  id: string;
+  name: string;
+  kind: 'image' | 'document';
+  image?: string;
+  document?: BoardDocument;
+};
 const ms = (v: number) => `${Math.round(v)}ms`;
 
 const escape = (s: string) =>
@@ -192,6 +209,85 @@ function Thinking({ text, slow, heard }: { text: string; slow: string; heard: ()
 }
 
 // The board put away: what the teacher is doing meanwhile, and the way back to it.
+// Watching the lesson again: how far it has got, which can be dragged to go to any sentence,
+// and the way back to the board.
+const clock = (ms: number) => {
+  const s = Math.round(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
+function ReplayBar({
+  tutor,
+  replay,
+  onBack,
+}: {
+  tutor: Tutor;
+  replay: TutorState['replay'];
+  onBack: () => void;
+}) {
+  const slots = replay?.slots || [];
+  const lead = replay?.lead || 0;
+  const total = slots.reduce((a, b) => a + b, lead);
+  const [at, setAt] = useState(0);
+  // Where it is being dragged to, gone to once let go: the bar's change event, which comes
+  // wherever the pointer is let go, and for a click or a key.
+  const [drag, setDrag] = useState<number | null>(null);
+  useEffect(() => {
+    const timer = setInterval(() => setAt(tutor.replayPosition()), 200);
+    return () => clearInterval(timer);
+  }, [tutor]);
+  // In whole ms: the bar reads a value back as it was written only then, and a value read
+  // back otherwise looks to React like the student moving it.
+  const value = Math.round(drag ?? (replay?.done ? total : at));
+  const bar = useRef<HTMLInputElement>(null);
+  const plan = useRef({ slots, lead });
+  plan.current = { slots, lead };
+  useEffect(() => {
+    const el = bar.current!;
+    const go = () => {
+      const { slots, lead } = plan.current;
+      const to = Number(el.value);
+      setDrag(null);
+      // The sentence under the point it was let go at, from its start.
+      let sentence = 0;
+      let t = lead;
+      for (; sentence < slots.length && t + slots[sentence] <= to; sentence++) t += slots[sentence];
+      setAt(sentence ? t : 0);
+      void tutor.replay(sentence, true);
+    };
+    el.addEventListener('change', go);
+    return () => el.removeEventListener('change', go);
+  }, [tutor]);
+  return (
+    <div className="wb-replay">
+      <span className="wb-replay-time">{clock(value)}</span>
+      <input
+        type="range"
+        className="wb-replay-bar"
+        aria-label="重看进度"
+        title="拖动可以跳到任意一句；重看不消耗 AI 额度"
+        min={0}
+        max={Math.round(total) || 1}
+        step="any"
+        value={value}
+        disabled={!total}
+        ref={bar}
+        // Only while it moves: letting go is the change event, which goes there.
+        onChange={(e) => e.nativeEvent.type === 'input' && setDrag(Number(e.target.value))}
+      />
+      <span className="wb-replay-time">{clock(total)}</span>
+      {replay?.done ? (
+        <button type="button" className="whiteboard-note" onClick={() => void tutor.replay()}>
+          <RotateCcw size={14} />
+          再看一遍
+        </button>
+      ) : null}
+      <button type="button" className="wb-send" onClick={onBack}>
+        {replay?.done ? '接着提问' : '结束重看'}
+      </button>
+    </div>
+  );
+}
+
 function Away({
   tutor,
   state,
@@ -788,6 +884,7 @@ export default function Whiteboard({
   noteTarget,
   onNote,
   noteAsk,
+  onReplay,
 }: {
   tutor: Tutor;
   selection: string;
@@ -808,6 +905,8 @@ export default function Whiteboard({
   onNote: (picture: string | null) => Promise<void>;
   // Asks for that from outside (the sidebar's menu), once per `n`.
   noteAsk?: { id: string; n: number } | null;
+  // Watches the lesson again from the start (true), or goes back from that to the board.
+  onReplay: (replay: boolean) => void;
 }) {
   const state = useTutor(tutor);
   const root = useRef<HTMLElement>(null);
@@ -821,27 +920,71 @@ export default function Whiteboard({
   const drawing = useRef<number[] | null>(null);
   const [live, setLive] = useState<number[] | null>(null);
   const [question, setQuestion] = useState('');
-  // Pictures waiting to go with the next question, e.g. a problem to solve.
-  const [pics, setPics] = useState<string[]>([]);
+  // Keep a synchronous copy so overlapping file drops cannot exceed the limits or send
+  // incomplete files. Removing a file also discards its eventual asynchronous result.
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const attached = useRef<Attachment[]>([]);
+  const reads = useRef(Promise.resolve());
+  function changeAttachments(change: (list: Attachment[]) => Attachment[]) {
+    attached.current = change(attached.current);
+    setAttachments(attached.current);
+  }
+  useEffect(
+    () => () => {
+      attached.current = [];
+    },
+    [],
+  );
   const fileInput = useRef<HTMLInputElement>(null);
-  async function addPics(files: File[]) {
-    const images = files.filter(isImageFile);
-    if (!images.length) return;
-    const room = maxImages - pics.length;
-    if (room <= 0) return onNotify(`每次最多附 ${maxImages} 张图片`, true);
-    try {
-      const ready = await Promise.all(images.slice(0, room).map((f) => prepareImage(f)));
-      setPics((list) => [...list, ...ready].slice(0, maxImages));
-      if (images.length > room) onNotify(`每次最多附 ${maxImages} 张图片`, true);
-    } catch {
-      onNotify('这张图片读取不了，换成 PNG 或 JPG 再试', true);
+  function addFiles(files: File[]) {
+    if (tutor.replaying) return;
+    const notices = new Set<string>();
+    for (const file of files) {
+      const kind = isImageFile(file) ? 'image' : isBoardDocument(file) ? 'document' : null;
+      if (!kind) {
+        notices.add('支持图片、PDF、TXT、Markdown 和 HTML 文件');
+        continue;
+      }
+      const limit = kind === 'image' ? maxImages : maxDocuments;
+      if (attached.current.filter((a) => a.kind === kind).length >= limit) {
+        notices.add(`每次最多附 ${maxDocuments} 份文档和 ${maxImages} 张图片`);
+        continue;
+      }
+      const item: Attachment = { id: crypto.randomUUID(), name: file.name, kind };
+      changeAttachments((list) => [...list, item]);
+      // Serial PDF reads bound the number of live workers and page canvases.
+      reads.current = reads.current.then(async () => {
+        const present = () => attached.current.some((a) => a.id === item.id);
+        if (!present()) return;
+        try {
+          const ready =
+            kind === 'image'
+              ? { image: await prepareImage(file) }
+              : { document: await readBoardDocument(file) };
+          if (present())
+            changeAttachments((list) =>
+              list.map((a) => (a.id === item.id ? { ...a, ...ready } : a)),
+            );
+        } catch (error) {
+          if (!present()) return;
+          changeAttachments((list) => list.filter((a) => a.id !== item.id));
+          onNotify(
+            `${file.name}：${kind === 'image' ? '图片读取失败，请换成 PNG 或 JPG 再试' : (error as Error).message}`,
+            true,
+          );
+        }
+      });
     }
+    if (notices.size) onNotify([...notices].join('；'), true);
     input.current?.focus();
   }
   const [log, setLog] = useState(false);
   const pending = state.strokes.filter((s) => !s.sent);
   const busy = state.phase === 'teaching' || state.phase === 'thinking';
-  const nothing = !question.trim() && !pending.length && !pics.length;
+  // Watching the lesson again, and not at its end: it can be paused between answers too.
+  const replaying = !!state.replay && !state.replay.done;
+  const nothing = !question.trim() && !pending.length && !attachments.length;
+  const readingFiles = attachments.some((a) => !a.image && !a.document);
   // Waiting for the student's first question: it is typed straight away.
   useEffect(() => {
     if (state.waiting) input.current?.focus({ preventScroll: true });
@@ -868,9 +1011,14 @@ export default function Whiteboard({
   const slow = lower
     ? `推理档位是「${effortLabel(effort)}」，页老师要多想一会儿。着急的话，可以在右上角换成「${effortLabel(lower)}」，下次提问会快一些。`
     : '这个模型要多想一会儿。着急的话，可以在右上角换个快一些的模型。';
+  // Watching the lesson again, the voice kept with the board plays.
+  const replayed = useMemo(
+    () => (tutor.replaying ? replayVoice((text) => loadSound(tutor.id, text)) : null),
+    [tutor],
+  );
   useEffect(
-    () => tutor.setVoice(mode, mode === 'off' ? null : teacherVoice, voice.voice),
-    [mode, voice.voice, tutor],
+    () => tutor.setVoice(mode, mode === 'off' ? null : replayed || teacherVoice, voice.voice),
+    [mode, voice.voice, tutor, replayed],
   );
   // The helper goes when the board does, and the voice forgets it: another board opened in
   // its place starts afresh.
@@ -880,6 +1028,10 @@ export default function Whiteboard({
   const [cutIn, setCutIn] = useState(false);
 
   useEffect(() => root.current?.focus(), []);
+  // The button that started watching again goes, and the board keeps the keys (space, ←, →).
+  useEffect(() => {
+    if (document.activeElement === document.body) root.current?.focus({ preventScroll: true });
+  }, [tutor, state.replay?.done]);
   // Put away, the teacher goes on thinking but waits to teach until the board is back, and
   // takes up where it stopped then. Whether it was paused for that; null while it is out.
   const heldAway = useRef<boolean | null>(null);
@@ -1207,12 +1359,20 @@ export default function Whiteboard({
   }, [noteAsk, tutor]);
   // Sends what was typed, or what was said out loud, with the marks and pictures waiting.
   function send(said?: string) {
+    if (attached.current.some((a) => !a.image && !a.document)) {
+      if (said) setQuestion(said);
+      onNotify('附件还在读取，请稍候再提问');
+      return;
+    }
+    const pics = attached.current.flatMap((a) => (a.image ? [a.image] : []));
+    const documents = attached.current.flatMap((a) => (a.document ? [a.document] : []));
     const q = (said ?? question).trim();
     // Nothing asked before the first lesson: the teacher goes ahead.
-    if (!q && !pending.length && !pics.length) return void (state.waiting && tutor.teach());
+    if (!q && !pending.length && !pics.length && !documents.length)
+      return void (state.waiting && tutor.teach());
     const marks = pending.map((s) => describeStroke(s.points, canvas.current!, tutor));
     if (said === undefined) setQuestion('');
-    setPics([]);
+    changeAttachments(() => []);
     setLog(false);
     tutor.ask(
       q,
@@ -1221,15 +1381,14 @@ export default function Whiteboard({
       pending.length ? () => shoot(pending) : undefined,
       pics,
       said !== undefined,
+      documents,
     );
   }
 
   const noteBottom = Math.max(0, ...[...notes.values()].map((n) => n.y + n.h));
   const status =
     state.phase === 'thinking'
-      ? state.blocks.length
-        ? '页老师在想怎么回答…'
-        : '页老师在备课…'
+      ? state.reading || (state.blocks.length ? '页老师在想怎么回答…' : '页老师在备课…')
       : '';
   return (
     <div className="modal-backdrop whiteboard-backdrop" data-away={away || undefined} inert={away}>
@@ -1242,10 +1401,10 @@ export default function Whiteboard({
         tabIndex={-1}
         data-paused={state.paused || undefined}
         onPaste={(e) => {
-          const files = Array.from(e.clipboardData.files).filter(isImageFile);
+          const files = Array.from(e.clipboardData.files);
           if (!files.length) return;
           e.preventDefault();
-          void addPics(files);
+          addFiles(files);
         }}
         onDragOver={(e) => {
           if (Array.from(e.dataTransfer.items).some((i) => i.kind === 'file')) e.preventDefault();
@@ -1254,18 +1413,22 @@ export default function Whiteboard({
           const files = Array.from(e.dataTransfer.files);
           if (!files.length) return;
           e.preventDefault();
-          if (!files.some(isImageFile)) return onNotify('只能拖入图片', true);
-          void addPics(files);
+          e.stopPropagation();
+          addFiles(files);
         }}
         onKeyDown={(e) => {
-          const typing = (e.target as Element).closest('input');
+          const typing = (e.target as Element).closest('input:not([type=range])');
           if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !typing) {
             e.preventDefault();
             tutor.undoStroke();
           } else if (e.key === ' ' && !typing && !(e.target as Element).closest('button')) {
             e.preventDefault();
             if (state.paused) tutor.resume();
-            else if (state.phase === 'teaching') tutor.pause();
+            else if (state.phase === 'teaching' || replaying) tutor.pause();
+          } else if (tutor.replaying && !typing && /^Arrow(Left|Right)$/.test(e.key)) {
+            // Watching again: the sentence before or after, rather than nudging the bar.
+            e.preventDefault();
+            tutor.skip(e.key === 'ArrowLeft' ? -1 : 1);
           } else if (e.key === 'Escape') {
             if (drawing.current) endStroke(false);
             else if (log) setLog(false);
@@ -1283,7 +1446,21 @@ export default function Whiteboard({
             {selection}
           </span>
           <ModelMenu use="board" className="model-pick" onOpenSettings={onOpenSettings} />
-          {noteTarget ? (
+          {!tutor.replaying ? (
+            <IconButton
+              label="重看讲解"
+              help={
+                busy ? '页老师讲完再看' : '从头播放保存下来的板书和语音，不调用 AI，不消耗 token'
+              }
+              className="whiteboard-note"
+              disabled={busy || !state.transcript.some((l) => l.who === 'teacher')}
+              onClick={() => onReplay(true)}
+            >
+              <RotateCcw size={14} />
+              重看讲解
+            </IconButton>
+          ) : null}
+          {noteTarget && !tutor.replaying ? (
             <button
               type="button"
               className="whiteboard-note"
@@ -1347,7 +1524,7 @@ export default function Whiteboard({
                 paddingBottom: Math.max(180, (viewHeight / scale) * 0.75),
               }}
               onPointerDown={(e) => {
-                if (e.button !== 0) return;
+                if (e.button !== 0 || tutor.replaying) return;
                 e.preventDefault();
                 e.currentTarget.setPointerCapture(e.pointerId);
                 // Starting to draw is interrupting: the teacher stops and waits.
@@ -1461,15 +1638,17 @@ export default function Whiteboard({
           ) : state.waiting && !state.blocks.length ? (
             <div className="wb-empty">等你提问，或者点「直接讲」</div>
           ) : state.phase === 'idle' && !state.blocks.length ? (
-            <div className="wb-empty">在下面问一道题，也可以粘贴、拖入或添加题目的图片</div>
+            <div className="wb-empty">在下面提问，也可以添加或拖入文档、图片让页老师讲解</div>
           ) : null}
           {state.paused ? (
             <div className="wb-paused">
-              {cutIn
-                ? '页老师停下来在听你说'
-                : mode === 'talk'
-                  ? '已暂停 · 圈出没懂的地方，直接说哪里不懂'
-                  : '已暂停 · 圈出没懂的地方，告诉页老师哪里不懂'}
+              {tutor.replaying
+                ? '已暂停 · 按空格继续，← → 换到上一句、下一句'
+                : cutIn
+                  ? '页老师停下来在听你说'
+                  : mode === 'talk'
+                    ? '已暂停 · 圈出没懂的地方，直接说哪里不懂'
+                    : '已暂停 · 圈出没懂的地方，告诉页老师哪里不懂'}
             </div>
           ) : state.voiceWait ? (
             <div className="wb-paused">语音还在合成，稍等一下…</div>
@@ -1532,7 +1711,7 @@ export default function Whiteboard({
               ) : null}
               <IconButton
                 label={state.paused ? '继续讲' : '暂停'}
-                disabled={!state.paused && state.phase !== 'teaching'}
+                disabled={!state.paused && state.phase !== 'teaching' && !replaying}
                 onClick={() => (state.paused ? tutor.resume() : tutor.pause())}
               >
                 {state.paused ? <Play size={16} /> : <Pause size={16} />}
@@ -1560,7 +1739,7 @@ export default function Whiteboard({
               />
             </div>
           </div>
-          {mode === 'talk' && support && !away ? (
+          {mode === 'talk' && support && !away && !tutor.replaying ? (
             <Listening
               // A ChatGPT voice listens itself; the helper or the page's microphone listens for
               // the others. Each board listens afresh, after the one before stopped the voice.
@@ -1572,85 +1751,121 @@ export default function Whiteboard({
               onError={(text) => onNotify(text, true)}
             />
           ) : null}
-          <form
-            className="wb-ask"
-            onSubmit={(e) => {
-              e.preventDefault();
-              send();
-            }}
-          >
-            {pics.map((src, i) => (
-              <span className="wb-pic" key={i}>
-                <img src={src} alt={`要发送的第 ${i + 1} 张图片`} />
-                <button
-                  type="button"
-                  aria-label={`移除第 ${i + 1} 张图片`}
-                  onClick={() => setPics((list) => list.filter((_, j) => j !== i))}
-                >
-                  <X size={11} />
-                </button>
-              </span>
-            ))}
-            {pending.length ? (
-              <span className="wb-marks">
-                已标 {pending.length} 处
-                <button
-                  type="button"
-                  aria-label="清除我的标记"
-                  onClick={() => tutor.clearStrokes()}
-                >
-                  <Eraser size={13} />
-                </button>
-              </span>
-            ) : null}
-            <input
-              ref={input}
-              aria-label="向页老师提问"
-              placeholder={
-                mode === 'talk'
-                  ? '开口说就行，也可以在这里打字'
-                  : state.waiting
-                    ? '先问你想知道的，比如：这一步为什么成立？'
-                    : busy
-                      ? '随时打断：在白板上圈出没懂的地方，再说哪里不懂'
-                      : state.blocks.length
-                        ? '还有哪里不懂？可以先在白板上圈出来'
-                        : '问一道题，比如：用图讲讲二叉树的层序遍历'
-              }
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-            />
-            <IconButton
-              type="button"
-              label="添加图片"
-              help="也可以直接粘贴或拖入图片，比如一道题的截图"
-              onClick={() => fileInput.current?.click()}
-            >
-              <ImagePlus size={16} />
-            </IconButton>
-            <input
-              ref={fileInput}
-              type="file"
-              accept="image/png,image/jpeg,image/webp,image/gif,image/bmp"
-              multiple
-              hidden
-              onChange={(e) => {
-                void addPics(Array.from(e.target.files || []));
-                e.target.value = '';
+          {attachments.length ? (
+            <div className="wb-attachments" aria-label="待发送的附件" aria-busy={readingFiles}>
+              {attachments.map((a) => (
+                <div className="wb-attachment" key={a.id} title={a.name}>
+                  {a.image ? (
+                    <img src={a.image} alt={a.name} />
+                  ) : a.document ? (
+                    <FileText size={18} />
+                  ) : (
+                    <LoaderCircle className="spin" size={18} />
+                  )}
+                  <div className="wb-attachment-info">
+                    <strong>{a.name}</strong>
+                    <span>
+                      {a.document
+                        ? [
+                            a.document.pages ? `${a.document.pages} 页` : '',
+                            `${a.document.text.length.toLocaleString()} 字`,
+                            a.document.notice,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')
+                        : a.image
+                          ? '图片'
+                          : '正在读取…'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={`移除附件 ${a.name}`}
+                    onClick={() =>
+                      changeAttachments((list) => list.filter((item) => item.id !== a.id))
+                    }
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {tutor.replaying ? (
+            <ReplayBar tutor={tutor} replay={state.replay} onBack={() => onReplay(false)} />
+          ) : (
+            <form
+              className="wb-ask"
+              onSubmit={(e) => {
+                e.preventDefault();
+                send();
               }}
-            />
-            {state.waiting && nothing ? (
-              <button className="wb-send">
-                <Play size={14} />
-                直接讲
-              </button>
-            ) : (
-              <button className="wb-send" disabled={nothing}>
-                <SendHorizontal size={14} />
-                {busy ? '打断提问' : '提问'}
-              </button>
-            )}
-          </form>
+            >
+              {pending.length ? (
+                <span className="wb-marks">
+                  已标 {pending.length} 处
+                  <button
+                    type="button"
+                    aria-label="清除我的标记"
+                    onClick={() => tutor.clearStrokes()}
+                  >
+                    <Eraser size={13} />
+                  </button>
+                </span>
+              ) : null}
+              <input
+                ref={input}
+                aria-label="向页老师提问"
+                placeholder={
+                  mode === 'talk'
+                    ? '开口说就行，也可以在这里打字'
+                    : state.waiting
+                      ? '先问你想知道的，比如：这一步为什么成立？'
+                      : busy
+                        ? '随时打断：在白板上圈出没懂的地方，再说哪里不懂'
+                        : state.blocks.length
+                          ? '还有哪里不懂？可以先在白板上圈出来'
+                          : '问一道题，比如：用图讲讲二叉树的层序遍历'
+                }
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+              />
+              <IconButton
+                type="button"
+                label="添加附件"
+                help="选择或拖入 PDF、TXT、Markdown、HTML 和图片，也可以粘贴图片。每次最多 4 份文档和 6 张图片。"
+                onClick={() => fileInput.current?.click()}
+              >
+                <Paperclip size={16} />
+              </IconButton>
+              <input
+                ref={fileInput}
+                type="file"
+                accept={`${documentAccept},image/png,image/jpeg,image/webp,image/gif,image/bmp`}
+                multiple
+                hidden
+                onChange={(e) => {
+                  addFiles(Array.from(e.target.files || []));
+                  e.target.value = '';
+                }}
+              />
+              {state.waiting && nothing ? (
+                <button className="wb-send">
+                  <Play size={14} />
+                  直接讲
+                </button>
+              ) : (
+                <button className="wb-send" disabled={nothing || readingFiles}>
+                  {readingFiles ? (
+                    <LoaderCircle className="spin" size={14} />
+                  ) : (
+                    <SendHorizontal size={14} />
+                  )}
+                  {readingFiles ? '读取附件中' : busy ? '打断提问' : '提问'}
+                </button>
+              )}
+            </form>
+          )}
         </footer>
       </section>
       {away && awayIn

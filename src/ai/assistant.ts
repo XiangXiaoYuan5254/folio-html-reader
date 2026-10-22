@@ -15,6 +15,7 @@ import type {
   PairThreads,
   DocText,
   MessagePart,
+  PdfFigure,
   Quota,
   ToolCall,
   ToolDef,
@@ -86,6 +87,7 @@ import {
   isTranslationSaid,
   partContinue,
   partPrompt,
+  chunkTables,
   translationBody,
   translationNext,
   translationPage,
@@ -95,6 +97,7 @@ import {
   translationSystem,
   unfinishedTranslation,
   untranslated,
+  withFigures,
 } from './translation';
 import type { Glossary } from './translation';
 import { citations, citeKey, plainCites, plainText } from './plain';
@@ -170,6 +173,8 @@ type TranslationWork = {
   chunks: Chunk[];
   parts: (string | undefined)[];
   glossary?: Glossary;
+  // The PDF's figures and tables, once cut out.
+  figures?: PdfFigure[];
   target?: string;
   created?: boolean;
   model: string;
@@ -1551,6 +1556,7 @@ export class Assistant {
     let writing: Promise<void> = Promise.resolve();
     let markStopped: (() => Promise<void>) | null = null;
     let finished = false;
+    let ended = false;
     try {
       const doc = await this.host.docText(source);
       const pdf = doc.kind === 'pdf';
@@ -1584,7 +1590,8 @@ export class Assistant {
         // finish and next to it when it did.
         const earlier = `${dir}${stem}-译文.html`;
         if (this.host.files().some((f) => f.path === earlier)) {
-          const progress = translationProgress((await this.host.documentData(earlier)).source);
+          const page = (await this.host.documentData(earlier)).source;
+          const progress = translationProgress(page);
           const again = await this.host.confirm({
             title: '这篇已经翻译过了',
             message: progress
@@ -1594,10 +1601,29 @@ export class Assistant {
             cancelLabel: '打开已有译文',
           });
           if (!again) {
+            // A translation made before figures were put in gets them from the PDF now.
+            let added = 0;
+            if (
+              pdf &&
+              !progress &&
+              page.includes('name="folio-translation"') &&
+              !page.includes('<figure')
+            ) {
+              patch((m) => ({ ...m, text: '正在从原文里找出图表，补进之前的译文…' }));
+              const upgraded = withFigures(
+                page,
+                await this.host.pdfFigures(source).catch(() => []),
+              );
+              if (upgraded)
+                added = await this.host.writeHtml(earlier, upgraded.page).then(
+                  () => upgraded.count,
+                  () => 0,
+                );
+            }
             await this.host.openBeside(earlier, source, { linked: pdf });
             patch((m) => ({
               ...m,
-              text: `已在右栏打开之前的译文 **${fileName(earlier)}**。`,
+              text: `已在右栏打开之前的译文 **${fileName(earlier)}**。${added ? `从原文补上了 ${added} 张图表。` : ''}`,
               said: translationRecord(earlier),
               status: 'done',
             }));
@@ -1639,15 +1665,17 @@ export class Assistant {
       // settled it has the document's own title.
       const save = async (state: 'progress' | 'stopped' | 'final') => {
         const n = shown();
-        const key = `${n}:${!!work.glossary}`;
+        const key = `${n}:${!!work.glossary}:${work.figures?.length ?? -1}`;
         if (state === 'progress' && key === written) return;
         written = key;
         const body = translationBody(work.parts.slice(0, n) as string[], {
           name: fileName(source),
           pages: pdf ? doc.pages : undefined,
+          figures: work.figures,
         });
         const page = translationPage({
           body: body.html,
+          toc: body.toc,
           glossary: work.glossary || {
             title: doc.title || stem,
             original: '',
@@ -1705,8 +1733,21 @@ export class Assistant {
         );
       };
       markStopped = () => queue('stopped');
+      // The PDF's figures and tables are cut out while the first part is translated, and go
+      // in with the next write.
+      const figures: Promise<PdfFigure[]> =
+        !pdf || work.figures
+          ? Promise.resolve(work.figures || [])
+          : this.host.pdfFigures(source).catch(() => []);
+      void figures.then((list) => {
+        work.figures = list;
+        if (!ended && !finished) soon();
+      });
       // The page opens at once, and fills in as parts come.
       await queue('progress');
+      // The parts get their tables' cells as read off the page, which takes a second or two;
+      // if it takes much longer, the parts go on without them.
+      await Promise.race([figures, new Promise((r) => setTimeout(r, 30_000))]);
       const live = new Map<number, number>();
       let translated = work.parts.reduce((n, p) => n + (p ? hanzi(p) : 0), 0);
       const report = () => {
@@ -1723,7 +1764,12 @@ export class Assistant {
         const chunk = work.chunks[i];
         const ask: WireMessage = {
           role: 'user',
-          content: partPrompt(chunk, total, i ? work.chunks[i - 1].text.slice(-400) : ''),
+          content: partPrompt(
+            chunk,
+            total,
+            i ? work.chunks[i - 1].text.slice(-400) : '',
+            chunkTables(chunk, work.figures),
+          ),
         };
         const request = (system: string, messages: WireMessage[]) =>
           chat(
@@ -1750,7 +1796,7 @@ export class Assistant {
           for (let round = 0; round < 4; round++) {
             if (signal.aborted) throw new DOMException('已停止', 'AbortError');
             const r = await request(
-              translationSystem(i ? work.glossary : undefined),
+              translationSystem(i ? work.glossary : undefined, pdf),
               reply
                 ? [
                     ask,
@@ -1769,7 +1815,7 @@ export class Assistant {
           // last first so the places before it stay where they are.
           for (const gap of untranslated(reply, chunk.text, !i).reverse()) {
             if (signal.aborted) throw new DOMException('已停止', 'AbortError');
-            const r = await request(translationSystem(work.glossary), [
+            const r = await request(translationSystem(work.glossary, pdf), [
               { role: 'user', content: gapPrompt(gap) },
             ]);
             if (r.text.trim()) reply = fillGap(reply, gap.after, r.text);
@@ -1807,6 +1853,7 @@ export class Assistant {
         }),
       );
       if (failure) throw failure;
+      await figures;
       clearTimeout(timer);
       timer = undefined;
       await writing;
@@ -1837,6 +1884,7 @@ export class Assistant {
       }));
       this.host.notify(`全文翻译完成：${fileName(target)}`);
     } catch (e) {
+      ended = true;
       clearTimeout(timer);
       const stopped = isAbort(e);
       const total = work.chunks.length;

@@ -2,7 +2,7 @@ import type { Anchor, Annotation, EraserMode, Point, Tool } from '../types';
 import { erasePaths, inkPaths, inkPathData, inkBounds, smoothPoints } from './ink';
 import { PageNotes } from './notes';
 import { AnnotationPopup } from './annotation-popup';
-import { STICKY_MIN_WIDTH, stickyNoteSize, textNoteWidth } from './note-size';
+import { STICKY_MIN_WIDTH, STICKY_PIN_SIZE, stickyNoteSize, textNoteWidth } from './note-size';
 import { penCursor } from './pen-cursor';
 import { defaultColor } from '../colors';
 import { SelectionIndicator } from './selection-indicator';
@@ -211,6 +211,13 @@ import { findQuote } from '../ai/quote-match';
         document.dispatchEvent(new CustomEvent('folio:pdf-text', { detail: { resolve } })),
       );
     return { title: document.title, text: readableText(document.body) };
+  }
+  // A PDF's figures and tables, cut out for 全文翻译.
+  function aiFigures() {
+    if (!isPdf()) return Promise.resolve([]);
+    return new Promise((resolve) =>
+      document.dispatchEvent(new CustomEvent('folio:pdf-figures', { detail: { resolve } })),
+    );
   }
   // What a box framed on the page (for the whiteboard) covers: the text inside it, the text
   // in view around it, and in a PDF the page it is on. The box is in viewport coordinates.
@@ -694,6 +701,8 @@ import { findQuote } from '../ai/quote-match';
     return { selector: selector(target), top: r.top + scrollY, left: r.left + scrollX };
   }
   function notePosition(a: Annotation): Point | null {
+    // A collapsed pin near the right edge opens its card shifted left to fit.
+    const width = a.collapsed ? STICKY_PIN_SIZE : a.size?.width || 300;
     if (a.points?.length) {
       const o = offset(a);
       // Keep margin notes reachable when a sidebar or browser-style zoom
@@ -701,10 +710,7 @@ import { findQuote } from '../ai/quote-match';
       return {
         x: Math.max(
           0,
-          Math.min(
-            document.documentElement.scrollWidth - (a.size?.width || 300) - 8,
-            a.points[0].x + o.x,
-          ),
+          Math.min(document.documentElement.scrollWidth - width - 8, a.points[0].x + o.x),
         ),
         y: a.points[0].y + o.y,
       };
@@ -715,10 +721,7 @@ import { findQuote } from '../ai/quote-match';
         return {
           x: Math.max(
             8,
-            Math.min(
-              document.documentElement.scrollWidth - (a.size?.width || 300) - 12,
-              r.left + scrollX,
-            ),
+            Math.min(document.documentElement.scrollWidth - width - 12, r.left + scrollX),
           ),
           y: r.bottom + scrollY + 10,
         };
@@ -1229,6 +1232,25 @@ import { findQuote } from '../ai/quote-match';
       }
       send('link', { url: a.href });
     });
+    // Double-click a picture to see it larger over the whole window. Pictures the page
+    // already makes clickable (a link, a button, its own zoom) are left to the page.
+    window.addEventListener('dblclick', (e) => {
+      const img = e.target;
+      if (
+        e.defaultPrevented ||
+        tool !== 'select' ||
+        document.documentElement.dataset.folioPdf ||
+        !(img instanceof HTMLImageElement) ||
+        !img.naturalWidth ||
+        img.closest('a[href],button,[onclick]') ||
+        ['pointer', 'zoom-in'].includes(getComputedStyle(img).cursor)
+      )
+        return;
+      const r = img.getBoundingClientRect();
+      if (Math.min(r.width, r.height) < 40) return;
+      window.getSelection()?.removeAllRanges();
+      send('image', { src: img.currentSrc || img.src });
+    });
     window.addEventListener('keydown', (e) => {
       const path = e.composedPath();
       const input = path.some(
@@ -1374,6 +1396,7 @@ import { findQuote } from '../ai/quote-match';
         (e) => send('reply', { replyTo: m.replyTo, error: String(e?.message || e) }),
       );
     if (m.type === 'ai-text') reply(aiText());
+    if (m.type === 'ai-figures') reply(aiFigures());
     if (m.type === 'ai-anchors') reply(aiAnchors(Array.isArray(m.quotes) ? m.quotes : []));
     if (m.type === 'ai-flash')
       reply(flashQuote(String(m.quote || ''), Math.max(0, Math.floor(Number(m.page) || 0))));

@@ -22,8 +22,7 @@ const REASONING =
 // AI 划重点：论文第 2 页。
 const HIGHLIGHTS = [
   {
-    quote:
-      'This inherently sequential nature precludes parallelization within training examples',
+    quote: 'This inherently sequential nature precludes parallelization within training examples',
     note: 'RNN 的根本瓶颈：一步接一步，没法并行',
     kind: '观点',
   },
@@ -100,6 +99,138 @@ const SOURCE_EDIT = [
   '>>>>>>> REPLACE',
 ].join('\n');
 
+// 全文翻译：论文前三页的译文，按原文开头的几个词对上每一部分。后面几页只回一句说明。
+const TRANSLATION_HEAD = String.raw`<h1 data-src="Attention Is All You Need">注意力就是你所需要的一切</h1><p class="authors">Ashish Vaswani、Noam Shazeer、Niki Parmar、Jakob Uszkoreit、Llion Jones、Aidan N. Gomez、Łukasz Kaiser、Illia Polosukhin</p>`;
+const TRANSLATION_TERMS = [
+  ['sequence transduction', '序列转换'],
+  ['attention mechanism', '注意力机制'],
+  ['self-attention', '自注意力'],
+  ['multi-head attention', '多头注意力'],
+  ['encoder', '编码器'],
+  ['decoder', '解码器'],
+  ['recurrent neural network', '循环神经网络'],
+  ['convolutional neural network', '卷积神经网络'],
+  ['long short-term memory', '长短期记忆'],
+  ['residual connection', '残差连接'],
+  ['layer normalization', '层归一化'],
+  ['BLEU', 'BLEU'],
+  ['Transformer', 'Transformer'],
+];
+const TRANSLATION = [
+  ['h2', 'Abstract', '摘要'],
+  [
+    'p',
+    'The dominant sequence transduction models are based',
+    '主流的序列转换模型都建立在复杂的循环神经网络或卷积神经网络之上，由一个编码器和一个解码器组成。表现最好的模型还会通过注意力机制把编码器和解码器连接起来。我们提出一种新的简单网络架构——Transformer，它完全基于注意力机制，彻底抛弃了循环和卷积。在两个机器翻译任务上的实验表明，这种模型质量更好，更易于并行，训练时间也大大缩短。我们的模型在 WMT 2014 英德翻译任务上取得 28.4 BLEU，比包括集成模型在内的现有最好结果高出 2 BLEU 以上。在 WMT 2014 英法翻译任务上，我们的模型只用 8 张 GPU 训练 3.5 天，就创下 41.8 的单模型 BLEU 新纪录，训练成本只是文献中最好模型的一小部分。我们还把 Transformer 成功用于英语成分句法分析，无论训练数据多还是少都表现良好，说明它能很好地泛化到其他任务。',
+  ],
+  [
+    'p class="footnote"',
+    'Equal contribution. Listing order is random.',
+    '∗ 同等贡献，排名不分先后。Jakob 提出用自注意力取代 RNN，并着手验证这一想法；Ashish 与 Illia 设计并实现了最早的 Transformer 模型，深度参与了这项工作的方方面面；Noam 提出了缩放点积注意力、多头注意力和无参数的位置表示。',
+  ],
+  ['h2', '1 Introduction', '1 引言'],
+  [
+    'p',
+    'Recurrent neural networks, long short-term memory',
+    '循环神经网络，尤其是长短期记忆 [13] 和门控循环 [7] 神经网络，已经牢牢确立为序列建模和转换问题（如语言建模和机器翻译 [35, 2, 5]）中最先进的方法。此后，大量工作继续推动着循环语言模型和编码器-解码器架构的边界 [38, 24, 15]。',
+  ],
+  [
+    'p',
+    'Recurrent models typically factor computation along the',
+    String.raw`循环模型通常沿输入和输出序列的符号位置分解计算。它们把位置对齐到计算的时间步，根据前一个隐藏状态 \(h_{t-1}\) 和位置 \(t\) 的输入，生成一串隐藏状态 \(h_t\)。<strong>这种固有的顺序性，使训练样本内部无法并行</strong>；序列越长，这一点越关键，因为内存限制了跨样本的批处理。近来的工作通过分解技巧 [21] 和条件计算 [32] 显著提升了计算效率，后者还提升了模型性能。然而，顺序计算这一根本限制依然存在。`,
+  ],
+  [
+    'p',
+    'Attention mechanisms have become an integral part of',
+    '注意力机制已经成为各类任务中优秀的序列建模与转换模型不可或缺的一部分：它让模型在刻画依赖关系时，不必在意两个位置在输入或输出序列中相隔多远 [2, 19]。不过除了少数情况 [27]，这类注意力机制都是和循环网络一起使用的。',
+  ],
+  [
+    'p',
+    'In this work we propose the Transformer',
+    '在这项工作中，我们提出 Transformer：一种摒弃循环、完全依靠注意力机制来建立输入与输出之间全局依赖的模型架构。Transformer 的并行程度高得多，在 8 张 P100 GPU 上只训练 12 小时，翻译质量就能达到新的最高水平。',
+  ],
+  ['h2', '2 Background', '2 背景'],
+  [
+    'p',
+    'The goal of reducing sequential computation also forms',
+    '减少顺序计算这一目标，同样是 Extended Neural GPU [16]、ByteNet [18] 和 ConvS2S [9] 的基础。它们都以卷积神经网络为基本构件，对所有输入和输出位置并行计算隐藏表示。在这些模型中，关联任意两个输入或输出位置的信号所需的运算次数，会随两者的距离增长：ConvS2S 线性增长，ByteNet 对数增长。这使得学习远距离位置之间的依赖更加困难 [12]。在 Transformer 中，这被降为常数次运算，代价是对注意力加权的位置取平均，有效分辨率有所降低；我们用 3.2 节介绍的多头注意力来抵消这一影响。',
+  ],
+  [
+    'p',
+    'Self-attention, sometimes called intra-attention is an',
+    '自注意力，有时也称内部注意力，是一种把同一序列中不同位置联系起来、以计算该序列表示的注意力机制。自注意力已经成功用于多种任务，包括阅读理解、生成式摘要、文本蕴含，以及学习与任务无关的句子表示 [4, 27, 28, 22]。',
+  ],
+  [
+    'p',
+    'End-to-end memory networks are based on a recurrent',
+    '端到端记忆网络基于循环注意力机制，而不是与序列对齐的循环结构，在简单语言问答和语言建模任务上表现良好 [34]。',
+  ],
+  [
+    'p',
+    'To the best of our knowledge, however, the Transformer',
+    '然而据我们所知，Transformer 是第一个完全依靠自注意力来计算输入和输出表示、不使用序列对齐 RNN 或卷积的转换模型。接下来几节，我们会描述 Transformer，说明采用自注意力的动机，并讨论它相对于 [17, 18] 和 [9] 等模型的优势。',
+  ],
+  ['h2', '3 Model Architecture', '3 模型架构'],
+  [
+    'p',
+    'Most competitive neural sequence transduction models have',
+    String.raw`大多数有竞争力的神经序列转换模型都采用编码器-解码器结构 [5, 2, 35]。编码器把符号表示的输入序列 \((x_1, \dots, x_n)\) 映射为连续表示的序列 \(\mathbf{z} = (z_1, \dots, z_n)\)。给定 \(\mathbf{z}\)，解码器再一次一个元素地生成符号输出序列 \((y_1, \dots, y_m)\)。每一步模型都是自回归的 [10]：生成下一个符号时，把之前生成的符号作为额外输入。`,
+  ],
+  [
+    'p class="caption"',
+    'Figure 1: The Transformer - model architecture.',
+    '图 1：Transformer 的模型架构。',
+  ],
+  [
+    'p',
+    'The Transformer follows this overall architecture using',
+    'Transformer 沿用这一整体架构，编码器和解码器都由堆叠的自注意力层和逐位置的全连接层组成，分别如图 1 的左半部分和右半部分所示。',
+  ],
+  ['h3', '3.1 Encoder and Decoder Stacks', '3.1 编码器和解码器堆栈'],
+  [
+    'p',
+    'Encoder: The encoder is composed of a stack',
+    String.raw`<strong>编码器：</strong>编码器由 \(N = 6\) 个相同的层堆叠而成。每层有两个子层：第一个是多头自注意力机制，第二个是简单的逐位置全连接前馈网络。每个子层外面都有一个残差连接 [11]，随后做层归一化 [1]。也就是说，每个子层的输出是 \(\mathrm{LayerNorm}(x + \mathrm{Sublayer}(x))\)，其中 \(\mathrm{Sublayer}(x)\) 是子层本身实现的函数。为了方便残差连接，模型中所有子层以及嵌入层的输出维度都是 \(d_{\text{model}} = 512\)。`,
+  ],
+  [
+    'p',
+    'Decoder: The decoder is also composed of',
+    String.raw`<strong>解码器：</strong>解码器同样由 \(N = 6\) 个相同的层堆叠而成。除了编码器每层的两个子层，解码器还插入第三个子层，对编码器堆栈的输出做多头注意力。和编码器一样，每个子层外面都有残差连接，随后做层归一化。我们还修改了解码器中的自注意力子层，防止某个位置关注到它之后的位置。这种掩码，再加上输出嵌入偏移了一个位置，保证了位置 \(i\) 的预测只能依赖于位置小于 \(i\) 的已知输出。`,
+  ],
+];
+// One part's reply: the blocks whose original starts in this part, in order, with their page.
+function translatePart(prompt) {
+  const source = prompt.slice(prompt.lastIndexOf('<source>'));
+  const flat = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const text = flat(source);
+  const pageAt = (words) => {
+    const at = source.indexOf(words.split(' ')[0]);
+    const marks = [...source.slice(0, at).matchAll(/\[第 (\d+) 页\]/g)];
+    return marks.at(-1)?.[1] || '1';
+  };
+  const blocks = TRANSLATION.filter(([, src]) => text.includes(flat(src)))
+    .sort((a, b) => text.indexOf(flat(a[1])) - text.indexOf(flat(b[1])))
+    .map(([tag, src, zh]) => {
+      const name = tag.split(' ')[0];
+      return `<${tag} data-page="${pageAt(src)}" data-src="${src}">${zh}</${name}>`;
+    });
+  const first = prompt.includes('这一部分是文档的开头');
+  if (!blocks.length) {
+    const words = source
+      .replace(/<source>|\[第 \d+ 页\]/g, ' ')
+      .trim()
+      .split(/\s+/)
+      .slice(0, 8);
+    return `<p class="skipped" data-page="${pageAt(words[0])}" data-src="${words.join(' ')}">（示例译文只包含论文前三页。）</p>`;
+  }
+  const terms = TRANSLATION_TERMS.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+  return (
+    (first ? TRANSLATION_HEAD : '') +
+    blocks.join('') +
+    (first ? `<dl class="terms">${terms}</dl>` : '')
+  );
+}
+
 // 宣传视频录屏时放慢普通回答的输出，看得见逐字出现；白板和精读笔记传了自己的节奏，不受影响。
 const pacing = { pace: 12, size: 24 };
 function stream(res, { reasoning = '', text = '' }, pace = pacing.pace, size = pacing.size) {
@@ -136,6 +267,10 @@ export async function startMockAi({ pace = 12, size = 24 } = {}) {
     const last = [...(body.messages || [])].reverse().find((m) => m.role === 'user')?.content;
     const user = typeof last === 'string' ? last : JSON.stringify(last || '');
     if (user.includes('连接测试')) return stream(res, { text: 'OK' });
+    if (system.includes('学术翻译'))
+      return user.includes('漏掉了一些原文')
+        ? stream(res, { text: '' })
+        : stream(res, { text: translatePart(user) }, 30, 6);
     if (system.includes('专业译者')) return stream(res, { text: TRANSLATE });
     if (system.includes('解释用户选中的文字')) return stream(res, { text: EXPLAIN });
     if (system.includes('HTML 编辑助手')) return stream(res, { text: SOURCE_EDIT });

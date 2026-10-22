@@ -1,0 +1,232 @@
+:root {
+  --paper: #f2eee6;
+  --paper-edge: #e4ddd0;
+  --ink: #1d1c1a;
+  --ink-2: #5f5a51;
+  --ink-3: #9b9385;
+  --rule: #d6cdbf;
+  --teal: #2e7d6f;
+  --red: #b8382c;
+  --song: 'SimSong', 'Songti SC', serif;
+  --kai: 'Kaiti SC', 'STKaiti', serif;
+  --sans: -apple-system, 'PingFang SC', 'Helvetica Neue', sans-serif;
+  --didot: 'Didot', 'Bodoni 72', serif;
+  --bodoni: 'Bodoni 72', 'Didot', serif;
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  background: #000;
+}
+body {
+  font-family: var(--sans);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+#stage {
+  position: relative;
+  width: 1080px;
+  height: 1440px;
+  overflow: hidden;
+  background: var(--paper);
+}
+#scenes {
+  perspective: 2600px;
+  perspective-origin: 50% 50%;
+}
+#scenes,
+.scene,
+.paper,
+.shade,
+#grain {
+  position: absolute;
+  inset: 0;
+}
+.scene {
+  transform-origin: 0 50%;
+  backface-visibility: hidden;
+}
+/* Every page has its own sheet of paper, so a page that turns shows the next one beneath. */
+.paper {
+  background-color: var(--paper);
+  background-image:
+    radial-gradient(120% 90% at 50% 42%, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0) 55%),
+    radial-gradient(140% 110% at 50% 50%, rgba(0, 0, 0, 0) 60%, rgba(120, 95, 55, 0.13) 100%),
+    var(--tooth);
+  background-size:
+    100% 100%,
+    100% 100%,
+    512px 512px;
+}
+.shade {
+  pointer-events: none;
+  opacity: 0;
+}
+#grain {
+  opacity: 0;
+  mix-blend-mode: multiply;
+  background-size: 256px 256px;
+  pointer-events: none;
+}
+.abs {
+  position: absolute;
+}
+
+/* ---------- 版式：页眉、标题、页码 ---------- */
+.rh {
+  position: absolute;
+  left: 64px;
+  right: 64px;
+  top: 50px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 17px;
+  letter-spacing: 0.34em;
+  color: var(--ink-3);
+}
+.rh-line {
+  position: absolute;
+  left: 64px;
+  right: 64px;
+  top: 92px;
+  height: 1px;
+  background: var(--rule);
+  transform-origin: 0 50%;
+}
+.head {
+  position: absolute;
+  left: 64px;
+  top: 146px;
+  width: 952px;
+}
+.label {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 30px;
+  font-size: 21px;
+  font-weight: 500;
+  letter-spacing: 0.3em;
+  color: var(--teal);
+}
+.label .bar {
+  width: 34px;
+  height: 2px;
+  background: var(--teal);
+  transform-origin: 0 50%;
+}
+.label .no {
+  margin-left: auto;
+  font-family: var(--didot);
+  font-style: italic;
+  font-size: 25px;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+}
+.title {
+  margin-top: 22px;
+  font-family: var(--song);
+  font-weight: 700;
+  font-size: 84px;
+  line-height: 1.22;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
+.line {
+  display: block;
+  overflow: hidden;
+  padding-bottom: 0.06em;
+  margin-bottom: -0.06em;
+}
+.line > span {
+  display: inline-block;
+}
+.sub {
+  margin-top: 18px;
+  font-family: var(--song);
+  font-size: 31px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  letter-spacing: 0.04em;
+}
+.folio {
+  position: absolute;
+  left: 0;
+  width: 1080px;
+  top: 1388px;
+  text-align: center;
+  font-family: var(--didot);
+  font-size: 22px;
+  letter-spacing: 0.2em;
+  color: var(--ink-3);
+}
+
+/* ---------- 窗口（印在纸上的一张图） ---------- */
+.plate {
+  position: absolute;
+  overflow: hidden;
+  background: #fff;
+  transform-origin: 50% 50%;
+  box-shadow:
+    0 0 0 1px rgba(70, 55, 30, 0.11),
+    0 10px 22px -10px rgba(70, 50, 20, 0.22),
+    0 38px 80px -24px rgba(70, 50, 20, 0.34);
+}
+.plate .world {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+.plate .world img,
+.plate .world svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* ---------- 片头 ---------- */
+.macro {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  mix-blend-mode: multiply;
+}
+.word {
+  position: absolute;
+  left: 0;
+  width: 1080px;
+  text-align: center;
+}
+.ch {
+  display: inline-block;
+}
+.seal {
+  position: absolute;
+  width: 104px;
+  height: 104px;
+}
+#scrub {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+  background: #111;
+  color: #ddd;
+  font: 13px var(--sans);
+}
+#scrub input {
+  flex: 1;
+}
+#scrub[hidden] {
+  display: none;
+}

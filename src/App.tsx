@@ -63,7 +63,7 @@ import { annotationColors, defaultColor, normalizeColor } from './colors';
 import { zoomAfterWheel } from './zoom';
 import { Assistant, useAssistantCard } from './ai/assistant';
 import type { AiHost } from './ai/host';
-import type { DocText } from './ai/types';
+import type { DocText, PdfFigure } from './ai/types';
 import { withHiddenReader } from './ai/hidden-reader';
 import { AssistantPanel } from './components/AssistantPanel';
 import type { AssistantMode } from './components/AssistantPanel';
@@ -1164,10 +1164,13 @@ export default function App() {
       );
     }
   }
-  async function openBoard(id: string) {
+  async function openBoard(id: string, replay = false) {
+    // The board as it stands, if it is the one open.
+    const open = lessonRef.current?.tutor;
+    if (open?.id === id) await open.saveNow().catch(() => {});
     const entry = (await invoke<BoardEntry[]>('boards').catch(() => [])).find((b) => b.id === id);
     if (!entry) return notify('这块白板已经删掉了', true);
-    await openSavedBoard(entry);
+    await openSavedBoard(entry, replay);
   }
   function boardDeleted(id: string) {
     setBoardsVersion((v) => v + 1);
@@ -1210,9 +1213,11 @@ export default function App() {
     if (!entry.source && !doc?.path) return notify('先打开要存入笔记的文档', true);
     if (await openSavedBoard(entry)) setNoteAsk((a) => ({ id: entry.id, n: (a?.n || 0) + 1 }));
   }
-  async function openSavedBoard(entry: BoardEntry) {
+  // `replay`: watches its lesson again from what was saved, with no AI request.
+  async function openSavedBoard(entry: BoardEntry, replay = false) {
     setBoardList(false);
-    if (lessonRef.current?.tutor.id === entry.id) {
+    const open = lessonRef.current?.tutor;
+    if (open?.id === entry.id && !replay && !open.replaying) {
       setBoardAway(false);
       return true;
     }
@@ -1226,7 +1231,7 @@ export default function App() {
       selection: board.selection,
       picture: board.picture,
       source: entry.source,
-      save: saveBoard,
+      ...(replay ? { replay } : { save: saveBoard }),
       restore: { entry, board },
       docText: () =>
         entry.source ? assistant.text(entry.source) : Promise.reject(Error('没有打开的文档')),
@@ -1234,6 +1239,7 @@ export default function App() {
     });
     setLesson({ tutor, selection: entry.title });
     setBoardAway(false);
+    if (replay) void tutor.replay();
     return true;
   }
   function openAssistant() {
@@ -1542,11 +1548,16 @@ export default function App() {
       await new Promise((r) => setTimeout(r, 100));
     return reader;
   }
-  function offscreen<T>(path: string, type: string, payload: Record<string, unknown> = {}) {
+  function offscreen<T>(
+    path: string,
+    type: string,
+    payload: Record<string, unknown> = {},
+    ms?: number,
+  ) {
     return withHiddenReader(
       documentUrl(path, Date.now()),
       /\.pdf$/i.test(path) ? 'pdf' : 'html',
-      (request) => request<T>(type, payload),
+      (request) => request<T>(type, payload, ms),
     );
   }
   hostImpl.current = {
@@ -1561,6 +1572,13 @@ export default function App() {
         ? await reader.request<Raw>('ai-text', {}, 90_000)
         : await offscreen<Raw>(path, 'ai-text');
       return docText(path, raw);
+    },
+    // Rendering the pages takes a while in a long document.
+    async pdfFigures(path) {
+      const reader = await readerFor(path);
+      return reader
+        ? reader.request<PdfFigure[]>('ai-figures', {}, 300_000)
+        : offscreen<PdfFigure[]>(path, 'ai-figures', {}, 300_000);
     },
     async anchors(path, quotes) {
       const reader = await readerFor(path);
@@ -2471,6 +2489,7 @@ export default function App() {
       {lesson ? (
         <Suspense fallback={null}>
           <Whiteboard
+            key={lesson.tutor.id}
             tutor={lesson.tutor}
             selection={lesson.selection}
             away={boardAway}
@@ -2484,6 +2503,7 @@ export default function App() {
             }}
             noteTarget={lesson.tutor.source || doc?.path}
             onNote={(picture) => boardToNote(lesson.tutor.entry(), lesson.tutor.get(), picture)}
+            onReplay={(replay) => void openBoard(lesson.tutor.id, replay)}
             noteAsk={noteAsk}
             onClose={() => {
               lesson.tutor.dispose();

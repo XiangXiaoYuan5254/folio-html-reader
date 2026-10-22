@@ -754,7 +754,8 @@ app
           if (!sound || at !== voiceHushes) return null;
           if (payload.to !== 'helper') return { pcm: new Uint8Array(sound.pcm), rate: sound.rate };
           speech.sound(payload.id, sound.pcm, sound.rate);
-          return true;
+          // Kept with the board as well, to watch the lesson again.
+          return payload.keep ? { pcm: new Uint8Array(sound.pcm), rate: sound.rate } : true;
         }
         case 'cloud-voice-hush':
           voiceHushes++;
@@ -798,6 +799,19 @@ app
           return workspace.saveBoard(payload);
         case 'delete-board':
           return workspace.deleteBoard(payload);
+        case 'board-sound':
+          return workspace.boardSound(payload);
+        case 'save-board-sound':
+          return workspace.saveBoardSound(payload);
+        case 'image-data': {
+          // A web picture double-clicked in a document; the window only loads local pictures.
+          const url = new URL(String(payload?.url));
+          if (!/^https?:$/.test(url.protocol)) throw Error('不支持的图片地址');
+          const res = await net.fetch(url.href, { credentials: 'omit' });
+          const type = res.headers.get('content-type') || '';
+          if (!res.ok || !type.startsWith('image/')) throw Error('图片载入失败');
+          return `data:${type};base64,${Buffer.from(await res.arrayBuffer()).toString('base64')}`;
+        }
         case 'save-note-image':
           return workspace.saveNoteImage(payload);
         case 'delete-note-image':

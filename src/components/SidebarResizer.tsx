@@ -18,7 +18,7 @@ const sides = {
   right: {
     storageKey: 'folio.inspector-width',
     min: 260,
-    max: 760,
+    max: 1200,
     widthVar: '--inspector-user-width',
     defaultVar: '--inspector',
     fallback: 292,

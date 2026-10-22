@@ -62,6 +62,26 @@ async function atomicWrite(file, data) {
     await fs.rm(tmp, { force: true }).catch(() => {});
   }
 }
+async function boardIndex(meta) {
+  try {
+    const list = JSON.parse(await fs.readFile(path.join(meta, 'boards', 'index.json'), 'utf8'));
+    return Array.isArray(list) ? list : [];
+  } catch (e) {
+    if (e.code === 'ENOENT' || e instanceof SyntaxError) return [];
+    throw e;
+  }
+}
+// A board's sounds stay as long as the board does. Deleting it deletes them; any a sentence
+// still being kept wrote after that go when the project is opened next.
+async function pruneBoardSounds(meta) {
+  const dir = path.join(meta, 'boards', 'sounds');
+  const names = await fs.readdir(dir).catch(() => []);
+  if (!names.length) return;
+  const list = await boardIndex(meta);
+  for (const name of names)
+    if (!list.some((b) => b.id === name))
+      await fs.rm(path.join(dir, name), { recursive: true, force: true });
+}
 class Workspace {
   constructor() {
     this.root = null;
@@ -104,6 +124,7 @@ class Workspace {
       this.index = index;
       // Old backups are cleaned in the background, so opening a project is not delayed.
       backups.pruneAll(path.join(meta, 'backups')).catch(() => {});
+      pruneBoardSounds(meta).catch(() => {});
       return this.summary();
     });
   }
@@ -309,15 +330,7 @@ class Workspace {
     return path.join(this.meta, 'boards', `${id}.json`);
   }
   async boardIndex() {
-    try {
-      const list = JSON.parse(
-        await fs.readFile(path.join(this.meta, 'boards', 'index.json'), 'utf8'),
-      );
-      return Array.isArray(list) ? list : [];
-    } catch (e) {
-      if (e.code === 'ENOENT' || e instanceof SyntaxError) return [];
-      throw e;
-    }
+    return boardIndex(this.meta);
   }
   async boards() {
     return this.serial(() => this.boardIndex());
@@ -348,10 +361,34 @@ class Workspace {
   async deleteBoard({ id }) {
     return this.serial(async () => {
       await fs.rm(this.boardPath(id), { force: true });
+      await fs.rm(this.boardSounds(id), { recursive: true, force: true });
       const list = (await this.boardIndex()).filter((b) => b.id !== id);
       await atomicWrite(path.join(this.meta, 'boards', 'index.json'), JSON.stringify(list));
       return true;
     });
+  }
+  // The sentences of a lesson said in a speech service's voice, as Ogg Opus, so watching it
+  // again doesn't pay for them twice: a folder for each board, a file for each sentence.
+  boardSounds(id) {
+    this.boardPath(id);
+    return path.join(this.meta, 'boards', 'sounds', id);
+  }
+  boardSoundPath(id, key) {
+    if (typeof key !== 'string' || !/^[0-9a-f]{16,64}$/.test(key)) throw Error('无效的语音');
+    return path.join(this.boardSounds(id), `${key}.ogg`);
+  }
+  async saveBoardSound({ id, key, data }) {
+    if (!(data instanceof Uint8Array) || data.length > 4_000_000) throw Error('无效的语音');
+    await atomicWrite(this.boardSoundPath(id, key), data);
+    return true;
+  }
+  async boardSound({ id, key }) {
+    try {
+      return new Uint8Array(await fs.readFile(this.boardSoundPath(id, key)));
+    } catch (e) {
+      if (e.code === 'ENOENT') return null;
+      throw e;
+    }
   }
   // Pictures in document notes (a whiteboard, a pasted screenshot): files beside the notes,
   // which the notes refer to by name.

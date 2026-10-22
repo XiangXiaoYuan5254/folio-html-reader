@@ -168,7 +168,11 @@ export function BoardShelf(p: {
           <span>白板</span>
           {items?.length ? <em>{items.length}</em> : null}
         </button>
-        <IconButton label="新建空白白板" help="直接提问，或贴一道题的图片" onClick={p.onBlank}>
+        <IconButton
+          label="新建空白白板"
+          help="直接提问，或添加图片、PDF、TXT、Markdown、HTML 资料"
+          onClick={p.onBlank}
+        >
           <Plus size={15} />
         </IconButton>
       </div>

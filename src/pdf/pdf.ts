@@ -1,5 +1,6 @@
 import { getDocument, GlobalWorkerOptions, TextLayer, PasswordResponses } from 'pdfjs-dist';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
+import { findFigures } from './figures';
 import './pdf.css';
 
 const channel = 'folio-reader-v1';
@@ -236,6 +237,18 @@ document.addEventListener('folio:pdf-text', (event) => {
       title: document.title,
       pages: pages.map(pageText),
     }),
+  );
+});
+// Figures and tables for 全文翻译, found once per opened document.
+let figures: Promise<unknown> | undefined;
+document.addEventListener('folio:pdf-figures', (event) => {
+  figures ||= allText.then(() => findFigures(pages.map((p) => p.pdf)));
+  void figures.then(
+    (list) => (event as CustomEvent<Resolver>).detail.resolve(list),
+    (e) => {
+      console.warn('PDF figures', e);
+      (event as CustomEvent<Resolver>).detail.resolve([]);
+    },
   );
 });
 async function loadOutline() {

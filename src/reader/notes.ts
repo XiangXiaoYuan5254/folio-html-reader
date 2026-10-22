@@ -1,5 +1,5 @@
 import type { Annotation, Point } from '../types';
-import { STICKY_MIN_HEIGHT, STICKY_MIN_WIDTH, TEXT_MIN_WIDTH } from './note-size';
+import { STICKY_MIN_HEIGHT, STICKY_MIN_WIDTH, STICKY_PIN_SIZE, TEXT_MIN_WIDTH } from './note-size';
 import {
   annotationColors,
   colorPickerStyles,
@@ -66,7 +66,7 @@ textarea{width:100%;flex:1;min-height:0;resize:none;border:0;outline:0;backgroun
 .font-controls{display:flex;gap:8px}.font-controls label{display:flex;align-items:center;gap:5px;min-width:0;white-space:nowrap}.font-controls label:first-child{flex:1}.note-settings select{min-width:0;width:100%;height:26px;border:1px solid #dce0e3;border-radius:4px;color:#394457;background:#fff;font:12px system-ui}.font-controls label:last-child select{width:49px}
 .note-colors{display:flex;align-items:center;gap:7px;margin-top:10px}.note-colors button{width:20px;height:20px;border:2px solid white;border-radius:50%;outline:1px solid #dce3e8;padding:0;flex-shrink:0}.note-colors button[aria-pressed=true]{outline:2px solid #607b86}.note-colors .custom-color{width:20px;height:20px}.head button[aria-expanded=true]{background:#ffffffb0;color:#287b71}
 .resize{position:absolute;right:2px;bottom:2px;display:grid;place-items:center;width:22px;height:22px;padding:3px;border:0;background:transparent;color:#a3975c;cursor:nwse-resize;touch-action:none}
-.pin{position:absolute;pointer-events:auto;width:33px;height:33px;border:1px solid color-mix(in srgb,var(--ink) 60%,#aa984b);border-radius:8px;background:color-mix(in srgb,var(--ink) 35%,#fffce4);color:#65572d;box-shadow:0 3px 8px #40361522;display:grid;place-items:center;padding:7px}.pin:hover{filter:brightness(.97);transform:translateY(-1px)}
+.pin{position:absolute;pointer-events:auto;width:${STICKY_PIN_SIZE}px;height:${STICKY_PIN_SIZE}px;border:1px solid color-mix(in srgb,var(--ink) 60%,#aa984b);border-radius:8px;background:color-mix(in srgb,var(--ink) 35%,#fffce4);color:#65572d;box-shadow:0 3px 8px #40361522;display:grid;place-items:center;padding:7px}.pin:hover{filter:brightness(.97);transform:translateY(-1px)}
 [hidden]{display:none!important} button:focus-visible{outline:2px solid #287b71;outline-offset:-2px}
 .card.text-note{background:transparent;border:1px solid transparent;box-shadow:none;border-radius:3px;min-width:${TEXT_MIN_WIDTH}px;min-height:32px;overflow:visible;display:block}
 .text-note:focus-within,.text-note:hover{border-color:#8b9bdd;box-shadow:none}
@@ -517,11 +517,10 @@ export class PageNotes {
       dy = e.clientY - d.start.y;
     if (Math.hypot(dx, dy) > 3) d.moved = true;
     if (d.mode === 'move') {
+      // A collapsed pin is much narrower than its card, so it can go nearer the right edge.
+      const width = d.target === card.pin ? STICKY_PIN_SIZE : d.width;
       d.next = {
-        x: Math.max(
-          0,
-          Math.min(document.documentElement.scrollWidth - d.width - 8, d.origin.x + dx),
-        ),
+        x: Math.max(0, Math.min(document.documentElement.scrollWidth - width - 8, d.origin.x + dx)),
         y: Math.max(0, Math.min(document.documentElement.scrollHeight - 40, d.origin.y + dy)),
       };
       this.positionCard(card, d.next);

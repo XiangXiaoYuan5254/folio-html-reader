@@ -56,7 +56,7 @@ const inline = new Set(
   ),
 );
 
-export function readableText(root: Element = document.body) {
+export function readableText(root: Element | DocumentFragment = document.body, rendered = true) {
   const lines: string[] = [];
   let line = '';
   const flush = () => {
@@ -65,6 +65,10 @@ export function readableText(root: Element = document.body) {
     line = '';
   };
   const walk = (node: Node, pre: boolean) => {
+    if (node.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
+      node.childNodes.forEach((child) => walk(child, pre));
+      return;
+    }
     if (node.nodeType === Node.TEXT_NODE) {
       const data = (node as Text).data;
       line += pre ? data : data.replace(/\s+/g, ' ');
@@ -74,7 +78,15 @@ export function readableText(root: Element = document.body) {
     const el = node as HTMLElement;
     const tag = el.tagName.toLowerCase();
     if (skipped.has(tag) || el.hasAttribute('data-folio-ui')) return;
-    if (el.checkVisibility && !el.checkVisibility()) return;
+    if (rendered && el.checkVisibility && !el.checkVisibility()) return;
+    if (
+      !rendered &&
+      (el.hidden ||
+        el.getAttribute('aria-hidden') === 'true' ||
+        el.style?.display === 'none' ||
+        el.style?.visibility === 'hidden')
+    )
+      return;
     const children = (keepPre = pre) => el.childNodes.forEach((child) => walk(child, keepPre));
     if (tag === 'br') return flush();
     if (tag === 'img') {
@@ -117,7 +129,9 @@ export function readableText(root: Element = document.body) {
     }
     const block =
       blocks.has(tag) ||
-      (!inline.has(tag) && /^(block|flex|grid|list-item|table)/.test(getComputedStyle(el).display));
+      (rendered &&
+        !inline.has(tag) &&
+        /^(block|flex|grid|list-item|table)/.test(getComputedStyle(el).display));
     if (block) flush();
     children();
     if (block) flush();

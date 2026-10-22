@@ -2322,6 +2322,7 @@
   overflow: auto;
   background: #0f161ccc;
   cursor: zoom-out;
+  outline: none;
 }
 .image-viewer img {
   max-width: 100%;

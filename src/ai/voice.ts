@@ -232,6 +232,13 @@ export function spoken(text: string) {
     .replace(/\s*(?:->|→|=>)\s*/g, zh ? '，到' : ' to ');
 }
 
+// How a sentence is made: `keep` is given its sound (16-bit samples) to keep with the board,
+// from a speech service or recorded from a voice that teaches in its own words, with what
+// that one actually `said`; `local` says it in a system voice whatever voice is chosen.
+export type Prepare = {
+  keep?: (pcm: Uint8Array, rate: number, said?: string) => void;
+  local?: boolean;
+};
 // Says the teacher's sentences. A sentence is prepared as soon as it arrives, so the next
 // one is ready when the one before ends.
 export type Speaker = {
@@ -242,9 +249,12 @@ export type Speaker = {
   // only so many a minute, so a sentence can take a while to come.
   service?: boolean;
   // Resolves with how long saying it takes at normal speed, in ms; 0 when it can't be said.
-  prepare(id: string, text: string): Promise<number>;
+  prepare(id: string, text: string, how?: Prepare): Promise<number>;
   // Resolves once it has been said, or was hushed.
   say(id: string): Promise<void>;
+  // What was actually said for a sentence played again, when a voice that teaches in its
+  // own words said it: the caption shows that rather than the script.
+  said?(id: string): string;
   // For a live voice: resolves once it has started on the sentence (or gone past it).
   started?(id: string): Promise<void>;
   pause(): void;
@@ -286,21 +296,27 @@ function helperSpeaker(): Speaker {
   });
   const send = (command: Record<string, unknown>) => invoke('speech', command);
   return {
-    prepare(id, text) {
+    prepare(id, text, how = {}) {
       return new Promise((resolve) => {
         ready.set(id, resolve);
         // Made by the service and handed to the helper, which says it was ready.
-        if (usingCloud())
-          return void invoke('cloud-voice', {
+        if (!how.local && usingCloud())
+          return void invoke<{ pcm: Uint8Array; rate: number } | true | null>('cloud-voice', {
             id,
             text: spoken(text),
             voice: settings.voice,
             to: 'helper',
-          }).catch((err) => {
-            ready.get(id)?.(0);
-            ready.delete(id);
-            report(errorText(err));
-          });
+            keep: !!how.keep,
+          }).then(
+            (sound) => {
+              if (sound && sound !== true) how.keep?.(sound.pcm, sound.rate);
+            },
+            (err) => {
+              ready.get(id)?.(0);
+              ready.delete(id);
+              report(errorText(err));
+            },
+          );
         void speechSupport()
           .then(({ voices }) =>
             send({ type: 'prepare', id, text, voice: voiceFor(text, voices)?.id }),
@@ -324,17 +340,53 @@ function helperSpeaker(): Speaker {
   };
 }
 
+// Sounds made beforehand, played in the page one at a time; each is let go once played.
+function player() {
+  const done = new Set<() => void>();
+  let playing: HTMLAudioElement | null = null;
+  let rate = 1;
+  return {
+    play(url: string) {
+      return new Promise<void>((resolve) => {
+        const audio = new Audio(url);
+        audio.preservesPitch = true;
+        audio.playbackRate = rate;
+        playing = audio;
+        const end = () => {
+          done.delete(end);
+          if (playing === audio) playing = null;
+          URL.revokeObjectURL(url);
+          resolve();
+        };
+        done.add(end);
+        audio.onended = audio.onerror = end;
+        audio.play().catch(end);
+      });
+    },
+    pause: () => playing?.pause(),
+    resume: () => void playing?.play().catch(() => {}),
+    stop() {
+      playing?.pause();
+      [...done].forEach((d) => d());
+    },
+    speed(r: number) {
+      rate = r;
+      if (playing) playing.playbackRate = r;
+    },
+  };
+}
+
 // The page's speech synthesis, where there is no helper. It can't say how long a sentence
 // takes beforehand, so that is guessed. A speech service's sentences play as audio.
 function pageSpeaker(): Speaker {
   const texts = new Map<string, string>();
   const sounds = new Map<string, string>();
   const done = new Set<() => void>();
-  let playing: HTMLAudioElement | null = null;
+  const audio = player();
   let rate = 1;
   return {
-    async prepare(id, text) {
-      if (!usingCloud()) {
+    async prepare(id, text, how = {}) {
+      if (how.local || !usingCloud()) {
         texts.set(id, text);
         return hasHan(text) ? text.length * 220 : text.length * 70;
       }
@@ -342,6 +394,7 @@ function pageSpeaker(): Speaker {
         const sound = await cloudSound(text, settings.voice);
         if (!sound) return 0;
         sounds.set(id, sound.url);
+        how.keep?.(sound.pcm, sound.rate);
         return sound.ms;
       } catch (err) {
         report(errorText(err));
@@ -351,22 +404,7 @@ function pageSpeaker(): Speaker {
     say(id) {
       const url = sounds.get(id);
       sounds.delete(id);
-      if (url)
-        return new Promise((resolve) => {
-          const audio = new Audio(url);
-          audio.preservesPitch = true;
-          audio.playbackRate = rate;
-          playing = audio;
-          const end = () => {
-            done.delete(end);
-            if (playing === audio) playing = null;
-            URL.revokeObjectURL(url);
-            resolve();
-          };
-          done.add(end);
-          audio.onended = audio.onerror = end;
-          audio.play().catch(end);
-        });
+      if (url) return audio.play(url);
       const text = texts.get(id);
       texts.delete(id);
       if (!text || typeof speechSynthesis === 'undefined') return Promise.resolve();
@@ -390,25 +428,25 @@ function pageSpeaker(): Speaker {
       );
     },
     pause() {
-      playing?.pause();
+      audio.pause();
       if (typeof speechSynthesis !== 'undefined') speechSynthesis.pause();
     },
     resume() {
-      void playing?.play().catch(() => {});
+      audio.resume();
       if (typeof speechSynthesis !== 'undefined') speechSynthesis.resume();
     },
     hush() {
       texts.clear();
       sounds.forEach((url) => URL.revokeObjectURL(url));
       sounds.clear();
-      playing?.pause();
+      audio.stop();
       if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
       [...done].forEach((d) => d());
       if (isDesktop) void invoke('cloud-voice-hush').catch(() => {});
     },
     speed(r) {
       rate = r;
-      if (playing) playing.playbackRate = r;
+      audio.speed(r);
     },
   };
 }
@@ -448,6 +486,8 @@ async function cloudSound(text: string, voice: string, key?: string) {
   return {
     url: URL.createObjectURL(new Blob([head, pcm as BlobPart], { type: 'audio/wav' })),
     ms: (pcm.length / 2 / rate) * 1000,
+    pcm,
+    rate,
   };
 }
 // Says hello in one of a speech service's voices, for the settings to try a key and a voice.
@@ -486,12 +526,69 @@ const codex = codexVoice(
 const usingCodex = () => settings.voice.startsWith(codexPrefix) && !!known?.codex.length;
 
 let chosen: Promise<Speaker> | null = null;
-export function speaker(): Promise<Speaker> {
-  return speechSupport().then((support) =>
-    usingCodex()
-      ? codex
-      : (chosen ||= Promise.resolve(support.helper ? helperSpeaker() : pageSpeaker())),
+const systemSpeaker = () =>
+  speechSupport().then(
+    (support) => (chosen ||= Promise.resolve(support.helper ? helperSpeaker() : pageSpeaker())),
   );
+export function speaker(): Promise<Speaker> {
+  // Whether a ChatGPT voice is there is known once the support is.
+  return speechSupport().then(() => (usingCodex() ? codex : systemSpeaker()));
+}
+// Says a lesson again: the sentences kept from a speech service's voice play as they were
+// said, and the others are said in a system voice, so watching it again costs nothing.
+export function replayVoice(
+  load: (text: string) => Promise<{ url: string; ms: number; said?: string } | null>,
+): Speaker {
+  const sounds = new Map<string, string>();
+  const words = new Map<string, string>();
+  const audio = player();
+  let hushes = 0;
+  return {
+    async prepare(id, text) {
+      const at = hushes;
+      const sound = await load(text).catch(() => null);
+      if (at !== hushes) {
+        if (sound) URL.revokeObjectURL(sound.url);
+        return 0;
+      }
+      if (sound) {
+        sounds.set(id, sound.url);
+        if (sound.said) words.set(id, sound.said);
+        return sound.ms;
+      }
+      return (await systemSpeaker()).prepare(id, text, { local: true });
+    },
+    said(id) {
+      const said = words.get(id) || '';
+      words.delete(id);
+      return said;
+    },
+    say(id) {
+      const url = sounds.get(id);
+      sounds.delete(id);
+      return url ? audio.play(url) : systemSpeaker().then((s) => s.say(id));
+    },
+    pause() {
+      audio.pause();
+      void systemSpeaker().then((s) => s.pause());
+    },
+    resume() {
+      audio.resume();
+      void systemSpeaker().then((s) => s.resume());
+    },
+    hush() {
+      hushes++;
+      sounds.forEach((url) => URL.revokeObjectURL(url));
+      sounds.clear();
+      words.clear();
+      audio.stop();
+      void systemSpeaker().then((s) => s.hush());
+    },
+    speed(rate) {
+      audio.speed(rate);
+      void systemSpeaker().then((s) => s.speed(rate));
+    },
+  };
 }
 // The speaker, usable before it is known which one this computer has: a lesson that starts
 // at once is said from its first sentence.
@@ -502,7 +599,7 @@ export const voice: Speaker = {
   get service() {
     return !usingCodex() && usingCloud();
   },
-  prepare: (id, text) => speaker().then((s) => s.prepare(id, text)),
+  prepare: (id, text, how) => speaker().then((s) => s.prepare(id, text, how)),
   say: (id) => speaker().then((s) => s.say(id)),
   started: (id) => speaker().then((s) => s.started?.(id)),
   pause: () => void speaker().then((s) => s.pause()),

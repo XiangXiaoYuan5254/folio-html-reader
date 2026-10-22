@@ -1,5 +1,6 @@
-// The microphone as 16-bit samples, 64 ms at a time, at the audio context's rate (16 kHz),
-// for page-hearing.ts.
+// What comes in as 16-bit samples, 1024 at a time, at the audio context's rate: the
+// microphone at 16 kHz for page-hearing.ts, and a ChatGPT voice at 24 kHz, recorded to watch
+// the lesson again (codex-voice.ts).
 class Mic extends AudioWorkletProcessor {
   constructor() {
     super();

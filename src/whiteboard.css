@@ -127,13 +127,18 @@
   align-items: center;
   gap: 5px;
   flex-shrink: 0;
+  /* Also an IconButton, for its tooltip: as wide as its words. */
+  width: auto;
+  height: auto;
   padding: 5px 10px;
   border-radius: 7px;
   font-size: 12px;
   color: var(--ai-text);
   background: var(--ai-soft);
 }
-.whiteboard-note:hover:not(:disabled) {
+.whiteboard-note:hover:not(:disabled),
+.whiteboard-note:active:not(:disabled) {
+  color: var(--ai-text);
   background: var(--ai-soft-2);
 }
 .whiteboard-note:disabled {
@@ -701,6 +706,29 @@
   align-items: center;
   gap: 8px;
 }
+.wb-replay {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.wb-replay-time {
+  flex-shrink: 0;
+  min-width: 34px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+  text-align: center;
+}
+.wb-replay-bar {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  accent-color: var(--ai-fill);
+  cursor: pointer;
+}
+.wb-replay-bar:disabled {
+  cursor: default;
+}
 .wb-ask input {
   flex: 1;
   min-width: 0;
@@ -733,30 +761,64 @@
   opacity: 0.5;
   cursor: default;
 }
-.wb-pic {
-  position: relative;
-  flex-shrink: 0;
-  width: 34px;
-  height: 34px;
+.wb-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 160px;
+  overflow-y: auto;
+  margin-bottom: 8px;
 }
-.wb-pic img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 6px;
+.wb-attachment {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 7px 8px;
   border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-2);
 }
-.wb-pic button {
-  position: absolute;
-  top: -6px;
-  right: -6px;
+.wb-attachment > svg,
+.wb-attachment > img {
+  flex-shrink: 0;
+}
+.wb-attachment > img {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+.wb-attachment-info {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  font-size: 11px;
+}
+.wb-attachment-info strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wb-attachment-info span {
+  overflow-wrap: anywhere;
+}
+.wb-attachment button {
   display: grid;
   place-items: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--text-2);
-  color: var(--surface);
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  color: var(--text-2);
+}
+.wb-attachment button:hover {
+  background: var(--ai-soft);
 }
 .wb-marks {
   display: flex;

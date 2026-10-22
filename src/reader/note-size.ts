@@ -3,6 +3,8 @@ export type NoteSize = { width: number; height: number };
 export const STICKY_MIN_WIDTH = 180;
 export const STICKY_MIN_HEIGHT = 100;
 export const TEXT_MIN_WIDTH = 60;
+// A collapsed sticky shows as a small square pin.
+export const STICKY_PIN_SIZE = 33;
 
 // New text boxes reuse the width of the last one the reader resized.
 export function textNoteWidth(value: unknown): number {

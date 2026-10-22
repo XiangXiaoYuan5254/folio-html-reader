@@ -1,5 +1,5 @@
 import type { Anchor, Annotation, DocumentData } from '../types';
-import type { DocText, Paper } from './types';
+import type { DocText, Paper, PdfFigure } from './types';
 
 // What the AI features may do in the app. App.tsx implements it on top of the open
 // documents, the readers and the workspace; everything goes through the same paths as
@@ -10,6 +10,8 @@ export type AiHost = {
   files(): { path: string; kind: 'html' | 'pdf' }[];
   activePath(): string | undefined;
   docText(path: string): Promise<DocText>;
+  // A PDF's figures and tables as pictures, for 全文翻译.
+  pdfFigures(path: string): Promise<PdfFigure[]>;
   anchors(path: string, quotes: string[]): Promise<(Anchor | null)[]>;
   flash(path: string, quote: string): Promise<boolean>;
   // The saved data and, for HTML, the current source (including unsaved edits).

@@ -9,6 +9,8 @@ import {
 import type { Annotation, EraserMode, FrameEvent, Tool } from '../types';
 import type { NoteSize } from '../reader/note-size';
 import { useTheme } from '../theme';
+import { invoke } from '../api';
+import { ImageViewer } from './ImageViewer';
 export type ReaderHandle = {
   send: (type: string, payload?: Record<string, unknown>) => void;
   // Asks the document for something (AI text, anchors) and waits for its reply.
@@ -56,8 +58,16 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
   const [pageInput, setPageInput] = useState('1');
   const [ready, setReady] = useState(false);
   const [error, setError] = useState(false);
+  const [viewing, setViewing] = useState('');
   const live = useRef(p);
   live.current = p;
+  // A picture double-clicked in the page. The window shows local pictures itself;
+  // one from the web is fetched by the app, as the window may not load it directly.
+  function showImage(src: string) {
+    if (/^(folio:|data:image\/)/.test(src)) setViewing(src);
+    else if (/^https?:/.test(src))
+      invoke<string>('image-data', { url: src }).then(setViewing, () => {});
+  }
   const theme = useTheme().active;
   const pending = useRef(new Map<string, Pending>());
   const readyWaiters = useRef<(() => void)[]>([]);
@@ -174,6 +184,10 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
             width: e.data.width,
             hasText: e.data.hasText,
           });
+        return;
+      }
+      if (e.data.type === 'image') {
+        showImage(String(e.data.src || ''));
         return;
       }
       if (e.data.type === 'ready') {
@@ -359,6 +373,7 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
           }}
         />
       </div>
+      {viewing ? <ImageViewer src={viewing} onClose={() => setViewing('')} /> : null}
     </div>
   );
 });

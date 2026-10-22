@@ -1,6 +1,6 @@
 import { invoke, subscribe } from '../api';
 import { errorText } from './client';
-import type { Hearing, Speaker } from './voice';
+import type { Hearing, Prepare, Speaker } from './voice';
 
 // The whiteboard teacher as one of ChatGPT's voices, through a Codex realtime session
 // (electron/ai-codex.cjs). The voice is the teacher the student talks with: in a voice
@@ -90,6 +90,7 @@ type Session = {
   ctx: AudioContext;
   audio: HTMLAudioElement;
   level: AnalyserNode | null;
+  recording: Recording | null;
   // Whether it was told the student can talk.
   talk: boolean;
   ready: Promise<void>;
@@ -139,6 +140,92 @@ function rms(analyser: AnalyserNode, data: Float32Array<ArrayBuffer>) {
   return Math.sqrt(sum / data.length);
 }
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// The voice's sound, kept a sentence at a time to watch the lesson again (Speaker prepare's
+// `keep`): recorded from its connection as the student heard it, 16-bit at 24 kHz, in the
+// chunks of 1024 samples the worklet hands over, each with when it came.
+const keptRate = 24_000;
+const chunk = 1024;
+type Recording = {
+  ctx: AudioContext;
+  chunks: Int16Array[];
+  times: number[];
+  // The sample the first chunk still kept starts at.
+  base: number;
+  stopped: boolean;
+};
+function record(stream: MediaStream): Recording {
+  const ctx = new AudioContext({ sampleRate: keptRate });
+  const r: Recording = { ctx, chunks: [], times: [], base: 0, stopped: false };
+  void ctx.audioWorklet
+    .addModule(new URL('./mic-worklet.js', import.meta.url))
+    .then(() => {
+      if (r.stopped) return;
+      const node = new AudioWorkletNode(ctx, 'folio-mic', { numberOfOutputs: 0 });
+      node.port.onmessage = (e: MessageEvent<ArrayBuffer>) => {
+        r.chunks.push(new Int16Array(e.data));
+        r.times.push(performance.now());
+      };
+      ctx.createMediaStreamSource(stream).connect(node);
+    })
+    .catch(() => {});
+  return r;
+}
+const recorded = (r: Recording) => r.base + r.chunks.length * chunk;
+// The sample that came at `t` (performance.now()).
+function sampleAt(r: Recording, t: number) {
+  const i = r.times.findIndex((x) => x >= t);
+  const ms = (time: number) => Math.round(((time - t) * keptRate) / 1000);
+  if (i < 0) return recorded(r) - ms(r.times.at(-1) ?? t);
+  return r.base + (i + 1) * chunk - ms(r.times[i]);
+}
+function samples(r: Recording, from: number, to: number) {
+  from = Math.max(from, r.base);
+  to = Math.min(to, recorded(r));
+  const out = new Int16Array(Math.max(0, to - from));
+  for (let n = from; n < to;) {
+    const i = Math.floor((n - r.base) / chunk);
+    const at = n - r.base - i * chunk;
+    const part = r.chunks[i].subarray(at, Math.min(chunk, at + to - n));
+    out.set(part, n - from);
+    n += part.length;
+  }
+  return out;
+}
+// Loudness in 20 ms frames, on the scale of `loud`.
+const frame = keptRate / 50;
+function loudness(pcm: Int16Array, at: number) {
+  let sum = 0;
+  for (let i = at; i < at + frame; i++) sum += pcm[i] * pcm[i];
+  return Math.sqrt(sum / frame) / 0x8000;
+}
+// Where one sentence ends and the next begins, whose first words came at `t`. Its sound
+// comes 0.3–1 s after its words, so it is cut in the longest pause about then.
+function cutAt(r: Recording, t: number) {
+  const from = sampleAt(r, t) - 0.4 * keptRate;
+  const pcm = samples(r, from, from + 1.5 * keptRate);
+  let best = -1;
+  let bestRun = 0;
+  let run = 0;
+  let quietest = 0;
+  let least = Infinity;
+  for (let i = 0; i + frame <= pcm.length; i += frame) {
+    const v = loudness(pcm, i);
+    if (v < least) [least, quietest] = [v, i];
+    run = v < loud ? run + 1 : 0;
+    if (run > bestRun) [bestRun, best] = [run, i + frame - (run * frame) / 2];
+  }
+  return Math.max(r.base, from) + (bestRun ? best : quietest + frame / 2);
+}
+// A sentence's sound, with the quiet before and after it cut to a moment.
+function trimmed(pcm: Int16Array) {
+  let a = 0;
+  let b = pcm.length;
+  while (a + frame <= b && loudness(pcm, a) < loud) a += frame;
+  while (b - frame >= a && loudness(pcm, b - frame) < loud) b -= frame;
+  const margin = 0.12 * keptRate;
+  return pcm.subarray(Math.max(0, a - margin), Math.min(pcm.length, b + margin));
+}
 // No session now, for a reason that isn't a failure: paused, or just after one.
 class NotNow extends Error {}
 
@@ -161,6 +248,15 @@ export function codexVoice(
   const waiting = new Map<string, () => void>();
   // The board waits to draw a sentence's writing until the voice is on it.
   const starting = new Map<string, () => void>();
+  // Where to keep each sentence's sound, and, for those it has started on, when each piece
+  // of what it said came (at which letter): the sound is cut out once the next one starts,
+  // or by when it was done.
+  const keeps = new Map<string, NonNullable<Prepare['keep']>>();
+  // `said` is what it said of one it was cut off in, which is forgotten with the reply.
+  const heard = new Map<
+    string,
+    { rec: Recording; pieces: [number, number][]; end?: number; said?: string }
+  >();
   const begin = (id: string) => {
     starting.get(id)?.();
     starting.delete(id);
@@ -254,6 +350,7 @@ export function codexVoice(
       ctx,
       audio,
       level: null,
+      recording: null,
       talk: false,
       dead: false,
       ready: null!,
@@ -292,6 +389,7 @@ export function codexVoice(
       // How loud the voice is, to hear it stop.
       s.level = ctx.createAnalyser();
       ctx.createMediaStreamSource(stream).connect(s.level);
+      s.recording ||= record(stream);
     };
     s.ready = (async () => {
       const silence = ctx.createMediaStreamDestination();
@@ -378,6 +476,12 @@ export function codexVoice(
     s.pc.close();
     s.audio.srcObject = null;
     void s.ctx.close().catch(() => {});
+    const r = s.recording;
+    if (r) {
+      r.stopped = true;
+      keepHeard(r);
+      void r.ctx.close().catch(() => {});
+    }
   }
   function fail(message: string) {
     close();
@@ -489,6 +593,12 @@ export function codexVoice(
     if (!id) return;
     const text = (words.get(id) || '') + piece;
     words.set(id, text);
+    const rec = session?.recording;
+    if (rec) {
+      const h = heard.get(id);
+      if (h?.rec === rec) h.pieces.push([text.length - piece.length, now()]);
+      else heard.set(id, { rec, pieces: [[text.length - piece.length, now()]] });
+    }
     begin(id);
     const tail = lastLetters(text, 6);
     const t = letters(tail);
@@ -503,6 +613,12 @@ export function codexVoice(
       const cut = sentenceStart(text, text.length - tail.length);
       words.set(id, text.slice(0, cut));
       words.set(next, text.slice(cut));
+      // The next one started with the piece the cut is in.
+      const h = heard.get(id);
+      if (h) {
+        h.end = [...h.pieces].reverse().find(([letter]) => letter <= cut)?.[1] ?? now();
+        heard.set(next, { rec: h.rec, pieces: [[0, h.end]] });
+      }
       while (given[at] !== next) finish(given[at++]);
       begin(next);
     }
@@ -511,6 +627,12 @@ export function codexVoice(
   function finish(id: string) {
     if (done.has(id)) return;
     done.add(id);
+    // One it never said is kept as a moment of quiet, rather than said by another voice.
+    const keep = keeps.get(id);
+    if (keep && !words.get(id)) {
+      keeps.delete(id);
+      keep(new Uint8Array(0.1 * keptRate * 2), keptRate, '');
+    }
     begin(id);
     const resolve = waiting.get(id);
     waiting.delete(id);
@@ -520,10 +642,49 @@ export function codexVoice(
     given.forEach(finish);
     at = given.length - 1;
   }
+  // Cuts out the sound of the sentences it is done with, once enough has come after the
+  // next one started to find the pause (or after its last words, for the last one), or at
+  // once from a recording that `ended`. One it was still on there is kept as far as it got,
+  // and kept again if a new session says it again from its start.
+  function keepHeard(ended?: Recording) {
+    for (const [id, h] of heard) {
+      const over = ended === h.rec;
+      const cutOff = !done.has(id) && h.end === undefined;
+      if (cutOff && !over) continue;
+      const after =
+        h.end === undefined
+          ? sampleAt(h.rec, h.pieces[h.pieces.length - 1][1]) + 2 * keptRate
+          : sampleAt(h.rec, h.end) + 1.2 * keptRate;
+      if (!over && recorded(h.rec) < after) continue;
+      heard.delete(id);
+      const keep = keeps.get(id);
+      if (!cutOff) keeps.delete(id);
+      if (!keep) continue;
+      const from = cutAt(h.rec, h.pieces[0][1]);
+      const to = h.end === undefined ? after : cutAt(h.rec, h.end);
+      const pcm = trimmed(samples(h.rec, from, to));
+      const said = tidy(h.said ?? words.get(id) ?? '');
+      if (pcm.length)
+        keep(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength), keptRate, said);
+    }
+    // What no sentence needs any more is let go: all but the last few seconds.
+    const s = session?.recording;
+    if (!s || s.stopped) return;
+    const starts = [...heard.values()]
+      .filter((h) => h.rec === s)
+      .map((h) => sampleAt(s, h.pieces[0][1]));
+    const keepFrom = Math.min(recorded(s) - 3 * keptRate, ...starts.map((n) => n - keptRate));
+    const drop = Math.max(0, Math.floor((keepFrom - s.base) / chunk));
+    if (!drop) return;
+    s.chunks.splice(0, drop);
+    s.times.splice(0, drop);
+    s.base += drop * chunk;
+  }
 
   function tick() {
     const t = now();
     const s = session;
+    keepHeard();
     if (s?.level && rms(s.level, data) > loud) lastLoud = t;
     if (micLevel && listening) {
       const v = rms(micLevel, data);
@@ -598,6 +759,12 @@ export function codexVoice(
     );
   }
   function reset() {
+    // Cut off: what it said of the sentence it was on is kept to there.
+    for (const [id, h] of heard) {
+      h.end ??= now();
+      h.said ??= words.get(id) || '';
+    }
+    for (const id of keeps.keys()) if (!heard.has(id)) keeps.delete(id);
     for (const resolve of waiting.values()) resolve();
     waiting.clear();
     for (const resolve of starting.values()) resolve();
@@ -618,9 +785,10 @@ export function codexVoice(
 
   return {
     live: true,
-    prepare(id, text) {
+    prepare(id, text, how) {
       texts.set(id, text);
       script.push(id);
+      if (how?.keep) keeps.set(id, how.keep);
       if (!paused) void current().catch(() => {});
       hand();
       // A guess: how long it takes is known only once it has been said.

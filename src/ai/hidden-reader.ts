@@ -5,7 +5,9 @@ let queue: Promise<unknown> = Promise.resolve();
 export function withHiddenReader<T>(
   url: string,
   kind: 'html' | 'pdf',
-  work: (request: <R>(type: string, payload?: Record<string, unknown>) => Promise<R>) => Promise<T>,
+  work: (
+    request: <R>(type: string, payload?: Record<string, unknown>, ms?: number) => Promise<R>,
+  ) => Promise<T>,
 ): Promise<T> {
   const run = queue.then(() => load(url, kind, work));
   queue = run.catch(() => {});
@@ -15,7 +17,9 @@ export function withHiddenReader<T>(
 async function load<T>(
   url: string,
   kind: 'html' | 'pdf',
-  work: (request: <R>(type: string, payload?: Record<string, unknown>) => Promise<R>) => Promise<T>,
+  work: (
+    request: <R>(type: string, payload?: Record<string, unknown>, ms?: number) => Promise<R>,
+  ) => Promise<T>,
 ) {
   const frame = document.createElement('iframe');
   frame.setAttribute('aria-hidden', 'true');
@@ -48,11 +52,11 @@ async function load<T>(
     new Promise<never>((_, reject) => setTimeout(() => reject(Error(message)), ms));
   try {
     await Promise.race([isReady, timeout(30_000, '文档加载超时')]);
-    const request = <R>(type: string, payload: Record<string, unknown> = {}) => {
+    const request = <R>(type: string, payload: Record<string, unknown> = {}, ms = 90_000) => {
       const replyTo = crypto.randomUUID();
       const reply = new Promise<R>((resolve, reject) => pending.set(replyTo, { resolve, reject }));
       post(type, { ...payload, replyTo });
-      return Promise.race([reply, timeout(90_000, '读取文档超时')]);
+      return Promise.race([reply, timeout(ms, '读取文档超时')]);
     };
     return await work(request);
   } finally {

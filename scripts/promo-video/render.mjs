@@ -11,8 +11,9 @@
 //   以上都可以加 --page cute，换成手绘可爱版（cute.html → out/页间可爱版.mp4）
 //   或 --page whiteboard，白板讲解单独一支，竖屏 3:4 发小红书（whiteboard.html → out/页间白板讲解.mp4）
 //   或 --page chalk，白板讲解的黑板粉笔版，带页老师的配音（先用 narrate.mjs 录好）
+//   或 --page film，宣传片（纸页版），竖屏 3:4 发小红书（film.html → out/页间宣传片.mp4，配乐是 music-film.mjs）
 //
-// 素材先用 capture.mjs 录好（系统临时目录/folio-promo）。
+// 素材先用 capture.mjs 录好（系统临时目录/folio-promo）；宣传片用 capture-film.mjs（folio-promo-film）。
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
@@ -21,16 +22,17 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { makeMusic } from './music.mjs';
+import { makeMusic as makeFilmMusic } from './music-film.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 const root = path.resolve(here, '../..');
-const media = path.join(os.tmpdir(), 'folio-promo');
 const outDir = path.join(here, 'out');
 const args = process.argv.slice(2);
 const opt = (name) => {
   const i = args.indexOf('--' + name);
   return i < 0 ? null : (args[i + 1] ?? true);
 };
+const media = path.join(os.tmpdir(), opt('page') === 'film' ? 'folio-promo-film' : 'folio-promo');
 
 const types = {
   '.html': 'text/html; charset=utf-8',
@@ -64,6 +66,7 @@ const PAGES = {
   cute: ['页间可爱版', 1920, 1080],
   whiteboard: ['页间白板讲解', 1080, 1440],
   chalk: ['页间白板讲解-黑板版', 1080, 1440],
+  film: ['页间宣传片', 1080, 1440],
 };
 const [title, W, H] = PAGES[version];
 const base = `http://127.0.0.1:${server.address().port}/${version}.html`;
@@ -115,11 +118,12 @@ async function music(browser) {
   await page.context().close();
   await fs.writeFile(path.join(outDir, `timeline-${version}.json`), JSON.stringify(ev, null, 1));
   const file = path.join(outDir, `music-${version}.wav`);
-  const { gain } = await makeMusic(ev, file);
+  const make = version === 'film' ? makeFilmMusic : makeMusic;
+  const { gain } = await make(ev, file);
   console.log(file);
   if (!ev.voice?.length) return { file };
   const voiceOnly = path.join(outDir, `voice-${version}.wav`);
-  await makeMusic(ev, voiceOnly, { music: false, gain });
+  await make(ev, voiceOnly, { music: false, gain });
   console.log(voiceOnly);
   return { file, voiceOnly };
 }
@@ -177,7 +181,13 @@ async function video(browser) {
     }),
   );
   const list = path.join(tmp, 'parts.txt');
-  await fs.writeFile(list, parts.filter(Boolean).map((p) => `file '${p}'`).join('\n'));
+  await fs.writeFile(
+    list,
+    parts
+      .filter(Boolean)
+      .map((p) => `file '${p}'`)
+      .join('\n'),
+  );
   const ff = (args) =>
     new Promise((resolve, reject) =>
       spawn('ffmpeg', ['-y', '-loglevel', 'error', ...args], { stdio: 'inherit' }).on(
@@ -185,14 +195,25 @@ async function video(browser) {
         (c) => (c ? reject(Error('ffmpeg ' + c)) : resolve()),
       ),
     );
-  const silent = path.join(outDir, partial ? `${title}-${from / fps}-${to / fps}.mp4` : `${title}-无配乐.mp4`);
-  await ff(['-f', 'concat', '-safe', '0', '-i', list]
-    .concat(['-c:v', 'libx264', '-preset', 'slow', '-crf', '16', '-pix_fmt', 'yuv420p'])
-    .concat(['-profile:v', 'high', '-movflags', '+faststart', silent]));
+  const silent = path.join(
+    outDir,
+    partial ? `${title}-${from / fps}-${to / fps}.mp4` : `${title}-无配乐.mp4`,
+  );
+  await ff(
+    ['-f', 'concat', '-safe', '0', '-i', list]
+      .concat(['-c:v', 'libx264', '-preset', 'slow', '-crf', '16', '-pix_fmt', 'yuv420p'])
+      .concat(['-profile:v', 'high', '-movflags', '+faststart', silent]),
+  );
   console.log(silent);
   const mux = async (audio, out) => {
-    await ff(['-i', silent, '-i', audio, '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k']
-      .concat(['-shortest', '-movflags', '+faststart', out]));
+    await ff(
+      ['-i', silent, '-i', audio, '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k'].concat([
+        '-shortest',
+        '-movflags',
+        '+faststart',
+        out,
+      ]),
+    );
     console.log(out);
   };
   if (track) await mux(track.file, path.join(outDir, `${title}.mp4`));
