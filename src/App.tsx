@@ -59,7 +59,7 @@ import { ProjectPicker } from './components/ProjectPicker';
 import { UpdateCard } from './components/UpdateCard';
 import { HistoryPanel, backupLabel } from './components/HistoryPanel';
 import type { RecentProject } from './components/ProjectPicker';
-import { annotationColors, defaultColor, normalizeColor } from './colors';
+import { annotationColors, defaultColor, defaultStickyColor, normalizeColor } from './colors';
 import { zoomAfterWheel } from './zoom';
 import { Assistant, useAssistantCard } from './ai/assistant';
 import type { AiHost } from './ai/host';
@@ -92,8 +92,8 @@ const toolHints: Record<Tool, string> = {
   select: '选中文字开始批注',
   highlight: '拖选文字添加高亮 · 点击高亮添加笔记 · 悬停查看',
   underline: '拖选文字添加下划线',
-  text: '点击页面直接输入文字 · 拖动标题移动 · 点击文字继续编辑',
-  sticky: '点击页面贴便签 · 拖动标题移动 · 右下角调整大小',
+  text: '点击页面直接输入文字 · 写完点击空白处回到上一个工具',
+  sticky: '点击页面贴便签 · 写完点击空白处回到上一个工具',
   pen: '拖动画线 · 按住 E 临时擦除 · Esc 返回选择',
   laser: '拖动临时指示 · 松开约 3 秒后消失 · 不保存',
   arrow: '拖动绘制箭头 · Esc 返回选择',
@@ -227,6 +227,7 @@ export default function App() {
   const [htmlMode, setMode] = useState<'read' | 'source'>('read');
   const mode = focus.enabled || doc?.kind === 'pdf' ? 'read' : htmlMode;
   const [tool, setTool] = useState<Tool>('select');
+  const [pinnedTool, setPinnedTool] = useState<'sticky' | 'text' | null>(null);
   const recentTools = useRef<{ current: Tool; previous: Tool | null }>({
     current: 'select',
     previous: null,
@@ -240,6 +241,7 @@ export default function App() {
     if (next !== history.current) {
       recentTools.current = { current: next, previous: history.current };
       setTool(next);
+      setPinnedTool(null);
     }
   }
   function switchRecentTool() {
@@ -252,6 +254,13 @@ export default function App() {
       return normalizeColor(localStorage.getItem('folio.ink-color')) || defaultColor;
     } catch {
       return defaultColor;
+    }
+  });
+  const [stickyColor, setStickyColor] = useState(() => {
+    try {
+      return normalizeColor(localStorage.getItem('folio.sticky-color')) || defaultStickyColor;
+    } catch {
+      return defaultStickyColor;
     }
   });
   const [left, setLeft] = useState(true);
@@ -465,6 +474,11 @@ export default function App() {
       localStorage.setItem('folio.ink-color', color);
     } catch {}
   }, [color]);
+  useEffect(() => {
+    try {
+      localStorage.setItem('folio.sticky-color', stickyColor);
+    } catch {}
+  }, [stickyColor]);
   useEffect(() => {
     try {
       localStorage.setItem('folio.eraser-mode', eraserMode);
@@ -1071,6 +1085,10 @@ export default function App() {
     activateTool(next);
     if (next === 'text' && color === defaultColor) setColor(annotationColors[4].value);
   }
+  function toggleToolPin(next: 'sticky' | 'text') {
+    chooseTool(next);
+    setPinnedTool((current) => (current === next ? null : next));
+  }
   function annotateSelection(type: 'highlight' | 'underline') {
     sendToActive('annotate', { tool: type });
     setSelection(null);
@@ -1342,18 +1360,21 @@ export default function App() {
         if (Number.isFinite(e.size))
           setNoteFontSize(Math.max(12, Math.min(26, Math.round(e.size))));
         break;
-      case 'update-annotation':
+      case 'update-annotation': {
+        const type = doc.data.annotations.find((a) => a.id === e.id)?.type;
         if (e.patch?.size) {
-          const type = doc.data.annotations.find((a) => a.id === e.id)?.type;
           if (type === 'sticky') setStickySize(stickyNoteSize(e.patch.size));
           if (type === 'text') setTextWidth(textNoteWidth(e.patch.size.width));
         }
+        const nextColor = normalizeColor(e.patch?.color);
+        if (type === 'sticky' && nextColor) setStickyColor(nextColor);
         model.annotate(
           id,
           (all) => all.map((a) => (a.id === e.id ? { ...a, ...e.patch } : a)),
           e.group,
         );
         break;
+      }
       case 'erase-ink': {
         const changed = new Map(
           (e.changes || []).map((a: { id: string; paths: unknown }) => [a.id, a.paths]),
@@ -1377,6 +1398,17 @@ export default function App() {
         window.getSelection()?.removeAllRanges();
         activateTool('select');
         patchReader(id, { selection: null });
+        break;
+      case 'finish-page-note':
+        if (
+          mode !== 'read' ||
+          !['sticky', 'text'].includes(e.tool) ||
+          recentTools.current.current !== e.tool ||
+          pinnedTool === e.tool
+        )
+          break;
+        activateTool(recentTools.current.previous || 'select');
+        setInkSettingsOpen(false);
         break;
       case 'switch-tool':
         if (mode !== 'read') break;
@@ -1809,7 +1841,9 @@ export default function App() {
                     : '源码修改前的版本会自动备份，可在“历史版本”中恢复'
                   : tool === 'eraser'
                     ? `${eraserMode === 'stroke' ? '笔画擦除 · 碰到即擦除整笔' : '局部擦除 · 只擦掉经过的部分'} · 一次拖动可一次撤销`
-                    : toolHints[tool]
+                    : pinnedTool === tool
+                      ? `${tool === 'text' ? '文本注释' : '便签'}已固定 · 点击页面连续添加 · 双击工具取消固定`
+                      : toolHints[tool]
               }
             />
           }
@@ -1861,8 +1895,10 @@ export default function App() {
               onMode={setMode}
               tool={tool}
               onTool={chooseTool}
-              color={color}
-              onColor={setColor}
+              pinnedTool={pinnedTool}
+              onToggleToolPin={toggleToolPin}
+              color={tool === 'sticky' ? stickyColor : color}
+              onColor={tool === 'sticky' ? setStickyColor : setColor}
               canLinkScroll={!!readingSplit && !!readingSplit.right}
               pairScroll={!!pairIds}
               linkedScroll={linkedScroll}
@@ -2112,7 +2148,9 @@ export default function App() {
                       annotations={paneDoc.data.annotations}
                       selected={readerStates[paneDoc.id]?.selected || null}
                       tool={mode === 'source' ? 'select' : tool}
+                      toolPinned={mode === 'read' && pinnedTool === tool}
                       color={color}
+                      stickyColor={stickyColor}
                       strokeWidth={strokeWidth}
                       eraserSize={eraserSize}
                       eraserMode={eraserMode}

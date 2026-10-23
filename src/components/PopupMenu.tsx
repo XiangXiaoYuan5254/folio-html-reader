@@ -17,6 +17,8 @@ export const atPointer = (e: { clientX: number; clientY: number }): MenuAnchor =
 export type MenuItem = {
   label: ReactNode;
   onSelect: () => void;
+  onDoubleClick?: () => void;
+  help?: string;
   // A keyboard shortcut shown at the right.
   hint?: ReactNode;
   danger?: boolean;
@@ -117,6 +119,8 @@ export function PopupMenu({
           role="menuitem"
           data-danger={item.danger || undefined}
           disabled={item.disabled}
+          title={item.help}
+          onDoubleClick={item.onDoubleClick}
           onClick={() => {
             if (!item.keep) onClose();
             item.onSelect();

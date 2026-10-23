@@ -32,7 +32,9 @@ export type ReaderProps = {
   annotations: Annotation[];
   selected: string | null;
   tool: Tool;
+  toolPinned: boolean;
   color: string;
+  stickyColor: string;
   strokeWidth: number;
   eraserSize: number;
   eraserMode: EraserMode;
@@ -205,7 +207,9 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
           annotations: live.current.annotations,
           selected: live.current.selected,
           tool: live.current.tool,
+          toolPinned: live.current.toolPinned,
           color: live.current.color,
+          stickyColor: live.current.stickyColor,
           strokeWidth: live.current.strokeWidth,
           eraserSize: live.current.eraserSize,
           eraserMode: live.current.eraserMode,
@@ -266,7 +270,9 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
         annotations: p.annotations,
         selected: p.selected,
         tool: p.tool,
+        toolPinned: p.toolPinned,
         color: p.color,
+        stickyColor: p.stickyColor,
         strokeWidth: p.strokeWidth,
         eraserSize: p.eraserSize,
         eraserMode: p.eraserMode,
@@ -280,7 +286,9 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
     p.annotations,
     p.selected,
     p.tool,
+    p.toolPinned,
     p.color,
+    p.stickyColor,
     p.strokeWidth,
     p.eraserSize,
     p.eraserMode,

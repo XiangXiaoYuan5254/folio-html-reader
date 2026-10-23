@@ -27,6 +27,7 @@ import {
   Sparkle,
   WandSparkles,
   ChevronDown,
+  Pin,
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { EraserMode, Tool } from '../types';
@@ -54,13 +55,13 @@ const tools = [
   {
     id: 'text',
     label: '文本注释',
-    help: '点击页面直接输入文字，透明背景，可移动和调字号',
+    help: '透明背景，可移动和调字号',
     icon: Type,
   },
   {
     id: 'sticky',
     label: '便签',
-    help: '点击页面贴便签，右上角可改字体、字号和底色；支持移动和调整大小',
+    help: '右上角可改样式，支持移动和调整大小',
     icon: StickyNote,
   },
   { id: 'pen', label: '画笔', help: '按住拖动自由画线；按住 E 临时擦除', icon: PenIcon },
@@ -82,6 +83,8 @@ export function Toolbar(p: {
   onMode: (v: 'read' | 'source') => void;
   tool: Tool;
   onTool: (v: Tool) => void;
+  pinnedTool: 'sticky' | 'text' | null;
+  onToggleToolPin: (v: 'sticky' | 'text') => void;
   color: string;
   onColor: (v: string) => void;
   canLinkScroll: boolean;
@@ -155,6 +158,9 @@ export function Toolbar(p: {
   const [fit, setFit] = useState<number>(tools.length);
   const [moreMenu, setMoreMenu] = useState<MenuAnchor | null>(null);
   useLayoutEffect(() => {
+    // Keep menu items in place between the two clicks, even if selecting a tool
+    // adds or removes its settings button and changes the available room.
+    if (moreMenu) return;
     const host = strip.current;
     const bar = host?.parentElement;
     const spacer = bar?.querySelector<HTMLElement>('.toolbar-flex');
@@ -176,10 +182,17 @@ export function Toolbar(p: {
     const observer = new ResizeObserver(measure);
     for (const el of [bar, host, spacer]) observer.observe(el);
     return () => observer.disconnect();
-  }, [p.mode]);
+  }, [p.mode, moreMenu]);
   useEffect(() => setMoreMenu(null), [p.mode, fit]);
   const overflow = tools.slice(fit);
   const hiddenActive = overflow.find((t) => t.id === p.tool);
+  const toolHelp = (t: (typeof tools)[number]) => {
+    if (t.id === 'sticky' || t.id === 'text')
+      return `${p.pinnedTool === t.id ? '已固定，可连续添加；再次双击取消固定' : '写完点击空白处回到上一个工具；双击固定，可连续添加'}。${t.help}`;
+    if (t.id === 'eraser')
+      return `${p.eraserMode === 'stroke' ? '笔画擦除：碰到即擦除整笔' : '局部擦除：只擦掉经过的部分'}；在笔触设置中切换`;
+    return t.help;
+  };
   useEffect(() => {
     if (!settings) return;
     const dismiss = (e: PointerEvent) => {
@@ -215,17 +228,19 @@ export function Toolbar(p: {
                 key={t.id}
                 data-overflow={i >= fit || undefined}
                 label={t.label}
-                help={
-                  t.id === 'eraser'
-                    ? `${p.eraserMode === 'stroke' ? '笔画擦除：碰到即擦除整笔' : '局部擦除：只擦掉经过的部分'}；在笔触设置中切换`
-                    : t.help
-                }
+                help={toolHelp(t)}
+                data-pinned={p.pinnedTool === t.id || undefined}
+                aria-description={p.pinnedTool === t.id ? '已固定，双击取消固定' : undefined}
                 active={p.tool === t.id}
                 disabled={p.disabled}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => p.onTool(t.id)}
+                onDoubleClick={() => {
+                  if (t.id === 'sticky' || t.id === 'text') p.onToggleToolPin(t.id);
+                }}
               >
                 <t.icon size={18} />
+                {p.pinnedTool === t.id ? <Pin className="tool-pin" aria-hidden="true" /> : null}
               </IconButton>
             ))}
           </div>
@@ -234,7 +249,12 @@ export function Toolbar(p: {
               ref={more}
               className="tool-overflow"
               label={hiddenActive ? `更多工具 · 当前：${hiddenActive.label}` : '更多工具'}
-              help={`窗口太窄，${overflow.map((t) => t.label).join('、')}收在这里`}
+              help={
+                hiddenActive && p.pinnedTool === hiddenActive.id
+                  ? `${hiddenActive.label}已固定；展开菜单，双击该工具取消固定`
+                  : `窗口太窄，${overflow.map((t) => t.label).join('、')}收在这里`
+              }
+              data-pinned={(!!hiddenActive && p.pinnedTool === hiddenActive.id) || undefined}
               active={!!hiddenActive}
               aria-haspopup="menu"
               aria-expanded={!!moreMenu}
@@ -243,6 +263,9 @@ export function Toolbar(p: {
               onClick={(e) => setMoreMenu(moreMenu ? null : belowButton(e.currentTarget))}
             >
               {hiddenActive ? <hiddenActive.icon size={18} /> : <ChevronDown size={16} />}
+              {hiddenActive && p.pinnedTool === hiddenActive.id ? (
+                <Pin className="tool-pin" aria-hidden="true" />
+              ) : null}
             </IconButton>
           ) : null}
           {moreMenu ? (
@@ -252,12 +275,29 @@ export function Toolbar(p: {
               onClose={() => setMoreMenu(null)}
               items={overflow.map((t) => ({
                 label: (
-                  <span className="overflow-tool" data-active={p.tool === t.id || undefined}>
+                  <span
+                    className="overflow-tool"
+                    data-active={p.tool === t.id || undefined}
+                    data-pinned={p.pinnedTool === t.id || undefined}
+                  >
                     <t.icon size={16} />
                     {t.label}
+                    {p.pinnedTool === t.id ? <Pin size={12} aria-hidden="true" /> : null}
                   </span>
                 ),
                 onSelect: () => p.onTool(t.id),
+                help: toolHelp(t),
+                hint:
+                  t.id === 'sticky' || t.id === 'text'
+                    ? p.pinnedTool === t.id
+                      ? '已固定 · 双击取消'
+                      : '双击固定'
+                    : undefined,
+                // The first click must leave the item mounted for a double-click.
+                keep: t.id === 'sticky' || t.id === 'text',
+                onDoubleClick: () => {
+                  if (t.id === 'sticky' || t.id === 'text') p.onToggleToolPin(t.id);
+                },
               }))}
             />
           ) : null}

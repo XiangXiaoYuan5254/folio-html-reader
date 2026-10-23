@@ -3362,6 +3362,19 @@ button.brand {
 }
 .toolbar-host .annotation-tools > .icon-button {
   flex-shrink: 0;
+  position: relative;
+}
+.reader-toolbar .tool-pin {
+  position: absolute;
+  right: 1px;
+  top: 1px;
+  width: 10px;
+  height: 10px;
+  padding: 1px;
+  border-radius: 2px;
+  background: var(--toolbar-bg);
+  color: inherit;
+  pointer-events: none;
 }
 .annotation-tools > .icon-button[data-overflow] {
   display: none;

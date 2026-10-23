@@ -7,6 +7,7 @@ export const annotationColors = [
   { value: '#172033', name: '墨色' },
 ];
 export const defaultColor = annotationColors[0].value;
+export const defaultStickyColor = '#d93b4b';
 export function normalizeColor(value: unknown): string | null {
   return typeof value === 'string' && /^#[\da-f]{6}$/i.test(value) ? value.toLowerCase() : null;
 }

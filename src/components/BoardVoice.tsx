@@ -196,13 +196,6 @@ export function VoiceButton({
                     ))}
                   </optgroup>
                 ))}
-                <optgroup label="这台电脑的声音">
-                  {voices.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {voiceLabel(v)}
-                    </option>
-                  ))}
-                </optgroup>
                 {codex.length ? (
                   <optgroup label="ChatGPT（Codex）">
                     {codex.map((name) => (
@@ -212,6 +205,13 @@ export function VoiceButton({
                     ))}
                   </optgroup>
                 ) : null}
+                <optgroup label="这台电脑的声音">
+                  {voices.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {voiceLabel(v)}
+                    </option>
+                  ))}
+                </optgroup>
               </select>
             </label>
           ) : support && mode !== 'off' ? (

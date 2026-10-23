@@ -190,6 +190,11 @@ try {
   await activeTool('便签');
   await blank();
   const note = f.getByLabel('页面便签内容', { exact: true });
+  assert.equal(
+    await note.evaluate((el) => el.closest('.card').style.getPropertyValue('--ink')),
+    '#d93b4b',
+    'new sticky notes start with a red card background, independently of the pen color',
+  );
   await page.keyboard.press('Tab');
   await activeTool('画笔');
   assert.equal(await note.inputValue(), '');
@@ -242,6 +247,148 @@ try {
   assert.equal(await f.locator('[data-selection-outline]').count(), 0);
   console.log(
     'PASS: Tab swaps last two tools in toolbar and article; E does not replace history; Tab leaves the note input/resize control without changing content or size; ordinary inputs retain normal Tab',
+  );
+
+  await f.getByLabel('删除便签', { exact: true }).click();
+  for (const [label, group, editorLabel, removeLabel] of [
+    ['便签', '页面便签', '页面便签内容', '删除便签'],
+    ['文本注释', '页面文本注释', '文本注释内容', '删除文本注释'],
+  ]) {
+    await tool('画笔');
+    const button = page.getByLabel(label, { exact: true });
+    const cards = f.getByRole('group', { name: group, exact: true });
+    const inputs = f.getByLabel(editorLabel, { exact: true });
+    // Dispatch the hover boundary explicitly: Electron can keep a stale hover
+    // target when native mouse input returns from the separate reader frame.
+    await button.dispatchEvent('mouseover');
+    await page.getByRole('tooltip').waitFor();
+    assert.match(await page.getByRole('tooltip').innerText(), /双击固定/);
+    await button.click();
+    await page.mouse.click(b.x + 35, b.y + 35);
+    await inputs.first().fill('临时记录');
+    await page.mouse.click(b.x + b.width / 2, b.y - 20);
+    await activeTool('画笔');
+    assert.equal(await cards.count(), 1, 'single click remains temporary');
+    assert.equal(await inputs.first().inputValue(), '临时记录');
+    if (label === '便签') {
+      const penColor = await page
+        .locator('.ink-colors .color-dot.selected')
+        .getAttribute('aria-label');
+      await cards.first().getByLabel('便签样式', { exact: true }).click();
+      await f.getByLabel('便签颜色：蓝色', { exact: true }).click();
+      assert.equal(
+        await page.locator('.ink-colors .color-dot.selected').getAttribute('aria-label'),
+        penColor,
+        'editing a sticky color does not change the pen color',
+      );
+    }
+
+    await button.dblclick();
+    assert.equal(await button.getAttribute('data-pinned'), 'true');
+    await page.mouse.click(b.x + b.width - 350, b.y + 35);
+    await inputs.nth(1).fill('连续记录一');
+    if (label === '便签') {
+      assert.equal(
+        await cards.nth(1).evaluate((el) => el.style.getPropertyValue('--ink')),
+        '#2864d7',
+      );
+      await cards.nth(1).getByLabel('便签样式', { exact: true }).click();
+      await cards
+        .nth(1)
+        .getByLabel('便签自定义颜色', { exact: true })
+        .evaluate((input) => {
+          input.value = '#a855f7';
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+    }
+    await page.mouse.click(b.x + 35, b.y + b.height + 60);
+    await inputs.nth(2).fill('连续记录二');
+    if (label === '便签') {
+      assert.equal(
+        await cards.nth(2).evaluate((el) => el.style.getPropertyValue('--ink')),
+        '#a855f7',
+      );
+      assert.equal(
+        await cards.first().evaluate((el) => el.style.getPropertyValue('--ink')),
+        '#2864d7',
+      );
+      assert.equal(await page.getByLabel('自定义颜色', { exact: true }).inputValue(), '#a855f7');
+      // The toolbar also changes the default without recoloring existing cards.
+      await page.getByLabel('珊瑚色', { exact: true }).click();
+      await wait(
+        async () =>
+          (await page.evaluate(() => localStorage.getItem('folio.sticky-color'))) === '#d93b4b',
+        'sticky color preference saved',
+      );
+      assert.equal(
+        await cards.nth(2).evaluate((el) => el.style.getPropertyValue('--ink')),
+        '#a855f7',
+      );
+    }
+    await activeTool(label);
+    assert.equal(await cards.count(), 3, 'pinned tool creates consecutive notes');
+    await button.dispatchEvent('mouseover');
+    await page.getByRole('tooltip').waitFor();
+    assert.match(await page.getByRole('tooltip').innerText(), /已固定.*再次双击取消固定/);
+    await page.screenshot({ path: path.join(evidence, `pinned-${label}.png`) });
+
+    const inkCount = await f.locator('[data-annotation-id]').count();
+    await button.dblclick();
+    assert.equal(await button.getAttribute('data-pinned'), null);
+    await page.mouse.move(b.x + b.width / 2, b.y - 20);
+    await page.mouse.down();
+    await page.mouse.move(b.x + b.width / 2 + 35, b.y - 15, { steps: 6 });
+    await page.mouse.up();
+    await activeTool('画笔');
+    assert.equal(await cards.count(), 3, 'unpin restores temporary use without a fourth note');
+    assert.equal(await inputs.nth(2).inputValue(), '连续记录二');
+    assert.equal(await f.locator('[data-annotation-id]').count(), inkCount, 'exit adds no ink');
+
+    await button.dblclick();
+    await tool('高亮');
+    await button.click();
+    assert.equal(await button.getAttribute('data-pinned'), null, 'switching tools clears pin');
+    await inputs.first().focus();
+    await page.mouse.click(b.x + b.width / 2, b.y - 20);
+    await activeTool('高亮');
+    await button.dblclick();
+    await page.keyboard.press('Escape');
+    await activeTool('选择文字');
+    assert.equal(await button.getAttribute('data-pinned'), null, 'Esc also clears pin');
+    // Cleanup is independent of the text note's hover-only delete controls.
+    await f.getByLabel(removeLabel, { exact: true }).evaluateAll((buttons) => {
+      for (const button of buttons) button.click();
+    });
+    await wait(async () => (await cards.count()) === 0, 'notes removed');
+  }
+  await wait(
+    async () =>
+      (await data('A.html')).annotations.every((a) => !['sticky', 'text'].includes(a.type)),
+    'note cleanup saved',
+  );
+  await tool('画笔');
+  // Model a narrow reading column without changing the surrounding drag fixtures.
+  await page.locator('.toolbar-host').evaluate((el) => (el.style.width = '420px'));
+  await wait(async () => !(await page.getByLabel('便签', { exact: true }).isVisible()), 'overflow');
+  await page.locator('.tool-overflow').click();
+  for (const label of ['便签', '文本注释']) {
+    const menuNote = page.getByRole('menuitem', { name: new RegExp(label) });
+    assert.match(await menuNote.getAttribute('title'), /双击固定/);
+    await menuNote.dblclick();
+    assert.match(await menuNote.innerText(), /已固定/);
+    assert.equal(await page.locator('.tool-overflow').getAttribute('data-pinned'), 'true');
+    await menuNote.dblclick();
+    assert.match(await menuNote.innerText(), /双击固定/);
+    assert.equal(await page.locator('.tool-overflow').getAttribute('data-pinned'), null);
+  }
+  await page.keyboard.press('Escape');
+  await page.locator('.toolbar-host').evaluate((el) => el.style.removeProperty('width'));
+  await wait(
+    async () => await page.getByLabel('便签', { exact: true }).isVisible(),
+    'full toolbar',
+  );
+  console.log(
+    'PASS: text and sticky default to temporary use; double-click pins/unpins, consecutive notes work, switching/Esc clears pin, tooltips describe both states, overflow menu also supports double-click',
   );
 
   await tool('选择文字');
@@ -317,6 +464,15 @@ try {
   await start();
   await title('left', 'C.html');
   await title('right', 'A.html');
+  await tool('便签');
+  assert.equal(
+    await page.getByLabel('珊瑚色', { exact: true }).getAttribute('aria-pressed'),
+    'true',
+  );
+  await tool('选择文字');
+  console.log(
+    'PASS: sticky palette/custom colors carry over, toolbar stays in sync, old notes and pen colors stay independent, and the default survives restart',
+  );
   assert.deepEqual((await data('A.html')).annotations, before);
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(900, 700));
   assert.ok(await page.getByLabel('关闭左栏文档', { exact: true }).isVisible());

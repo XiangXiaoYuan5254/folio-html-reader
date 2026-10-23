@@ -4,7 +4,7 @@ import { PageNotes } from './notes';
 import { AnnotationPopup } from './annotation-popup';
 import { STICKY_MIN_WIDTH, STICKY_PIN_SIZE, stickyNoteSize, textNoteWidth } from './note-size';
 import { penCursor } from './pen-cursor';
-import { defaultColor } from '../colors';
+import { defaultColor, defaultStickyColor, normalizeColor } from '../colors';
 import { SelectionIndicator } from './selection-indicator';
 import type { SelectionRect } from './selection-indicator';
 import { ReaderZoom } from './zoom';
@@ -20,7 +20,10 @@ import { findQuote } from '../ai/quote-match';
   const inspector = new ElementInspector(send);
   let annotations: Annotation[] = [];
   let tool: Tool = 'select';
+  let toolPinned = false;
+  let editingPageNote = false;
   let color = defaultColor;
+  let stickyColor = defaultStickyColor;
   let strokeWidth = 2.5;
   let eraserSize = 24;
   let eraserMode: EraserMode = 'partial';
@@ -669,6 +672,7 @@ import { findQuote } from '../ai/quote-match';
   function setTool(next: Tool) {
     const changed = tool !== next;
     tool = next;
+    if (changed) editingPageNote = false;
     const drawing = ['pen', 'laser', 'arrow', 'rectangle', 'eraser', 'sticky', 'text'].includes(
       tool,
     );
@@ -944,7 +948,14 @@ import { findQuote } from '../ai/quote-match';
     document.body.append(svg);
     notes = new PageNotes({
       position: notePosition,
-      select: selectAnnotation,
+      select: (id) => {
+        if (
+          (tool === 'sticky' || tool === 'text') &&
+          annotations.some((a) => a.id === id && a.type === tool)
+        )
+          editingPageNote = true;
+        selectAnnotation(id);
+      },
       remove: (id) => {
         annotations = annotations.filter((a) => a.id !== id);
         send('delete', { id });
@@ -952,6 +963,8 @@ import { findQuote } from '../ai/quote-match';
       },
       update: (id, patch, group) => {
         const type = annotations.find((a) => a.id === id)?.type;
+        const nextColor = normalizeColor(patch.color);
+        if (type === 'sticky' && nextColor) stickyColor = nextColor;
         if (patch.size && type === 'sticky') stickySize = stickyNoteSize(patch.size);
         if (patch.size && type === 'text') textWidth = textNoteWidth(patch.size.width);
         const next = {
@@ -989,7 +1002,7 @@ import { findQuote } from '../ai/quote-match';
       },
     });
     // Pointer events inside the sandboxed reader do not bubble to the app shell.
-    // Notify it without consuming the gesture, so the first stroke still draws.
+    // Notify it before handling the gesture so it can activate this reading pane.
     document.addEventListener(
       'pointerdown',
       (e) => {
@@ -1003,12 +1016,20 @@ import { findQuote } from '../ai/quote-match';
                 node instanceof Element &&
                 node.matches('[data-folio-ui="notes"],[data-folio-ui="annotation-popup"]'),
             )
-        )
+        ) {
           selectAnnotation(null);
+          if (editingPageNote && !toolPinned && e.button === 0) {
+            // Finish the note without placing another one or starting a stroke.
+            // Keep consuming clicks until the app syncs the restored tool.
+            e.preventDefault();
+            e.stopPropagation();
+            svg.focus({ preventScroll: true });
+            send('finish-page-note', { tool });
+          }
+        }
       },
       {
         capture: true,
-        passive: true,
       },
     );
     document.addEventListener('mousedown', () => {
@@ -1071,7 +1092,7 @@ import { findQuote } from '../ai/quote-match';
           {
             id: crypto.randomUUID(),
             type: isText ? 'text' : 'sticky',
-            color,
+            color: isText ? color : stickyColor,
             points: [position],
             anchor: anchorAt(position),
             size,
@@ -1360,11 +1381,13 @@ import { findQuote } from '../ai/quote-match';
       if (located && (m.selected !== located || !annotations.some((a) => a.id === located)))
         clearLocation();
       color = m.color || color;
+      stickyColor = normalizeColor(m.stickyColor) || stickyColor;
       strokeWidth = Math.max(1, Math.min(12, Number(m.strokeWidth) || 2.5));
       eraserSize = Math.max(8, Math.min(64, Number(m.eraserSize) || 24));
       eraserMode = m.eraserMode === 'stroke' ? 'stroke' : 'partial';
       stickySize = stickyNoteSize(m.stickySize);
       textWidth = textNoteWidth(m.textWidth);
+      toolPinned = !!m.toolPinned;
       if (Number.isFinite(m.noteFontSize)) popup.setFontSize(m.noteFontSize);
       if (!temporaryEraser) setTool(m.tool || 'select');
       inspector.setEnabled(!!m.inspect);
