@@ -317,6 +317,19 @@ try {
     .waitFor();
   // Speech services: whether each is set up, and which of its voices to try.
   await settings.getByRole('button', { name: '语音服务' }).click();
+  const edgeVoice = settings.locator('.ai-voice-service', { hasText: 'Edge TTS（推荐）' });
+  await edgeVoice.locator('.ai-voice-state.on', { hasText: '无需 Key' }).waitFor();
+  assert.equal(
+    await edgeVoice.locator('input[type="password"]').count(),
+    0,
+    'Edge has no key field',
+  );
+  assert.ok(
+    await edgeVoice.getByRole('button', { name: '试听' }).isEnabled(),
+    'Edge can be tried without a key',
+  );
+  assert.equal(await edgeVoice.getByRole('button', { name: '保存', exact: true }).count(), 0);
+  await edgeVoice.getByRole('combobox').selectOption('zh-CN-YunxiNeural');
   const doubaoVoice = settings.locator('.ai-voice-service', { hasText: '豆包语音' });
   await doubaoVoice.locator('.ai-voice-state', { hasText: '未接入' }).waitFor();
   const voicePick = doubaoVoice.getByLabel('试听 豆包语音 的哪个声音');

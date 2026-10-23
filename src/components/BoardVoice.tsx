@@ -81,8 +81,8 @@ export function VoiceButton({
   const Icon = current.icon;
   const voices = support ? voicesFor(support.voices, 'zh') : [];
   const codex = support?.codex || [];
-  // Speech services with a key, whose voices can read the script.
-  const cloud = (useAiConfig()?.speech || []).filter((s) => s.hasKey);
+  // Available online voices, including the service that needs no key.
+  const cloud = (useAiConfig()?.speech || []).filter((s) => s.free || s.hasKey);
   const cloudVoice = (service: string, id: string) => `${cloudPrefix}${service}:${id}`;
   const chosen =
     (codex.includes(voice.slice(codexPrefix.length)) && voice.startsWith(codexPrefix)
@@ -110,13 +110,19 @@ export function VoiceButton({
           (cloudService
             ? '外放也能用，戴耳机更清楚。'
             : '用电脑自带的声音外放时，页老师的声音可能被当成你在说话，戴耳机更好。');
-  async function sample(id: string) {
+  async function sample() {
     if (busy) return;
     const s = await speaker();
     s.hush();
     const text = '你好，我来给你讲讲这一段。';
-    const said = `sample-${id}-${Date.now()}`;
-    if (await s.prepare(said, text)) void s.say(said);
+    // The native player keeps at most 40 characters of a sentence ID.
+    const said = `sample-${Date.now()}`;
+    // The voice reports errors; a failed preview must not leave a rejected promise.
+    try {
+      if (await s.prepare(said, text)) void s.say(said);
+    } catch {
+      /* Reported by the voice. */
+    }
   }
   return (
     <div className="wb-voice">
@@ -178,18 +184,9 @@ export function VoiceButton({
                 value={chosen}
                 onChange={(e) => {
                   setVoiceSettings({ voice: e.target.value });
-                  void sample(e.target.value);
+                  void sample();
                 }}
               >
-                {codex.length ? (
-                  <optgroup label="ChatGPT（Codex）">
-                    {codex.map((name) => (
-                      <option key={name} value={codexPrefix + name}>
-                        {codexName(name)}
-                      </option>
-                    ))}
-                  </optgroup>
-                ) : null}
                 {cloud.map((s) => (
                   <optgroup key={s.id} label={s.name}>
                     {s.voices.map((v) => (
@@ -206,6 +203,15 @@ export function VoiceButton({
                     </option>
                   ))}
                 </optgroup>
+                {codex.length ? (
+                  <optgroup label="ChatGPT（Codex）">
+                    {codex.map((name) => (
+                      <option key={name} value={codexPrefix + name}>
+                        {codexName(name)}
+                      </option>
+                    ))}
+                  </optgroup>
+                ) : null}
               </select>
             </label>
           ) : support && mode !== 'off' ? (
@@ -220,7 +226,9 @@ export function VoiceButton({
             </p>
           ) : cloudService ? (
             <p className="wb-voice-note">
-              声音由{cloudService.name}合成，按字数计费，用的是你自己的 API Key。
+              {cloudService.free
+                ? '朗读文字会发给微软合成，免费、无需 Key；需要联网，通道可能限流或停用。'
+                : `声音由${cloudService.name}合成，按字数计费，用的是你自己的 API Key。`}
             </p>
           ) : (
             <>

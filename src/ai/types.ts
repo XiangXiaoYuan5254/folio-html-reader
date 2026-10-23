@@ -55,15 +55,16 @@ export type AiConfig = {
   presets: AiPreset[];
   speech?: SpeechService[];
 };
-// A speech service people bring their own key for, whose voices the whiteboard teacher can
-// read its script in.
+// An online speech service whose voices the whiteboard teacher can read its script in.
 // `named`: it has a name to introduce itself by (芊悦), not only a description (温柔学姐).
 export type CloudVoice = { id: string; name: string; about: string; named?: boolean };
 export type SpeechService = {
   id: string;
   name: string;
   about: string;
-  keyUrl: string;
+  keyUrl?: string;
+  // An online service that needs no user key. This is not an offline system voice.
+  free?: boolean;
   voices: CloudVoice[];
   // It can also write down what the student says in a voice conversation.
   hears?: boolean;

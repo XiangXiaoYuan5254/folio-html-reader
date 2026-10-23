@@ -9,6 +9,7 @@ import { axesShapes, boardColor, dotShapes, graphShapes, svgShapes } from './boa
 import type { Axes, ShapeSpec } from './board-figure';
 import type { AiConfig, AiProvider, DocText, WireMessage } from './types';
 import type { Speaker, VoiceMode } from './voice';
+import { logSpeechFailure } from './speech-log';
 import type { BoardDocument } from './board-documents';
 import { prepareBoardReading } from './board-reading';
 import { keepSound, soundInfo } from './board-sound';
@@ -371,6 +372,9 @@ export type TutorState = {
   beat?: { key: number; dur: number } | null;
   // The next sentence's voice is still being made.
   voiceWait?: boolean;
+  // A sentence could not be prepared. Keep it pending until the student retries or
+  // chooses another voice; later sentences must not silently overtake it.
+  voiceError?: string;
 };
 // What came in for the request being answered, which the board shows while the teacher
 // thinks; it changes in place, read once a second rather than on every word.
@@ -906,7 +910,7 @@ export type SavedBoard = {
 };
 // A sentence being made ready to be said out loud.
 // `voice`: which of the voices chosen it is made in (Tutor.voiced).
-type Sound = { id: string; ms: Promise<number>; voice: number };
+type Sound = { id: string; ms: Promise<number>; voice: number; error?: string };
 type Queued = { cmd: Command; raw: string; sound?: Sound };
 type Options = {
   selection: string;
@@ -1513,7 +1517,7 @@ export class Tutor {
     this.pausedAt = 0;
     if (this.voicePaused) this.speaker?.resume();
     this.voicePaused = false;
-    this.set({ paused: false });
+    this.set({ paused: false, voiceError: undefined });
     this.wake();
   }
   setSpeed(speed: number) {
@@ -1535,6 +1539,7 @@ export class Tutor {
     this.voiceName = name;
     this.voice = next ? mode : 'off';
     this.speaker = next;
+    if (this.state.voiceError) this.resume();
     this.unspeak?.();
     this.unspeak = null;
     if (next) {
@@ -1678,6 +1683,7 @@ export class Tutor {
     this.speechEnd = this.drawEnd = this.dwellEnd = 0;
     this.speaker?.hush();
     this.voiceDone = null;
+    this.set({ voiceWait: false, voiceError: undefined });
     this.wake();
   }
   private closeTurn(interrupted: boolean) {
@@ -2003,12 +2009,23 @@ export class Tutor {
     const keep =
       this.options.save &&
       ((pcm: Uint8Array, rate: number, said?: string) =>
-        void keepSound(this.id, text, pcm, rate, said).catch(() => {}));
-    return {
+        void keepSound(this.id, text, pcm, rate, said).catch((error) =>
+          logSpeechFailure(this.id, text, 'cache', errorText(error)),
+        ));
+    const sound: Sound = {
       id,
-      ms: this.speaker!.prepare(id, text, keep ? { keep } : undefined),
+      ms: Promise.resolve(0),
       voice: this.voiced,
     };
+    // Attach the rejection handler immediately: prefetched sentences may fail before
+    // playback reaches them. Preserve the reason for the sentence that will be held.
+    sound.ms = this.speaker!.prepare(id, text, { board: this.id, ...(keep ? { keep } : {}) }).catch(
+      (error) => {
+        sound.error = errorText(error);
+        return 0;
+      },
+    );
+    return sound;
   }
   // Waits for a sentence to be ready to say: its length in ms, or 0 if it won't be said. A
   // speech service's sentence may be waiting for room in the minute: it is waited for rather
@@ -2021,13 +2038,20 @@ export class Tutor {
     );
     const start = performance.now();
     const service = !!this.speaker?.service;
-    const limit = service ? 60_000 : 8000;
-    while (run === this.run && ms === null && performance.now() - start < limit) {
+    // Online synthesis owns its retry deadlines, including time spent queued. A second
+    // shorter timeout here would abandon a request that is still recovering.
+    const limit = service ? Infinity : 8000;
+    while (
+      run === this.run &&
+      sound.voice === this.voiced &&
+      ms === null &&
+      performance.now() - start < limit
+    ) {
       if (service && !this.state.voiceWait && performance.now() - start > 2000)
         this.set({ voiceWait: true });
       await this.nap(250);
     }
-    if (this.state.voiceWait) this.set({ voiceWait: false });
+    if (run === this.run && this.state.voiceWait) this.set({ voiceWait: false });
     return ms ?? 0;
   }
   // Waits for a live voice to start on a sentence; one that stays silent is given up on.
@@ -2093,21 +2117,32 @@ export class Tutor {
         if (run !== this.run) return;
         const text = next.cmd.text;
         let dur = Math.max(900, (text.length * 1000) / (charsPerSecond * speed));
-        const speaker = this.speaker;
+        let speaker = this.speaker;
         let live = '';
         // Watched again, what a ChatGPT voice actually said for it is shown.
         let shown = text;
-        if (speaker) {
+        while (speaker) {
           // Taken before the voice changed, or being made when it did, it is made again.
-          let sound = next.sound?.voice === this.voiced ? next.sound : this.sound(text);
-          let ms = await this.ready(run, sound);
-          if (run === this.run && sound.voice !== this.voiced && this.speaker === speaker) {
-            sound = this.sound(text);
-            ms = await this.ready(run, sound);
-          }
+          const sound = next.sound?.voice === this.voiced ? next.sound : this.sound(text);
+          next.sound = undefined;
+          const ms = await this.ready(run, sound);
           // Paused while it was being made, it is said once the lesson goes on.
           await this.until(run, 0);
           if (run !== this.run) return;
+          if (sound.voice !== this.voiced || this.speaker !== speaker) {
+            speaker = this.speaker;
+            continue;
+          }
+          if (ms <= 0 && !speaker.live) {
+            const message = sound.error || '声音没有准备好，请重试本句或换一个声音';
+            void logSpeechFailure(this.id, text, 'prepare', message);
+            this.set({ phase: 'teaching', voiceError: message });
+            this.pause();
+            await this.until(run, 0);
+            if (run !== this.run) return;
+            speaker = this.speaker;
+            continue;
+          }
           // Said at the speed it is now, which may have changed while it was being made.
           if (ms > 0 && this.speaker === speaker) {
             dur = ms / this.state.speed;
@@ -2115,6 +2150,7 @@ export class Tutor {
             if (speaker.live) live = sound.id;
             shown = speaker.said?.(sound.id) || text;
           }
+          break;
         }
         this.saying = text;
         if (live) {

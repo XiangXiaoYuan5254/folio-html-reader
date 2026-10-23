@@ -13,8 +13,8 @@ import type { CloudVoice } from './types';
 // listened to by electron/hearing.cjs: written down on this computer, or by a speech service
 // the student has a key for (`ears`). With a Codex login the teacher can be one of ChatGPT's
 // voices instead, which also does its own listening (codex-voice.ts). With a speech
-// service's key (通义百炼, 豆包语音, MiniMax) it can read its script in one of that service's
-// voices, made in electron/cloud-voice.cjs and played like the system's.
+// service (free Edge TTS, or 通义百炼, 豆包语音, MiniMax with a key) it can read its script
+// in that service's voices, made in electron/cloud-voice.cjs and played like the system's.
 
 export type VoiceMode = 'off' | 'speak' | 'talk';
 export type VoiceOption = {
@@ -33,6 +33,7 @@ export type VoiceOption = {
 type Settings = { mode: VoiceMode; voice: string; ears: string };
 export const codexPrefix = 'codex:';
 export const cloudPrefix = 'cloud:';
+const defaultVoice = `${cloudPrefix}edge:zh-CN-XiaoxiaoNeural`;
 const settingsKey = 'folio.board-voice';
 function loadSettings(): Settings {
   try {
@@ -40,11 +41,11 @@ function loadSettings(): Settings {
     const mode = ['off', 'speak', 'talk'].includes(saved?.mode) ? saved.mode : 'off';
     return {
       mode,
-      voice: typeof saved?.voice === 'string' ? saved.voice : '',
+      voice: typeof saved?.voice === 'string' && saved.voice ? saved.voice : defaultVoice,
       ears: typeof saved?.ears === 'string' ? saved.ears : 'local',
     };
   } catch {
-    return { mode: 'off', voice: '', ears: 'local' };
+    return { mode: 'off', voice: defaultVoice, ears: 'local' };
   }
 }
 let settings = loadSettings();
@@ -238,6 +239,7 @@ export function spoken(text: string) {
 export type Prepare = {
   keep?: (pcm: Uint8Array, rate: number, said?: string) => void;
   local?: boolean;
+  board?: string;
 };
 // Says the teacher's sentences. A sentence is prepared as soon as it arrives, so the next
 // one is ready when the one before ends.
@@ -248,7 +250,8 @@ export type Speaker = {
   // A speech service's voice: each sentence is a paid request, of which the service allows
   // only so many a minute, so a sentence can take a while to come.
   service?: boolean;
-  // Resolves with how long saying it takes at normal speed, in ms; 0 when it can't be said.
+  // Resolves with its length in ms; 0 when cancelled. Failures reject, so the board can
+  // hold the sentence instead of displaying it as though it had been spoken.
   prepare(id: string, text: string, how?: Prepare): Promise<number>;
   // Resolves once it has been said, or was hushed.
   say(id: string): Promise<void>;
@@ -275,10 +278,25 @@ export type Speaker = {
 };
 
 function helperSpeaker(): Speaker {
-  const ready = new Map<string, (ms: number) => void>();
+  const ready = new Map<
+    string,
+    {
+      resolve: (ms: number) => void;
+      reject: (error: Error) => void;
+      timer?: ReturnType<typeof setTimeout>;
+    }
+  >();
   const done = new Map<string, () => void>();
-  const settle = () => {
-    ready.forEach((r) => r(0));
+  const finish = (id: string, ms: number, error?: Error) => {
+    const item = ready.get(id);
+    if (!item) return;
+    clearTimeout(item.timer);
+    ready.delete(id);
+    if (error) item.reject(error);
+    else item.resolve(ms);
+  };
+  const settle = (error?: Error) => {
+    ready.forEach((_, id) => finish(id, 0, error));
     done.forEach((d) => d());
     ready.clear();
     done.clear();
@@ -287,41 +305,58 @@ function helperSpeaker(): Speaker {
     if (e.type !== 'speech') return;
     const ev = e.event;
     if (ev.type === 'ready' || ev.type === 'fail') {
-      ready.get(ev.id)?.(ev.type === 'ready' ? ev.ms : 0);
-      ready.delete(ev.id);
+      finish(
+        ev.id,
+        ev.type === 'ready' ? ev.ms : 0,
+        ev.type === 'fail' ? Error(ev.message || '声音准备失败') : undefined,
+      );
     } else if (ev.type === 'done') {
       done.get(ev.id)?.();
       done.delete(ev.id);
-    } else if (ev.type === 'exit') settle();
+    } else if (ev.type === 'exit') settle(Error('声音播放进程已退出，请重试本句'));
   });
   const send = (command: Record<string, unknown>) => invoke('speech', command);
   return {
     prepare(id, text, how = {}) {
-      return new Promise((resolve) => {
-        ready.set(id, resolve);
+      return new Promise<number>((resolve, reject) => {
+        ready.set(id, { resolve, reject });
         // Made by the service and handed to the helper, which says it was ready.
         if (!how.local && usingCloud())
           return void invoke<{ pcm: Uint8Array; rate: number } | true | null>('cloud-voice', {
             id,
+            board: how.board,
+            sourceText: text,
             text: spoken(text),
             voice: settings.voice,
             to: 'helper',
             keep: !!how.keep,
           }).then(
             (sound) => {
+              if (!sound) {
+                finish(id, 0);
+              }
               if (sound && sound !== true) how.keep?.(sound.pcm, sound.rate);
+              // Synthesis has its own retries/timeouts. Only start the helper watchdog
+              // after the sound arrives, so a slow network cannot cut those retries off.
+              const pending = ready.get(id);
+              if (pending)
+                pending.timer = setTimeout(
+                  () => finish(id, 0, Error('播放器准备声音超时，请重试本句')),
+                  8000,
+                );
             },
             (err) => {
-              ready.get(id)?.(0);
-              ready.delete(id);
-              report(errorText(err));
+              if (ready.has(id)) {
+                finish(id, 0, Error(errorText(err)));
+                report(errorText(err));
+              }
             },
           );
         void speechSupport()
           .then(({ voices }) =>
             send({ type: 'prepare', id, text, voice: voiceFor(text, voices)?.id }),
           )
-          .catch(() => resolve(0));
+          .catch((error) => finish(id, 0, Error(errorText(error))));
       });
     },
     say(id) {
@@ -384,21 +419,28 @@ function pageSpeaker(): Speaker {
   const done = new Set<() => void>();
   const audio = player();
   let rate = 1;
+  let hushes = 0;
   return {
     async prepare(id, text, how = {}) {
+      const at = hushes;
       if (how.local || !usingCloud()) {
         texts.set(id, text);
         return hasHan(text) ? text.length * 220 : text.length * 70;
       }
       try {
-        const sound = await cloudSound(text, settings.voice);
+        const sound = await cloudSound(text, settings.voice, undefined, { id, board: how.board });
         if (!sound) return 0;
+        if (at !== hushes) {
+          URL.revokeObjectURL(sound.url);
+          return 0;
+        }
         sounds.set(id, sound.url);
         how.keep?.(sound.pcm, sound.rate);
         return sound.ms;
       } catch (err) {
+        if (at !== hushes) return 0;
         report(errorText(err));
-        return 0;
+        throw err;
       }
     },
     say(id) {
@@ -436,6 +478,7 @@ function pageSpeaker(): Speaker {
       if (typeof speechSynthesis !== 'undefined') speechSynthesis.resume();
     },
     hush() {
+      hushes++;
       texts.clear();
       sounds.forEach((url) => URL.revokeObjectURL(url));
       sounds.clear();
@@ -451,16 +494,23 @@ function pageSpeaker(): Speaker {
   };
 }
 
-// Whether the teacher reads in a speech service's voice whose key is there.
+// Whether the teacher reads in an available online voice, with or without a key.
 function usingCloud() {
   if (!settings.voice.startsWith(cloudPrefix)) return false;
   const service = settings.voice.split(':')[1];
-  return !!currentAiConfig()?.speech?.some((s) => s.id === service && s.hasKey);
+  return !!currentAiConfig()?.speech?.some((s) => s.id === service && (s.free || s.hasKey));
 }
 // A sentence said by a speech service, to play in the page: null when the teacher was
 // hushed while it was made. `key` is one the settings are trying before it is saved.
-async function cloudSound(text: string, voice: string, key?: string) {
+async function cloudSound(
+  text: string,
+  voice: string,
+  key?: string,
+  context: { id?: string; board?: string } = {},
+) {
   const sound = await invoke<{ pcm: Uint8Array; rate: number } | null>('cloud-voice', {
+    ...context,
+    sourceText: text,
     text: spoken(text),
     voice,
     to: 'page',
@@ -490,6 +540,7 @@ async function cloudSound(text: string, voice: string, key?: string) {
     rate,
   };
 }
+
 // Says hello in one of a speech service's voices, for the settings to try a key and a voice.
 export async function tryCloudVoice(service: string, v: CloudVoice, key?: string) {
   const hello = v.named

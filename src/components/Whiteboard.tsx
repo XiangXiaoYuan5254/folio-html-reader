@@ -1640,7 +1640,9 @@ export default function Whiteboard({
           ) : state.phase === 'idle' && !state.blocks.length ? (
             <div className="wb-empty">在下面提问，也可以添加或拖入文档、图片让页老师讲解</div>
           ) : null}
-          {state.paused ? (
+          {state.voiceError ? (
+            <div className="wb-paused">语音失败，已停在当前句</div>
+          ) : state.paused ? (
             <div className="wb-paused">
               {tutor.replaying
                 ? '已暂停 · 按空格继续，← → 换到上一句、下一句'
@@ -1674,7 +1676,11 @@ export default function Whiteboard({
               <GraduationCap size={17} />
             </span>
             <div className="wb-caption-body" aria-live="polite">
-              {state.phase === 'error' ? (
+              {state.voiceError ? (
+                <p className="wb-error" role="alert">
+                  {state.voiceError}。请重试本句，或在语音设置里换一个声音。
+                </p>
+              ) : state.phase === 'error' ? (
                 <p className="wb-error">{state.error}</p>
               ) : (
                 <>
@@ -1703,6 +1709,12 @@ export default function Whiteboard({
               )}
             </div>
             <div className="wb-controls">
+              {state.voiceError ? (
+                <button className="wb-retry" onClick={() => tutor.resume()}>
+                  <RotateCcw size={13} />
+                  重试本句
+                </button>
+              ) : null}
               {state.phase === 'error' ? (
                 <button className="wb-retry" onClick={() => tutor.retry()}>
                   <RotateCcw size={13} />

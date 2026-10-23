@@ -787,9 +787,9 @@ function SpeechVoices({ services }: { services: SpeechService[] }) {
     <div className="ai-provider-form">
       <div className="ai-form-fields">
         <p className="ai-settings-lead">
-          页老师照着讲稿念的时候，可以换成这些服务的真人声音，比电脑自带的声音自然得多。填好其中一个的
-          API Key，就能在白板的「出声」菜单里选它的声音。费用由服务商按字数收取，页间不经手。 在
-          Windows 上语音对话时，通义百炼和豆包语音还能识别你说的话，按时长计费。
+          页老师可以用这些在线合成的声音照着讲稿念。Edge TTS 免费、无需 Key，可以直接试听，
+          再到白板的「出声」菜单里选择。其他服务需要填 API Key，费用由服务商按字数收取，页间不经手。
+          朗读文字会发送给所选服务；Windows 上的通义百炼和豆包语音也可识别你说的话，按时长计费。
         </p>
         {services.map((s) => (
           <SpeechServiceKey key={s.id} service={s} />
@@ -848,10 +848,14 @@ function SpeechServiceKey({ service }: { service: SpeechService }) {
       <div className="ai-voice-name">
         <strong>
           {service.name}
-          {service.hasKey ? (
+          {service.free || service.hasKey ? (
             <em className="ai-voice-state on">
               <Check size={11} />
-              {service.shared ? `已接入 · 用「${service.shared}」的 Key` : '已接入'}
+              {service.free
+                ? '无需 Key'
+                : service.shared
+                  ? `已接入 · 用「${service.shared}」的 Key`
+                  : '已接入'}
             </em>
           ) : (
             <em className="ai-voice-state">未接入</em>
@@ -859,44 +863,46 @@ function SpeechServiceKey({ service }: { service: SpeechService }) {
         </strong>
         <span>{service.about}</span>
       </div>
-      <div className="ai-field">
-        <span>
-          API Key
-          <button
-            type="button"
-            className="ai-link"
-            onClick={() => void invoke('external', { url: service.keyUrl })}
-          >
-            去 {service.name} 获取
-            <ExternalLink size={11} />
-          </button>
-        </span>
-        <div className="ai-key-field">
-          <KeyRound size={14} />
-          <input
-            type="password"
-            autoComplete="off"
-            spellCheck={false}
-            aria-label={`${service.name} 的 API Key`}
-            placeholder={
-              service.keyHint
-                ? `已保存 ${service.keyHint}，留空则不修改`
-                : service.shared
-                  ? `正在用「${service.shared}」的 Key，也可以单独填一个`
-                  : '粘贴 API Key'
-            }
-            value={key}
-            onChange={(e) => {
-              setKey(e.target.value.trim());
-              setStatus(null);
-            }}
-          />
+      {!service.free ? (
+        <div className="ai-field">
+          <span>
+            API Key
+            <button
+              type="button"
+              className="ai-link"
+              onClick={() => void invoke('external', { url: service.keyUrl })}
+            >
+              去 {service.name} 获取
+              <ExternalLink size={11} />
+            </button>
+          </span>
+          <div className="ai-key-field">
+            <KeyRound size={14} />
+            <input
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              aria-label={`${service.name} 的 API Key`}
+              placeholder={
+                service.keyHint
+                  ? `已保存 ${service.keyHint}，留空则不修改`
+                  : service.shared
+                    ? `正在用「${service.shared}」的 Key，也可以单独填一个`
+                    : '粘贴 API Key'
+              }
+              value={key}
+              onChange={(e) => {
+                setKey(e.target.value.trim());
+                setStatus(null);
+              }}
+            />
+          </div>
+          {service.balance && service.hasKey ? (
+            // Asked again once a new key is saved.
+            <BalanceLine key={service.keyHint} of={`speech:${service.id}`} fresh />
+          ) : null}
         </div>
-        {service.balance && service.hasKey ? (
-          // Asked again once a new key is saved.
-          <BalanceLine key={service.keyHint} of={`speech:${service.id}`} fresh />
-        ) : null}
-      </div>
+      ) : null}
       {status ? (
         <p className={`ai-status ${status.ok ? 'ok' : 'error'}`} role="status">
           {status.ok ? <Check size={14} /> : <CircleX size={14} />}
@@ -933,15 +939,17 @@ function SpeechServiceKey({ service }: { service: SpeechService }) {
         <button
           type="button"
           className="secondary-button"
-          disabled={!!busy || (!key && !service.hasKey)}
+          disabled={!!busy || (!service.free && !key && !service.hasKey)}
           onClick={() => void listen()}
         >
           {busy === 'try' ? <LoaderCircle className="spin" size={14} /> : <Volume2 size={14} />}
           试听
         </button>
-        <button className="primary-button" disabled={!!busy || !key}>
-          {busy === 'save' ? '保存中…' : '保存'}
-        </button>
+        {!service.free ? (
+          <button className="primary-button" disabled={!!busy || !key}>
+            {busy === 'save' ? '保存中…' : '保存'}
+          </button>
+        ) : null}
       </div>
     </form>
   );

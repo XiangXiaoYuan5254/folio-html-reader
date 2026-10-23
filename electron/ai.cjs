@@ -35,6 +35,7 @@ function createAi({
   atomicWrite,
   version = '',
   openUrl,
+  speechLog,
 }) {
   let cache = null;
   const running = new Map();
@@ -107,6 +108,7 @@ function createAi({
   async function saveSpeechKey({ service, key }) {
     const c = await read();
     if (!speechServices.serviceFor(service)) throw new AiError('没有这个语音服务');
+    if (speechServices.serviceFor(service).free) throw new AiError('这个语音服务无需 API Key');
     key = typeof key === 'string' ? key.trim() : '';
     if (key.length > 4096 || /\s/.test(key)) throw new AiError('API Key 格式不正确');
     const speech = { ...c.speech };
@@ -118,6 +120,7 @@ function createAi({
   }
   // A speech service's key and the host it goes to; `draft` is one the settings are trying.
   async function speechAccess(service, draft = '') {
+    if (service.free) return {};
     const c = await read();
     const own = c.speech[service.id];
     const shared = !own?.key && sharedKey(c, service);
@@ -130,16 +133,27 @@ function createAi({
   }
   // Says a sentence in a speech service's voice; the settings form may try a key not saved.
   // `stale`: the sentence is no longer wanted, while it waits its turn.
-  async function speak({ voice, text, key }, stale) {
-    const { service, voice: id } = speechServices.parseVoice(voice);
+  async function speak({ voice, text, key, id, board, sourceText }, stale) {
+    const { service, voice: voiceId } = speechServices.parseVoice(voice);
     const draft = typeof key === 'string' ? key.trim() : '';
     return speechServices.synthesize({
       fetch,
       service,
-      voice: id,
+      voice: voiceId,
       ...(await speechAccess(service, draft)),
       text: clean(text, 2000),
       stale,
+      log: speechLog,
+      context: {
+        request: crypto.randomUUID(),
+        board: clean(board, 40),
+        sentence: clean(id, 40),
+        textHash: crypto
+          .createHash('sha1')
+          .update(typeof sourceText === 'string' ? sourceText.slice(0, 10000) : clean(text, 2000))
+          .digest('hex')
+          .slice(0, 24),
+      },
     });
   }
   // For writing down what the student says with a speech service.

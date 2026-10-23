@@ -1,14 +1,30 @@
-// Voices from speech services people bring their own API key for, for the whiteboard teacher
-// reading its script out loud: 通义百炼 (Qwen-TTS), 豆包语音 and MiniMax. A sentence is
-// synthesized here, with the key attached, and comes back as 16-bit mono samples.
+// Online voices for the whiteboard teacher reading its script. Edge needs no user key;
+// the other services use one. Every service returns 16-bit mono samples for the same player.
 const crypto = require('node:crypto');
 const { httpError, money, AiError } = require('./ai-providers.cjs');
+const edge = require('./edge-voice.cjs');
 
 // `voices` are the ones fit for teaching, in Mandarin, best first; a `named` voice has a
 // name to introduce itself by, the others are only described. `shares` is the AI
 // service whose key also works here. `hears`: it can also write down what the student says
 // in a voice conversation (cloud-hearing.cjs). `balance`: the key can ask what's left.
 const services = [
+  {
+    id: 'edge',
+    name: 'Edge TTS（推荐）',
+    about: '无需 API Key，朗读文字会发给微软合成。免费通道可能限流或停用，没有官方可用性保障。',
+    free: true,
+    voices: [
+      { id: 'zh-CN-XiaoxiaoNeural', name: '晓晓', about: '女声，温暖自然', named: true },
+      { id: 'zh-CN-XiaoyiNeural', name: '晓伊', about: '女声，活泼', named: true },
+      { id: 'zh-CN-YunxiNeural', name: '云希', about: '男声，年轻阳光', named: true },
+      { id: 'zh-CN-YunjianNeural', name: '云健', about: '男声，有感染力', named: true },
+      { id: 'zh-CN-YunyangNeural', name: '云扬', about: '男声，新闻播报', named: true },
+      { id: 'zh-CN-YunxiaNeural', name: '云夏', about: '男声，活泼', named: true },
+      { id: 'zh-CN-liaoning-XiaobeiNeural', name: '晓北', about: '女声，东北话', named: true },
+      { id: 'zh-CN-shaanxi-XiaoniNeural', name: '晓妮', about: '女声，陕西话', named: true },
+    ],
+  },
   {
     id: 'qwen',
     name: '通义百炼',
@@ -242,7 +258,7 @@ async function minimax({ fetch, key, voice, text, signal }) {
   );
 }
 
-const synthesizers = { qwen, doubao, minimax };
+const synthesizers = { qwen, doubao, minimax, edge: (options) => edge.synthesize(options) };
 
 // MiniMax makes an account only 10 sentences a minute, or 20 once it has been topped up
 // (platform.minimaxi.com/docs/guides/rate-limits), and turns the rest away. A sentence
@@ -276,16 +292,47 @@ const paces = { minimax: perMinute(20) };
 
 // Says `text` in a service's voice: { pcm: 16-bit mono samples, rate }, or null when
 // `stale` turned true while it waited its turn.
-async function synthesize({ fetch, service, voice, key, host, text, stale = () => false }) {
-  if (!key) throw new AiError(`还没有填 ${service.name} 的 API Key：请在 AI 设置 › 语音服务里填写`);
+async function synthesize({
+  fetch,
+  service,
+  voice,
+  key,
+  host,
+  text,
+  stale = () => false,
+  log = () => {},
+  context = {},
+}) {
+  if (!service.free && !key)
+    throw new AiError(`还没有填 ${service.name} 的 API Key：请在 AI 设置 › 语音服务里填写`);
+  if (service.free && !service.voices.some((v) => v.id === voice))
+    throw new AiError('Edge TTS 没有这个声音');
   const pace = paces[service.id];
+  const record = (event, details = {}) =>
+    log({
+      ...context,
+      event,
+      service: service.id,
+      voice,
+      chars: text.length,
+      spokenHash: crypto.createHash('sha1').update(text).digest('hex').slice(0, 24),
+      ...details,
+    });
   for (let tries = 0; ; tries++) {
+    if (stale()) return null;
     const ask = pace && (await pace.take(stale));
     if (pace && !ask) return null;
+    const started = Date.now();
+    const attempt = tries + 1;
+    let retryMs = 0;
+    await record('start', { attempt });
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30_000);
+    const timer = setTimeout(() => controller.abort({ code: 'ETIMEDOUT' }), 30_000);
+    const cancelled = setInterval(() => {
+      if (stale()) controller.abort();
+    }, 150);
     try {
-      return await synthesizers[service.id]({
+      const sound = await synthesizers[service.id]({
         fetch,
         key,
         host,
@@ -293,11 +340,51 @@ async function synthesize({ fetch, service, voice, key, host, text, stale = () =
         text,
         signal: controller.signal,
       });
+      if (stale()) {
+        await record('cancelled', { attempt, elapsedMs: Date.now() - started });
+        return null;
+      }
+      await record('success', {
+        attempt,
+        elapsedMs: Date.now() - started,
+        bytes: sound.pcm.length,
+        durationMs: Math.round((sound.pcm.length / 2 / sound.rate) * 1000),
+      });
+      return sound;
     } catch (e) {
-      if (!pace || e?.status !== 429 || tries >= 2) throw e;
-      pace.away(ask);
+      if (stale()) {
+        await record('cancelled', { attempt, elapsedMs: Date.now() - started });
+        return null;
+      }
+      // Edge requests are free; retry transient failures twice. Respect Retry-After;
+      // a longer server cooldown is shown to the user instead of retried too early.
+      const retryEdge =
+        service.id === 'edge' && e?.retry && tries < 2 && !(e.retryAfterMs > 30_000);
+      const retryPaced = pace && e?.status === 429 && tries < 2;
+      if (retryEdge) retryMs = Math.max(1000 * 2 ** tries, e.retryAfterMs || 0);
+      await record(retryEdge || retryPaced ? 'retry' : 'failed', {
+        attempt,
+        elapsedMs: Date.now() - started,
+        retryMs,
+        stage: e.stage,
+        status: e.status,
+        code: e.code,
+        closeCode: e.closeCode,
+        bytes: e.bytes,
+        message: service.id === 'edge' ? e.message : '语音合成失败',
+      });
+      if (!retryEdge && !retryPaced) throw e;
+      if (retryPaced) pace.away(ask);
     } finally {
       clearTimeout(timer);
+      clearInterval(cancelled);
+    }
+    const until = Date.now() + retryMs;
+    while (!stale() && Date.now() < until)
+      await new Promise((resolve) => setTimeout(resolve, Math.min(150, until - Date.now())));
+    if (stale()) {
+      await record('cancelled', { attempt, stage: 'backoff', elapsedMs: Date.now() - started });
+      return null;
     }
   }
 }

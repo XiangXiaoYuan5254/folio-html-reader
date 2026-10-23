@@ -25,6 +25,7 @@ const { createUpdates } = require('./updater.cjs');
 const { createAi } = require('./ai.cjs');
 const { createLicense } = require('./license.cjs');
 const { createSpeech } = require('./speech.cjs');
+const { createSpeechLog } = require('./speech-log.cjs');
 const { createHearing } = require('./hearing.cjs');
 const { limiter } = require('./cloud-voice.cjs');
 const papers = require('./papers.cjs');
@@ -50,6 +51,7 @@ const needMember = async () => {
 };
 // The teacher's sentences said by a speech service, two at a time.
 const voiceQueue = limiter(2);
+let speechLog;
 let voiceHushes = 0;
 const toWindow = (event) => {
   if (win && !win.isDestroyed()) win.webContents.send('folio:event', event);
@@ -345,6 +347,7 @@ app
       packaged: app.isPackaged,
       onChange: (status) => toWindow({ type: 'license', status }),
     });
+    speechLog = createSpeechLog(path.join(app.getPath('userData'), 'logs', 'speech.jsonl'));
     ai = createAi({
       file: path.join(app.getPath('userData'), 'ai.json'),
       kimiHome: path.join(app.getPath('userData'), 'kimi-code'),
@@ -352,6 +355,7 @@ app
       atomicWrite,
       version: app.getVersion(),
       openUrl: (url) => shell.openExternal(url),
+      speechLog,
       ...keyProtection(),
     });
     protocol.handle('app', async (request) => {
@@ -497,6 +501,7 @@ app
           'ai-speech-key',
           'cloud-voice',
           'cloud-voice-hush',
+          'speech-diagnostic',
           'license',
           'license-activate',
           'license-trial',
@@ -759,6 +764,9 @@ app
         }
         case 'cloud-voice-hush':
           voiceHushes++;
+          return true;
+        case 'speech-diagnostic':
+          await speechLog({ ...payload, event: 'client-failed' });
           return true;
         case 'speech-listen':
           return speech.listen(payload);
