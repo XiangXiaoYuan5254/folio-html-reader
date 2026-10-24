@@ -19,6 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import { invoke } from '../api';
+import { useUnreadAnnouncements } from '../announcements';
 import { errorText, savePrefs, setAiConfig, useAiConfig, useInfo } from '../ai/client';
 import type {
   AiConfig,
@@ -99,18 +100,30 @@ export function AiSettings({
   root,
   projectName,
   page = '',
+  embedded = false,
+  presetRequest,
+  onNavigate,
+  onBusyChange,
 }: {
   onClose: () => void;
   root?: string;
   projectName?: string;
   // Opens on a page besides the services.
   page?: '' | 'voices';
+  embedded?: boolean;
+  presetRequest?: { id: string };
+  onNavigate?: (page: 'voices' | 'announcements') => void;
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const config = useAiConfig();
   const [selected, setSelected] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState<Form | null>(null);
   const [busy, setBusy] = useState<'' | 'save' | 'test' | 'models'>('');
+  useEffect(() => {
+    onBusyChange?.(!!busy);
+    return () => onBusyChange?.(false);
+  }, [busy, onBusyChange]);
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [modelInfo, setModelInfo] = useState<ModelOption[] | null>(null);
   const models = modelInfo && modelInfo.map((m) => m.id);
@@ -120,6 +133,7 @@ export function AiSettings({
   // A page besides the services: the reader profile, each part's model, the voices the
   // whiteboard teacher can read in, or the model vendors' offers.
   const [side, setSide] = useState<'' | 'profile' | 'uses' | 'voices' | 'announcements'>(page);
+  const unseen = useUnreadAnnouncements();
   const panel = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!config || selected !== null || adding) return;
@@ -130,8 +144,11 @@ export function AiSettings({
     } else setAdding(true);
   }, [config]);
   useEffect(() => {
-    panel.current?.focus();
+    if (!embedded) panel.current?.focus();
   }, []);
+  useEffect(() => {
+    if (presetRequest && config) configure(presetRequest.id);
+  }, [presetRequest, !!config]);
   const preset = config?.presets.find((p) => p.id === form?.preset);
   const stored = config?.providers.find((p) => p.id === form?.id);
   const dirty = useMemo(() => {
@@ -282,27 +299,31 @@ export function AiSettings({
   const needsKey = !preset?.noKey;
   return (
     <div
-      className="modal-backdrop"
+      className={embedded ? 'ai-settings-embedded' : 'modal-backdrop'}
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !busy) onClose();
+        if (!embedded && e.target === e.currentTarget && !busy) onClose();
       }}
     >
       <div
         className="ai-settings"
-        role="dialog"
-        aria-modal="true"
+        role={embedded ? undefined : 'dialog'}
+        aria-modal={embedded ? undefined : true}
         aria-labelledby="ai-settings-title"
         tabIndex={-1}
         ref={panel}
         onKeyDown={(e) => {
           if (e.key === 'Escape' && !busy) {
-            e.stopPropagation();
-            if (modelsOpen) setModelsOpen(false);
-            else onClose();
+            if (modelsOpen) {
+              e.stopPropagation();
+              setModelsOpen(false);
+            } else if (!embedded) {
+              e.stopPropagation();
+              onClose();
+            }
           }
         }}
       >
-        <header className="ai-settings-heading">
+        <header className="ai-settings-heading" hidden={embedded}>
           <h2 id="ai-settings-title">
             <Sparkle size={17} />
             AI 设置
@@ -312,8 +333,40 @@ export function AiSettings({
             <X size={18} />
           </button>
         </header>
+        {embedded ? (
+          <nav className="settings-subnav" aria-label="AI 设置分类">
+            {(
+              [
+                ['', '服务与账号'],
+                ['uses', '各功能的模型'],
+                ['profile', '读者画像'],
+              ] as const
+            ).map(([id, title]) => (
+              <button
+                type="button"
+                key={id}
+                className={side === id ? 'active' : ''}
+                aria-current={side === id ? 'page' : undefined}
+                onClick={() => setSide(id)}
+              >
+                {title}
+              </button>
+            ))}
+            <span className="toolbar-flex" />
+            <button type="button" onClick={() => onNavigate?.('voices')}>
+              语音服务
+            </button>
+            <button type="button" onClick={() => onNavigate?.('announcements')}>
+              公告{unseen ? <span className="announcement-dot" aria-hidden="true" /> : null}
+            </button>
+          </nav>
+        ) : null}
         <div className="ai-settings-body">
-          <nav className="ai-provider-list" aria-label="已添加的 AI 服务">
+          <nav
+            className="ai-provider-list"
+            aria-label="已添加的 AI 服务"
+            hidden={embedded && !!side}
+          >
             {config?.providers.map((p) => (
               <button
                 key={p.id}
@@ -338,35 +391,40 @@ export function AiSettings({
               <Plus size={14} />
               添加服务
             </button>
-            <button
-              className={`ai-profile-link ${side === 'uses' ? 'active' : ''}`}
-              disabled={!config?.providers.length}
-              onClick={() => setSide('uses')}
-            >
-              <Blocks size={14} />
-              各功能的模型
-            </button>
-            <button
-              className={`ai-profile-link ${side === 'voices' ? 'active' : ''}`}
-              onClick={() => setSide('voices')}
-            >
-              <AudioLines size={14} />
-              语音服务
-            </button>
-            <button
-              className={`ai-profile-link ${side === 'profile' ? 'active' : ''}`}
-              onClick={() => setSide('profile')}
-            >
-              <UserRound size={14} />
-              读者画像
-            </button>
-            <button
-              className={`ai-profile-link ${side === 'announcements' ? 'active' : ''}`}
-              onClick={() => setSide('announcements')}
-            >
-              <Megaphone size={14} />
-              公告
-            </button>
+            {!embedded ? (
+              <>
+                <button
+                  className={`ai-profile-link ${side === 'uses' ? 'active' : ''}`}
+                  disabled={!config?.providers.length}
+                  onClick={() => setSide('uses')}
+                >
+                  <Blocks size={14} />
+                  各功能的模型
+                </button>
+                <button
+                  className={`ai-profile-link ${side === 'voices' ? 'active' : ''}`}
+                  onClick={() => setSide('voices')}
+                >
+                  <AudioLines size={14} />
+                  语音服务
+                </button>
+                <button
+                  className={`ai-profile-link ${side === 'profile' ? 'active' : ''}`}
+                  onClick={() => setSide('profile')}
+                >
+                  <UserRound size={14} />
+                  读者画像
+                </button>
+                <button
+                  className={`ai-profile-link ${side === 'announcements' ? 'active' : ''}`}
+                  onClick={() => setSide('announcements')}
+                >
+                  <Megaphone size={14} />
+                  公告
+                  {unseen ? <span className="announcement-dot" aria-hidden="true" /> : null}
+                </button>
+              </>
+            ) : null}
           </nav>
           <section className="ai-settings-main">
             {side === 'profile' ? (
@@ -803,7 +861,7 @@ function UseModels() {
 
 // Speech services whose voices the whiteboard teacher can read its script in, and which on
 // Windows can also write down what the student says.
-function SpeechVoices({ services }: { services: SpeechService[] }) {
+export function SpeechVoices({ services }: { services: SpeechService[] }) {
   return (
     <div className="ai-provider-form">
       <div className="ai-form-fields">

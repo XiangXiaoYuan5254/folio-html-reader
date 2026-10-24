@@ -24,9 +24,8 @@ export const prices = {
   month: { amount: 1990, name: '页间会员 30 天' },
   year: { amount: 9900, name: '页间会员 365 天' },
   life: {
-    amount: 29800,
+    amount: 19800,
     name: '页间永久会员',
-    early: { amount: 19800, until: Date.parse('2026-11-15T00:00:00+08:00') },
   },
 };
 export const rules = {
@@ -38,11 +37,12 @@ export const rules = {
 // Inviting friends. A computer that has never paid takes `discount[plan]` (fen) off its first
 // purchase of that plan with another computer's invite code; other plans take nothing. Each code
 // works for one friend, and the code's owner gets nothing for it. After `until` (null: no end)
-// no code takes anything off.
+// no code takes anything off. `discountUntil` ends only the named plan's discount (exclusive).
 // `share` is what 复制邀请 copies, {code} being the computer's own code and {discount} what it
 // takes off each plan.
 export const invites = {
-  discount: { year: 1000, life: 2000 },
+  discount: { year: 5000, life: 10000 },
+  discountUntil: { life: Date.parse('2026-11-25T00:00:00+08:00') },
   share:
     '我在用「页间」读文档，推荐你也试试。\n填写我的邀请码：{code}\n第一次开通{discount}（该码只能用一次）\n电脑上下载：https://helloxxy.com/works/folio/',
   until: null,
@@ -50,11 +50,38 @@ export const invites = {
 const planNames = { month: '月度会员', year: '年度会员', life: '永久会员' };
 // Fen as ¥10, ¥19.9.
 const yuan = (fen) => `¥${(fen / 100).toFixed(fen % 10 ? 2 : fen % 100 ? 1 : 0)}`;
-const shareText = (code) =>
+const inviteDiscounts = (at) =>
+  Object.fromEntries(
+    Object.entries(invites.discount).filter(
+      ([plan, amount]) =>
+        amount > 0 &&
+        (!invites.until || at < invites.until) &&
+        (!invites.discountUntil[plan] || at < invites.discountUntil[plan]),
+    ),
+  );
+const inviteDeadline = (plan) => {
+  const until = Math.min(invites.until || Infinity, invites.discountUntil[plan] || Infinity);
+  return Number.isFinite(until) ? until : undefined;
+};
+const promotionEnd = (until) =>
+  new Date(until - 1).toLocaleString('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+const shareText = (code, discount) =>
   invites.share.replaceAll('{code}', code).replaceAll(
     '{discount}',
-    Object.entries(invites.discount)
-      .map(([plan, fen]) => `${planNames[plan]}立减 ${yuan(fen)}`)
+    Object.entries(discount)
+      .map(([plan, fen]) => {
+        const until = inviteDeadline(plan);
+        const renewal = plan === 'year' ? `（仅首年，续费 ${yuan(prices.year.amount)}/年）` : '';
+        return `${planNames[plan]}立减 ${yuan(fen)}${renewal}${until ? `（截至北京时间 ${promotionEnd(until)}）` : ''}`;
+      })
       .join('，'),
   );
 // How long an unpaid order holds the invite code it was made with, so that two friends paying
@@ -345,11 +372,11 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
   function priceFor(plan, device, at, friend = null) {
     const full = priceOf(plan, at);
     const credit = plan === 'life' && device ? Math.min(creditOf(device, at), full - 100) : 0;
-    const discount = friend ? Math.min(invites.discount[plan] || 0, full - credit - 100) : 0;
+    const discount = friend ? Math.min(inviteDiscounts(at)[plan] || 0, full - credit - 100) : 0;
     return { amount: full - credit - discount, credit, discount };
   }
 
-  const inviting = (at) => !invites.until || at < invites.until;
+  const inviting = (at) => Object.keys(inviteDiscounts(at)).length > 0;
   const hasPaid = (device) =>
     !!one('SELECT 1 FROM orders WHERE device = ? AND paid_at IS NOT NULL', device);
   // A computer's own invite code, made the first time it's asked for.
@@ -402,6 +429,7 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
   function offer(body = {}) {
     const at = now();
     const device = /^[0-9a-f]{32}$/.test(body.device || '') ? body.device : null;
+    const discount = inviteDiscounts(at);
     let friend = null;
     let inviteCode;
     if (device && inviting(at)) {
@@ -416,11 +444,16 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
       }
       inviteCode = {
         code: mine.code,
-        share: shareText(mine.code),
+        share: shareText(mine.code, discount),
         used: !!usedBy(mine),
         first: !hasPaid(device),
         ...(typed ? { friend: { code: typed, ...(refused ? { error: refused } : {}) } } : {}),
-        discount: invites.discount,
+        discount,
+        discountUntil: Object.fromEntries(
+          Object.keys(discount)
+            .filter((plan) => inviteDeadline(plan))
+            .map((plan) => [plan, inviteDeadline(plan)]),
+        ),
       };
     }
     return {
@@ -453,7 +486,7 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
       new Date(at).toISOString().slice(0, 10).replace(/-/g, '') +
       crypto.randomBytes(5).toString('hex').toUpperCase();
     // A friend's code only for the plans it takes something off.
-    const friend = invites.discount[body.plan] ? friendOf(device, body.invite, at) : null;
+    const friend = inviteDiscounts(at)[body.plan] ? friendOf(device, body.invite, at) : null;
     const { amount, credit, discount } = priceFor(body.plan, device, at, friend);
     let made;
     try {

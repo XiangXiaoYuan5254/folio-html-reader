@@ -42,6 +42,16 @@ const Price = ({ fen }: { fen: number }) => (
 );
 const date = (ms: number) =>
   new Date(ms).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' });
+const promotionEnd = (until: number) =>
+  new Date(until - 1).toLocaleString('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
 // The price struck through beside it: before the credit or the friend's invite, or the regular
 // price the early-bird one stands in for until its date (said in the note, so it isn't a made-up
 // "original" price).
@@ -54,6 +64,7 @@ const struck = (p: Offer['plans'][number]) =>
 // What a friend's invite code takes off is a line of its own (see the plan cards).
 function planNote(p: Offer['plans'][number]) {
   if (p.credit) return `剩余天数抵扣 −${yuan(p.credit)}`;
+  if (p.plan === 'year' && p.discount) return '首年邀请码价';
   if (p.plan === 'year') return `合 ${yuan(Math.round(p.amount / 12))} / 月`;
   if (p.later && p.until) return `早鸟价至 ${date(p.until - 1)}`;
   if (p.plan === 'life') return '一次买断';
@@ -72,7 +83,7 @@ const compare: [string, boolean][] = [
   ['页老师白板讲解、语音对话', false],
   ['精读笔记、找论文、AI 改源码', false],
 ];
-// What a friend's code takes off, as 年度会员减 ¥10、永久会员减 ¥20.
+// What a friend's code currently takes off each plan.
 const offText = (discount: InviteCode['discount']) =>
   (['month', 'year', 'life'] as const)
     .filter((p) => discount[p])
@@ -124,6 +135,11 @@ function InviteCard({ invite }: { invite: InviteCode }) {
           ? `你的邀请码 ${invite.code} 已经被好友用过了，每个码只能用一次。`
           : `好友填这个码，第一次开通${off}。每个码只能用一次。`}
       </p>
+      {!invite.used && invite.discountUntil?.life ? (
+        <p className="membership-invite-note">
+          永久会员优惠截至北京时间 {promotionEnd(invite.discountUntil.life)}。
+        </p>
+      ) : null}
     </section>
   );
 }
@@ -197,14 +213,22 @@ export function MembershipDialog({
   reason,
   onClose,
   onNotify,
+  embedded = false,
+  onBusyChange,
 }: {
   reason: string;
   onClose: () => void;
   onNotify: (message: string) => void;
+  embedded?: boolean;
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const status = useLicense();
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState('');
+  useEffect(() => {
+    onBusyChange?.(!!busy);
+    return () => onBusyChange?.(false);
+  }, [busy, onBusyChange]);
   const [error, setError] = useState('');
   const [refusal, setRefusal] = useState<Refusal | null>(null);
   const [offer, setOffer] = useState<Offer | null>(null);
@@ -247,6 +271,16 @@ export function MembershipDialog({
     void recoverLicense().catch(() => {});
     void checkOrder().catch(() => {});
   }, []);
+  // Refresh an open membership window when an invitation discount ends. Long campaigns need
+  // more than one timeout because browser timers are limited to about 24.8 days.
+  useEffect(() => {
+    const next = Math.min(
+      ...Object.values(offer?.inviteCode?.discountUntil || {}).filter((at) => at > Date.now()),
+    );
+    if (!Number.isFinite(next)) return;
+    const timer = window.setTimeout(loadOffer, Math.min(next - Date.now(), 2_147_483_647));
+    return () => clearTimeout(timer);
+  }, [offer]);
   // While the QR code is up, asks every two seconds whether it has been paid.
   useEffect(() => {
     if (!order || order.closed) return;
@@ -306,12 +340,15 @@ export function MembershipDialog({
   // No activation code entry: a lifetime member has nothing left for one to add, and a paused
   // member can't reach the server to activate one.
   const noCode = paused || (member && status.forever);
-  const price = offer?.plans.find((p) => p.plan === picked)?.amount;
+  const selected = offer?.plans.find((p) => p.plan === picked);
+  const price = selected?.amount;
   const liveCodes = status.codes.some((c) => !c.revoked);
   const paid = status.state === 'paid';
   // Anyone not paying yet sees the cover beside the plans; a paying member sees their membership.
   const shop = !paid && !paused;
   const invite = offer?.inviteCode;
+  const pendingDiscount =
+    invite?.first && !selected?.discount && !selected?.credit && !!invite.discount[picked];
   const friend = invite?.first ? invite.friend : undefined;
   const friendOk = friend && !friend.error ? friend.code : undefined;
   const buy = (plan: Plan) =>
@@ -322,22 +359,22 @@ export function MembershipDialog({
   const applyFriend = (code: string) => act('invite', async () => setOffer(await setInvite(code)));
   return (
     <div
-      className="modal-backdrop"
+      className={embedded ? 'membership-embedded' : 'modal-backdrop'}
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !busy) onClose();
+        if (!embedded && e.target === e.currentTarget && !busy) onClose();
       }}
     >
       <form
         className={`dialog membership-dialog${shop ? ' is-shop' : ''}`}
-        role="dialog"
-        aria-modal="true"
+        role={embedded ? undefined : 'dialog'}
+        aria-modal={embedded ? undefined : true}
         aria-labelledby="membership-title"
         onSubmit={(e) => {
           e.preventDefault();
           if (code.trim() && !busy) void activate(false);
         }}
         onKeyDown={(e) => {
-          if (e.key === 'Escape' && !busy) onClose();
+          if (!embedded && e.key === 'Escape' && !busy) onClose();
         }}
       >
         {shop ? (
@@ -395,7 +432,13 @@ export function MembershipDialog({
                 页间会员
               </h2>
             )}
-            <button type="button" className="icon-button" aria-label="关闭" onClick={onClose}>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="关闭"
+              onClick={onClose}
+              hidden={embedded}
+            >
               <X size={18} />
             </button>
           </div>
@@ -527,6 +570,13 @@ export function MembershipDialog({
               <div className="membership-plans" role="radiogroup" aria-label="会员时长">
                 {offer.plans.map((p) => {
                   const off = invite?.first ? invite.discount[p.plan] : undefined;
+                  // Preview the invitation price on the card only. Checkout always uses the
+                  // server's actual amount, and a validated code must not be deducted twice.
+                  const preview =
+                    off && !p.discount && !p.credit ? Math.min(off, p.amount - 100) : 0;
+                  const shown = preview
+                    ? { ...p, amount: p.amount - preview, discount: preview }
+                    : p;
                   return (
                     <button
                       key={p.plan}
@@ -542,24 +592,26 @@ export function MembershipDialog({
                           {p.credit ? '升级永久' : plan(p.plan)}
                           {p.later ? (
                             <em>早鸟价</em>
+                          ) : off && invite?.discountUntil?.[p.plan] ? (
+                            <em>限时邀请优惠</em>
                           ) : p.plan === 'year' ? (
                             <em className="is-pick">推荐</em>
                           ) : null}
                         </span>
                         <span className={`membership-plan-note${p.credit ? ' is-credit' : ''}`}>
-                          {planNote(p)}
+                          {planNote(shown)}
                         </span>
                       </span>
                       <span className="membership-plan-price">
                         <strong>
-                          {struck(p) ? <s>{yuan(struck(p))}</s> : null}
-                          <Price fen={p.amount} />
+                          {struck(shown) ? <s>{yuan(struck(shown))}</s> : null}
+                          <Price fen={shown.amount} />
                         </strong>
                         {off ? (
                           <span className="membership-plan-invite">
                             {p.discount
                               ? `邀请码已减 ${yuan(p.discount)}`
-                              : `填邀请码立减 ${yuan(off)}`}
+                              : `填写好友邀请码后，原价立减 ${yuan(preview)}`}
                           </span>
                         ) : null}
                       </span>
@@ -646,10 +698,18 @@ export function MembershipDialog({
               >
                 {busy === 'buy'
                   ? '正在下单…'
-                  : `${paid ? (picked === 'life' ? '升级永久' : '续费') : '立即开通'}${price ? ` · ${yuan(price)}` : ''}`}
+                  : `${paid ? (picked === 'life' ? '升级永久' : '续费') : pendingDiscount ? '原价开通' : '立即开通'}${price ? ` · ${yuan(price)}` : ''}`}
               </button>
               <p className="membership-fineprint">
+                {invite?.first && invite.discountUntil?.life ? (
+                  <>
+                    永久会员好友优惠截至北京时间 {promotionEnd(invite.discountUntil.life)}。
+                    <br />
+                  </>
+                ) : null}
                 微信 / 支付宝扫码付款，付完自动开通 · 一份会员同时在一台电脑上用
+                <br />
+                注：AI 功能需在 AI 设置里填自己的服务商 API Key。
               </p>
             </>
           )}

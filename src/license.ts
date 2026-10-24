@@ -48,7 +48,7 @@ export type Offer = {
 // invite to send with it, `used` once a friend has bought with it (it works for one friend).
 // `first`: this computer hasn't paid yet, so a friend's code counts; `friend` is the one typed
 // in, with why it doesn't count if it doesn't. `discount`: what a code takes off each plan it
-// works for, in fen.
+// works for, in fen. `discountUntil`: a plan's exclusive invitation deadline, when limited.
 export type InviteCode = {
   code: string;
   share: string;
@@ -56,6 +56,7 @@ export type InviteCode = {
   first: boolean;
   friend?: { code: string; error?: string };
   discount: Partial<Record<Plan, number>>;
+  discountUntil?: Partial<Record<Plan, number>>;
 };
 // A purchase waiting to be paid: `payUrl` is the checkout page, shown as a QR code. 简付 closes
 // it unpaid after about 15 minutes (`closed`).

@@ -43,17 +43,27 @@ function ThemePreview({ id }: { id: ThemeId }) {
   );
 }
 
-export function ThemePicker({ onClose }: { onClose: () => void }) {
+export function ThemePicker({
+  onClose,
+  embedded = false,
+  onRequireMembership,
+}: {
+  onClose: () => void;
+  embedded?: boolean;
+  onRequireMembership?: () => void;
+}) {
   const { prefs, active, unlocked } = useTheme();
   // Without a membership the other themes and following the system open the membership dialog.
   const locked = (id?: ThemeId) => !unlocked && id !== freeTheme;
   const askPro = () => {
+    if (onRequireMembership) return onRequireMembership();
     onClose();
     askMembership('十套界面主题');
   };
   const following = unlocked && prefs.followSystem;
   const panel = useRef<HTMLElement>(null);
   useEffect(() => {
+    if (embedded) return;
     panel.current?.querySelector<HTMLElement>('[aria-pressed="true"]')?.focus();
     function outside(e: PointerEvent) {
       const target = e.target as Element | null;
@@ -79,7 +89,12 @@ export function ThemePicker({ onClose }: { onClose: () => void }) {
     { dark: true, title: following ? '夜间使用' : '深色' },
   ];
   return (
-    <section className="theme-picker" ref={panel} role="dialog" aria-label="界面主题">
+    <section
+      className={`theme-picker${embedded ? ' theme-picker-embedded' : ''}`}
+      ref={panel}
+      role={embedded ? undefined : 'dialog'}
+      aria-label="界面主题"
+    >
       <header className="theme-picker-heading">
         <h2>界面主题</h2>
         <button

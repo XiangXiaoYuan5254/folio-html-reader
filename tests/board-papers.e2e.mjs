@@ -180,6 +180,12 @@ async function lesson() {
   await page.mouse.move(why.x + why.width - 20, why.y + why.height / 2, { steps: 12 });
   await page.mouse.up();
   await page.locator('.selection-toolbar').getByRole('button', { name: '白板' }).click();
+  // Caption/drawing checks do not need the default cloud voice.
+  await board().locator('.wb-voice-button').click();
+  await board()
+    .getByRole('radio', { name: /^静音讲解/ })
+    .click();
+  await page.keyboard.press('Escape');
   await board().getByRole('button', { name: '直接讲' }).click();
   if (
     await consent()

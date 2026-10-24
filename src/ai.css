@@ -2693,3 +2693,13 @@
   font-size: 14px;
   font-weight: 550;
 }
+
+/* The unseen dot on AI 设置 → 公告. */
+.ai-profile-link .announcement-dot {
+  width: 6px;
+  height: 6px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--danger);
+  flex-shrink: 0;
+}

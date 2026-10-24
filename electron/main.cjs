@@ -225,6 +225,10 @@ function menu() {
                   click: () => win?.webContents.send('folio:event', { type: 'check-updates' }),
                 },
                 {
+                  label: '设置…',
+                  click: () => win?.webContents.send('folio:event', { type: 'settings' }),
+                },
+                {
                   label: 'AI 设置…',
                   accelerator: 'Cmd+,',
                   click: () => win?.webContents.send('folio:event', { type: 'ai-settings' }),
@@ -259,6 +263,10 @@ function menu() {
           ...(isMac
             ? []
             : [
+                {
+                  label: '设置…',
+                  click: () => win.webContents.send('folio:event', { type: 'settings' }),
+                },
                 {
                   label: 'AI 设置…',
                   accelerator: 'Ctrl+,',

@@ -38,14 +38,14 @@ const settingsKey = 'folio.board-voice';
 function loadSettings(): Settings {
   try {
     const saved = JSON.parse(localStorage.getItem(settingsKey) || 'null');
-    const mode = ['off', 'speak', 'talk'].includes(saved?.mode) ? saved.mode : 'off';
+    const mode = ['off', 'speak', 'talk'].includes(saved?.mode) ? saved.mode : 'speak';
     return {
       mode,
       voice: typeof saved?.voice === 'string' && saved.voice ? saved.voice : defaultVoice,
       ears: typeof saved?.ears === 'string' ? saved.ears : 'local',
     };
   } catch {
-    return { mode: 'off', voice: defaultVoice, ears: 'local' };
+    return { mode: 'speak', voice: defaultVoice, ears: 'local' };
   }
 }
 let settings = loadSettings();

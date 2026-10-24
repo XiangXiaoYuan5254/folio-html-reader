@@ -3,28 +3,8 @@ import { CalendarClock, ExternalLink, LoaderCircle, RefreshCw } from 'lucide-rea
 import { invoke } from '../api';
 import { errorText } from '../ai/client';
 import type { AiPreset } from '../ai/types';
-
-// What the activation server publishes for AI 设置 → 公告.
-type Announcement = {
-  id: string;
-  vendor: string;
-  title: string;
-  benefit: string;
-  conditions: string;
-  url: string;
-  preset: string;
-  evidence: string;
-  expires: number | null;
-  checked: number;
-  published: number;
-};
-type Feed = {
-  items: Announcement[];
-  updatedAt: number;
-  fetchedAt: number;
-  cached?: boolean;
-  offline?: boolean;
-};
+import { loadAnnouncements, markAnnouncementsSeen } from '../announcements';
+import type { AnnouncementFeed } from '../announcements';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 // A date on this computer: 2026-11-30.
@@ -40,19 +20,23 @@ const stamp = (ms: number) => {
 export function Announcements({
   presets,
   onConfigure,
+  active = true,
 }: {
   presets: AiPreset[];
   // 去配置: opens this service in AI 设置.
   onConfigure: (preset: string) => void;
+  // Settings keeps visited pages mounted; only a visible feed counts as read.
+  active?: boolean;
 }) {
-  const [feed, setFeed] = useState<Feed | null>(null);
+  const [feed, setFeed] = useState<AnnouncementFeed | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const load = useCallback(async (force = false) => {
     setLoading(true);
     setError('');
     try {
-      setFeed(await invoke<Feed>('announcements', { force }));
+      const loaded = await loadAnnouncements(force);
+      setFeed(loaded);
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -60,8 +44,11 @@ export function Announcements({
     }
   }, []);
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (active) void load();
+  }, [load, active]);
+  useEffect(() => {
+    if (active && feed) markAnnouncementsSeen(feed);
+  }, [active, feed]);
   const now = Date.now();
   // The server leaves expired ones out already; this covers a copy read from disk.
   const items = (feed?.items || []).filter((a) => !a.expires || a.expires > now);

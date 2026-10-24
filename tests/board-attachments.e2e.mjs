@@ -169,6 +169,12 @@ try {
   });
   await page.waitForSelector('.document-frame');
   await page.getByRole('button', { name: '新建空白白板', exact: true }).click();
+  // File parsing and persistence use captions, without contacting a speech service.
+  await board().locator('.wb-voice-button').click();
+  await board()
+    .getByRole('radio', { name: /^静音讲解/ })
+    .click();
+  await page.keyboard.press('Escape');
   assert.match(await picker().getAttribute('accept'), /\.html/);
   const remote = [];
   page.on('request', (r) => {

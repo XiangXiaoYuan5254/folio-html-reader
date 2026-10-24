@@ -53,6 +53,7 @@ export function VoiceButton({
   support,
   busy,
   onOpenSettings,
+  embedded = false,
 }: {
   mode: VoiceMode;
   voice: string;
@@ -64,6 +65,8 @@ export function VoiceButton({
   busy: boolean;
   // Opens the AI settings on the page for speech services' keys.
   onOpenSettings: () => void;
+  // The same preferences in the application settings, without the popover button.
+  embedded?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const panel = useRef<HTMLDivElement>(null);
@@ -126,27 +129,29 @@ export function VoiceButton({
   }
   return (
     <div className="wb-voice">
-      <button
-        ref={button}
-        type="button"
-        className="wb-voice-button"
-        data-mode={mode}
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        title="讲解方式：静音、页老师出声，或语音对话"
-        onClick={() => setOpen(!open)}
-      >
-        <Icon size={15} />
-        {current.short}
-      </button>
-      {open ? (
+      {!embedded ? (
+        <button
+          ref={button}
+          type="button"
+          className="wb-voice-button"
+          data-mode={mode}
+          aria-expanded={open}
+          aria-haspopup="dialog"
+          title="讲解方式：静音、页老师出声，或语音对话"
+          onClick={() => setOpen(!open)}
+        >
+          <Icon size={15} />
+          {current.short}
+        </button>
+      ) : null}
+      {open || embedded ? (
         <div
           ref={panel}
           className="wb-voice-panel"
-          role="dialog"
+          role={embedded ? undefined : 'dialog'}
           aria-label="讲解方式"
           onKeyDown={(e) => {
-            if (e.key !== 'Escape') return;
+            if (embedded || e.key !== 'Escape') return;
             e.stopPropagation();
             setOpen(false);
             button.current?.focus();

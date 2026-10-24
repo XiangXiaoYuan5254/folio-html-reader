@@ -26,6 +26,7 @@ import {
   ArrowLeftRight,
 } from 'lucide-react';
 import { invoke, subscribe, useWorkspace, isDesktop, documentUrl } from './api';
+import { loadAnnouncements } from './announcements';
 import { isMac, shortcut, trashName } from './platform';
 import type {
   Anchor,
@@ -68,6 +69,8 @@ import { withHiddenReader } from './ai/hidden-reader';
 import { AssistantPanel } from './components/AssistantPanel';
 import type { AssistantMode } from './components/AssistantPanel';
 import { AiSettings } from './components/AiSettings';
+import { SettingsDialog } from './components/SettingsDialog';
+import type { SettingsPage } from './components/SettingsDialog';
 import { AiSelectionCard } from './components/AiSelectionCard';
 import { Tutor, boardNote, withBoardNote } from './ai/board';
 import type { BoardEntry, SavedBoard } from './ai/board';
@@ -338,10 +341,19 @@ export default function App() {
   const setSelection = (selection: Anchor | null) => doc && patchReader(doc.id, { selection });
   const setRebind = (rebind: string | null) => doc && patchReader(doc.id, { rebind });
   const [dialog, setDialog] = useState<DialogOptions | null>(null);
+  const [settingsRequest, setSettingsRequest] = useState<{ page: SettingsPage } | null>(null);
+  function openSettings(page: SettingsPage = 'appearance') {
+    void loadAnnouncements(true).catch(() => {});
+    setAiSettingsOpen(false);
+    setAiSettingsPage('');
+    setSettingsRequest({ page });
+  }
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
   // The page the AI settings open on, when not the services.
   const [aiSettingsPage, setAiSettingsPage] = useState<'' | 'voices'>('');
   function openAiSettings(page: '' | 'voices' = '') {
+    void loadAnnouncements(true).catch(() => {});
+    setSettingsRequest(null);
     setAiSettingsPage(page);
     setAiSettingsOpen(true);
   }
@@ -606,6 +618,7 @@ export default function App() {
         if (e.type === 'close-request') liveActions.current.close();
         if (e.type === 'files-changed') liveActions.current.refresh();
         if (e.type === 'ai-settings') openAiSettings();
+        if (e.type === 'settings') openSettings();
         if (e.type === 'theme-picker') setThemePickerOpen(true);
         if (e.type === 'membership') setMembership({ reason: '' });
         if (e.type === 'open-file' && sessionReady.current) liveActions.current.openFiles();
@@ -1003,7 +1016,7 @@ export default function App() {
     checkUpdates,
   };
   async function checkUpdates() {
-    if (!isDesktop) return;
+    if (!isDesktop) return '请在桌面版页间中检查更新。';
     notify('正在检查更新…');
     try {
       const result = await invoke<UpdateState | { status: 'latest'; version: string }>(
@@ -1016,8 +1029,14 @@ export default function App() {
         setNotice(null);
         setUpdateHidden(false);
       }
+      if (result.status === 'latest') return `页间 ${result.version} 已是最新版本`;
+      if (result.status === 'downloading') return `正在下载新版本 ${result.version}`;
+      if (result.status === 'ready') return `新版本 ${result.version} 已准备好，重启后即可使用`;
+      if (result.status === 'manual') return `新版本 ${result.version} 已发布，可前往官网下载`;
+      return '暂时未取得更新信息，请稍后重试。';
     } catch (e) {
       onError((e as Error).message);
+      return (e as Error).message;
     }
   }
   // Saves like closing the window does, then quits; the new version opens by itself.
@@ -1833,6 +1852,7 @@ export default function App() {
           }
           status={
             <ReadingStatus
+              onOpenSettings={() => openSettings()}
               format={doc?.kind === 'pdf' ? 'PDF' : 'HTML'}
               saving={model.saving}
               error={!!notice?.error}
@@ -2561,6 +2581,30 @@ export default function App() {
             }}
             root={workspace?.root}
             projectName={workspace?.name}
+          />
+        )}
+      </Exit>
+      <Exit when={settingsRequest}>
+        {(request) => (
+          <SettingsDialog
+            request={request}
+            onClose={() => setSettingsRequest(null)}
+            root={workspace?.root}
+            projectName={workspace?.name}
+            toolbarSide={toolbarSide}
+            onToolbarSide={setToolbarSide}
+            noteFontSize={noteFontSize}
+            onNoteFontSize={setNoteFontSize}
+            autosave={autosave}
+            onToggleAutosave={toggleAutosave}
+            appVersion={appVersion}
+            update={update}
+            onCheckUpdates={checkUpdates}
+            onShowUpdate={() => {
+              setSettingsRequest(null);
+              setUpdateHidden(false);
+            }}
+            onNotify={notify}
           />
         )}
       </Exit>

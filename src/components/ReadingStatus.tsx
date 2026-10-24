@@ -1,17 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
-import { CircleHelp, X } from 'lucide-react';
+import { CircleHelp, Settings, X } from 'lucide-react';
 import { IconButton } from './IconButton';
 import { shortcut } from '../platform';
+import { useUnreadAnnouncements } from '../announcements';
 
 export function ReadingStatus(p: {
   format: string;
   saving: boolean;
   error: boolean;
   hint: string;
+  onOpenSettings: () => void;
   annotations: number;
   progress: number;
 }) {
   const [open, setOpen] = useState(false);
+  const unseen = useUnreadAnnouncements();
   const host = useRef<HTMLElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -35,6 +38,16 @@ export function ReadingStatus(p: {
       </span>
       <IconButton label="阅读提示与快捷键" active={open} onClick={() => setOpen(!open)}>
         <CircleHelp size={15} />
+      </IconButton>
+      <IconButton
+        label="设置"
+        help={unseen ? '打开设置 · 有未读公告' : '打开设置'}
+        aria-description={unseen ? '有未读公告' : undefined}
+        className="settings-button"
+        onClick={p.onOpenSettings}
+      >
+        <Settings size={15} />
+        {unseen ? <span className="announcement-dot" aria-hidden="true" /> : null}
       </IconButton>
       {open ? (
         <div
