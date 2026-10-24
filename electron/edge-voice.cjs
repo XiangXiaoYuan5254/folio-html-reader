@@ -4,8 +4,8 @@
 const crypto = require('node:crypto');
 const WebSocket = require('ws');
 const { AiError } = require('./ai-providers.cjs');
+const { clientToken, generateToken } = require('./edge-token.cjs');
 
-const clientToken = '6A5AA1D4EAFF4E9FB37E23D68491D6F4';
 const version = '143.0.3650.75';
 const format = 'audio-24khz-48kbitrate-mono-mp3';
 function failure(message, details = {}) {
@@ -20,17 +20,12 @@ const escape = (text) =>
     );
 
 function connectionUrl() {
-  const seconds = BigInt(Math.floor(Date.now() / 1000)) + 11644473600n;
-  const ticks = (seconds - (seconds % 300n)) * 10000000n;
-  const token = crypto
-    .createHash('sha256')
-    .update(`${ticks}${clientToken}`)
-    .digest('hex')
-    .toUpperCase();
-  const url = new URL('wss://api.msedgeservices.com/tts/cognitiveservices/websocket/v1');
-  url.searchParams.set('Ocp-Apim-Subscription-Key', clientToken);
-  url.searchParams.set('Sec-MS-GEC', token);
-  url.searchParams.set('Sec-MS-GEC-Version', `1-${version}`);
+  const url = new URL(
+    'wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1',
+  );
+  url.searchParams.set('TrustedClientToken', clientToken);
+  url.searchParams.set('Sec-MS-GEC', generateToken());
+  url.searchParams.set('Sec-MS-GEC-Version', `2-${version}`);
   url.searchParams.set('ConnectionId', crypto.randomBytes(16).toString('hex'));
   return url;
 }

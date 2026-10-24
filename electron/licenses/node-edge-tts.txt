@@ -1,4 +1,5 @@
 Edge read-aloud protocol reference: https://github.com/SchneeHertz/node-edge-tts
+Sec-MS-GEC v2 in electron/edge-token.cjs is adapted from src/drm.ts in that project.
 
 MIT License
 

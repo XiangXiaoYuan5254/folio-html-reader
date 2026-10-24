@@ -5,6 +5,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const edge = require('../electron/edge-voice.cjs');
+const { clientToken, generateToken } = require('../electron/edge-token.cjs');
 const { createAi } = require('../electron/ai.cjs');
 const { atomicWrite } = require('../electron/workspace.cjs');
 
@@ -15,8 +16,10 @@ function socket() {
     sent = [];
     closed = false;
     terminated = false;
-    constructor() {
+    constructor(url, options) {
       super();
+      this.url = url;
+      this.options = options;
       instance = this;
       queueMicrotask(() => this.emit('open'));
     }
@@ -44,6 +47,59 @@ function frame(audio) {
   length.writeUInt16BE(headers.length);
   return Buffer.concat([length, headers, audio]);
 }
+
+test('Edge v2 tokens match the captured browser token and independent reference vectors', () => {
+  // Browser capture: rany2/edge-tts#490, 2026-10-13 10:40 UTC. The other
+  // vectors were checked against edge-tts 7.3.1, independent of this JS port.
+  const vectors = [
+    [
+      1791887999.999,
+      'DAAEAD2FD5438630-897933E9C951AADAA0A792FFD23FBB12339BBBBA71EA7BF84FFA0C777C3C9550',
+    ],
+    [
+      1791888000,
+      '492D7694A183A45E-56E821F95D4579C5B7C7E33DC7303FF379EC36D510213555BBBB9EB17EF15876',
+    ],
+    [
+      1791888299.999,
+      '492D7694A183A45E-56E821F95D4579C5B7C7E33DC7303FF379EC36D510213555BBBB9EB17EF15876',
+    ],
+    [
+      1791888300,
+      '6D26B5F5B70269AD-280E82E1BBE24E4E8866E3502EB6277B9436F61ABDC1C224518A038BBD7BBDAD',
+    ],
+    [
+      2147483648,
+      '96AE288915A09C99-EB52B45DB68387A1383783E40D42BBBD69D4DCCDF2540629BD4E7FB2E3287822',
+    ],
+  ];
+  for (const [seconds, expected] of vectors) assert.equal(generateToken(seconds), expected);
+  for (const seconds of [NaN, Infinity, -Infinity])
+    assert.throws(() => generateToken(seconds), TypeError);
+});
+
+test('Edge connects to the read-aloud endpoint with v2 authentication and a fresh connection id', async (t) => {
+  t.mock.method(Date, 'now', () => 1791888000000);
+  const ids = new Set();
+  for (let i = 0; i < 2; i++) {
+    const fake = socket();
+    const pending = edge.readAudio({ text: '你好。', voice, Socket: fake.Socket });
+    const { url } = fake.instance;
+    assert.equal(url.origin, 'wss://speech.platform.bing.com');
+    assert.equal(url.pathname, '/consumer/speech/synthesize/readaloud/edge/v1');
+    assert.equal(url.searchParams.get('TrustedClientToken'), clientToken);
+    assert.equal(url.searchParams.get('Sec-MS-GEC-Version'), '2-143.0.3650.75');
+    assert.equal(url.searchParams.get('Sec-MS-GEC'), generateToken(1791888000));
+    assert.equal(url.searchParams.has('Ocp-Apim-Subscription-Key'), false);
+    const id = url.searchParams.get('ConnectionId');
+    assert.match(id, /^[a-f0-9]{32}$/);
+    ids.add(id);
+    fake.instance.emit('message', frame(Buffer.from([1, 2])), true);
+    fake.instance.emit('message', Buffer.from('Path:turn.end\r\n\r\n'), false);
+    await pending;
+  }
+  assert.equal(ids.size, 2);
+});
 
 test('Edge preserves literal text and joins binary audio only after turn.end', async () => {
   const fake = socket();
