@@ -932,6 +932,37 @@ kbd {
   -webkit-mask-image: radial-gradient(ellipse 70% 50% at 50% 0%, #000, transparent 80%);
   mask-image: radial-gradient(ellipse 70% 50% at 50% 0%, #000, transparent 80%);
 }
+.ai-head h2 {
+  font-size: clamp(42px, 6.4vw, 88px);
+  letter-spacing: 0.01em;
+}
+.ai-heading-mark {
+  font-family: var(--sans);
+  color: var(--violet-soft);
+}
+.ai-capabilities {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px 28px;
+  margin: 28px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--night-ink);
+  font-size: clamp(16px, 1.6vw, 20px);
+  line-height: 1.5;
+}
+.ai-capabilities li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.ai-capabilities .icon {
+  color: var(--violet-soft);
+}
+.ai-head .lead {
+  margin-top: 18px;
+}
 .ai-grid {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
@@ -2337,6 +2368,12 @@ details summary::-webkit-details-marker {
   }
   .section-head.center {
     margin-bottom: 44px;
+  }
+  .ai-capabilities {
+    display: grid;
+    grid-template-columns: repeat(2, max-content);
+    gap: 12px 24px;
+    margin-top: 24px;
   }
   .ai-grid {
     gap: 14px;
