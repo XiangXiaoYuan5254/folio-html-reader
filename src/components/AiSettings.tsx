@@ -6,6 +6,7 @@ import {
   CircleX,
   ExternalLink,
   KeyRound,
+  Megaphone,
   LoaderCircle,
   Plus,
   PlugZap,
@@ -32,6 +33,7 @@ import type {
 import { effortLabel, forgetModelOptions, levelFor, modelLevels } from '../ai/levels';
 import { cloudPrefix, tryCloudVoice, useVoiceSettings } from '../ai/voice';
 import { ModelMenu } from './ModelMenu';
+import { Announcements } from './Announcements';
 import { BalanceLine, PlanUsage } from './BalanceLine';
 import { forgetBalance } from '../ai/balance';
 
@@ -115,9 +117,9 @@ export function AiSettings({
   const [modelsOpen, setModelsOpen] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [advanced, setAdvanced] = useState(false);
-  // A page besides the services: the reader profile, each part's model, or the voices the
-  // whiteboard teacher can read in.
-  const [side, setSide] = useState<'' | 'profile' | 'uses' | 'voices'>(page);
+  // A page besides the services: the reader profile, each part's model, the voices the
+  // whiteboard teacher can read in, or the model vendors' offers.
+  const [side, setSide] = useState<'' | 'profile' | 'uses' | 'voices' | 'announcements'>(page);
   const panel = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!config || selected !== null || adding) return;
@@ -153,11 +155,21 @@ export function AiSettings({
   }
   function choosePreset(p: AiPreset) {
     setAdding(false);
+    setSide('');
     setSelected('new');
     setForm(fromPreset(p));
     setStatus(null);
     setModelInfo(null);
     setAdvanced(p.id === 'custom');
+  }
+  // 公告 → 去配置: the service if it is already added, otherwise its preset, filled in.
+  function configure(presetId: string) {
+    const existing = config?.providers.find((p) => p.preset === presetId);
+    if (existing) pick(existing);
+    else {
+      const found = config?.presets.find((p) => p.id === presetId);
+      if (found) choosePreset(found);
+    }
   }
   const patch = (fields: Partial<Form>) => setForm((f) => (f ? { ...f, ...fields } : f));
   const draft = () =>
@@ -348,6 +360,13 @@ export function AiSettings({
               <UserRound size={14} />
               读者画像
             </button>
+            <button
+              className={`ai-profile-link ${side === 'announcements' ? 'active' : ''}`}
+              onClick={() => setSide('announcements')}
+            >
+              <Megaphone size={14} />
+              公告
+            </button>
           </nav>
           <section className="ai-settings-main">
             {side === 'profile' ? (
@@ -356,6 +375,8 @@ export function AiSettings({
               <UseModels />
             ) : side === 'voices' ? (
               <SpeechVoices services={config?.speech || []} />
+            ) : side === 'announcements' ? (
+              <Announcements presets={config?.presets || []} onConfigure={configure} />
             ) : adding || !form ? (
               <div className="ai-presets">
                 <p className="ai-settings-lead">

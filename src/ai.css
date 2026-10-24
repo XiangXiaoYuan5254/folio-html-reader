@@ -2562,3 +2562,134 @@
 .board-link {
   color: var(--ai-text);
 }
+
+/* AI 设置 → 公告：厂商自己的额度和活动，核实后发布，页面只读。 */
+.announcements-page {
+  flex: 1;
+  overflow: auto;
+  padding: 18px 24px 24px;
+}
+.announcements-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 2px;
+  font-size: 11.5px;
+  color: var(--text-4);
+}
+.announcement {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.announcement:last-child {
+  border-bottom: 0;
+}
+.announcement-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.announcement-vendor {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.announcement-expiry {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--text-4);
+}
+.announcement h3 {
+  margin: 0 0 6px;
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.announcement-benefit {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-2);
+}
+.announcement-conditions {
+  margin: 5px 0 0;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--muted);
+}
+.announcement-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 8px;
+}
+.announcement-checked {
+  font-size: 11.5px;
+  color: var(--text-4);
+}
+.announcement-evidence {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.announcement-evidence summary {
+  cursor: pointer;
+  font-size: 11.5px;
+  color: var(--text-4);
+}
+.announcement-evidence p {
+  margin: 6px 0 0;
+  line-height: 1.7;
+}
+.announcement-evidence .announcement-quote {
+  padding-left: 8px;
+  border-left: 2px solid var(--line);
+  color: var(--text-4);
+}
+.announcements-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 200px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.announcements-state p {
+  margin: 0;
+}
+.announcements-state.error {
+  color: var(--danger);
+}
+.announcements-note {
+  margin: 12px 0 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--fill);
+  color: var(--muted);
+  font-size: 12px;
+}
+.announcements-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 200px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.announcements-empty p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 550;
+}

@@ -137,6 +137,24 @@ export function openDb(file) {
       code TEXT NOT NULL UNIQUE,
       created_at INTEGER NOT NULL
     );
+    -- 福利公告: what the owner checked and published. The app reads the live ones; expired and
+    -- hidden rows stay for the record.
+    CREATE TABLE IF NOT EXISTS announcements (
+      id TEXT PRIMARY KEY,
+      vendor TEXT NOT NULL,
+      title TEXT NOT NULL,
+      benefit TEXT NOT NULL,
+      conditions TEXT,
+      url TEXT NOT NULL,
+      preset TEXT,
+      evidence TEXT,
+      expires_at INTEGER,
+      checked_at INTEGER NOT NULL,
+      published_at INTEGER NOT NULL,
+      hidden_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS announcements_live
+      ON announcements(hidden_at, expires_at, published_at);
   `);
   // Added later: what an upgrade to lifetime took off for the days left of bought memberships.
   // Then what a friend's invite code took off and whose code it was (`inviter`, a device).
@@ -548,6 +566,36 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
   }
   // China's calendar day of a time, as 2026-10-12.
   const dayOf = (ms) => new Date(ms + 8 * 3_600_000).toISOString().slice(0, 10);
+  // A published announcement as the app reads it.
+  const announcementOut = (row) => ({
+    id: row.id,
+    vendor: row.vendor,
+    title: row.title,
+    benefit: row.benefit,
+    conditions: row.conditions || '',
+    url: row.url,
+    preset: row.preset || '',
+    evidence: row.evidence || '',
+    expires: row.expires_at,
+    checked: row.checked_at,
+    published: row.published_at,
+  });
+  // The owner's announcements still running, newest first. Anything past its end day, or
+  // taken down, is not sent.
+  function announcements() {
+    const at = now();
+    const items = all(
+      `SELECT * FROM announcements
+       WHERE hidden_at IS NULL AND (expires_at IS NULL OR expires_at > ?)
+       ORDER BY published_at DESC, rowid DESC LIMIT 100`,
+      at,
+    ).map(announcementOut);
+    return {
+      items,
+      updatedAt: items.reduce((latest, item) => Math.max(latest, item.published), 0),
+      time: at,
+    };
+  }
   const admin = {
     // New codes for one plan; `batch` is a note to find them by later, e.g. "送朋友 2026-10".
     codes({ plan, count, batch }) {
@@ -873,6 +921,91 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
         Math.min(Math.max(Number(limit) || 50, 1), 500),
       ).map(eventOut);
     },
+    // 福利公告 as the owner sees them: live, expired and taken down, newest first.
+    announcements() {
+      const at = now();
+      return {
+        items: all('SELECT * FROM announcements ORDER BY published_at DESC, rowid DESC').map(
+          (row) => ({
+            ...announcementOut(row),
+            hidden: row.hidden_at,
+            status: row.hidden_at
+              ? 'hidden'
+              : row.expires_at && row.expires_at <= at
+                ? 'expired'
+                : 'live',
+          }),
+        ),
+        time: at,
+      };
+    },
+    // Publishes one announcement the owner has checked. `id` replaces that announcement; a
+    // new one is made without it. `expiresAt` is a day, YYYY-MM-DD, or empty for no end.
+    publishAnnouncement(body = {}) {
+      const text = (value, max) =>
+        String(value ?? '')
+          .trim()
+          .slice(0, max);
+      const vendor = text(body.vendor, 40);
+      const title = text(body.title, 120);
+      const benefit = text(body.benefit, 500);
+      const conditions = text(body.conditions, 300);
+      const url = text(body.url, 500);
+      const preset = text(body.preset, 40);
+      const evidence = text(body.evidence, 300);
+      if (!vendor || !title || !benefit)
+        throw new Refusal(400, 'bad-request', '厂商、标题和送什么都不能为空');
+      if (!/^https?:\/\/\S+$/.test(url))
+        throw new Refusal(400, 'bad-request', '来源要是 http 或 https 链接');
+      let expires = null;
+      if (body.expiresAt !== null && body.expiresAt !== undefined && body.expiresAt !== '') {
+        if (typeof body.expiresAt === 'number' && Number.isFinite(body.expiresAt))
+          expires = Math.floor(body.expiresAt);
+        else {
+          const date = text(body.expiresAt, 10);
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(date))
+            throw new Refusal(400, 'bad-request', '截止日期要写成 2026-11-30 这样');
+          expires = Date.parse(`${date}T23:59:59.999+08:00`);
+          if (!Number.isFinite(expires)) throw new Refusal(400, 'bad-request', '截止日期不对');
+        }
+        if (expires <= now()) throw new Refusal(400, 'bad-request', '截止日期已经过了');
+      }
+      const at = now();
+      const given = text(body.id, 64);
+      const id = /^[A-Za-z0-9-]{8,64}$/.test(given) ? given : crypto.randomUUID();
+      const columns = [vendor, title, benefit, conditions, url, preset, evidence, expires, at, at];
+      if (one('SELECT id FROM announcements WHERE id = ?', id))
+        run(
+          `UPDATE announcements SET vendor = ?, title = ?, benefit = ?, conditions = ?,
+             url = ?, preset = ?, evidence = ?, expires_at = ?, checked_at = ?,
+             published_at = ?, hidden_at = NULL WHERE id = ?`,
+          ...columns,
+          id,
+        );
+      else
+        run(
+          `INSERT INTO announcements
+             (vendor, title, benefit, conditions, url, preset, evidence, expires_at, checked_at,
+              published_at, id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ...columns,
+          id,
+        );
+      return {
+        item: {
+          ...announcementOut(one('SELECT * FROM announcements WHERE id = ?', id)),
+          hidden: null,
+          status: 'live',
+        },
+      };
+    },
+    // Takes a published announcement down; the app stops showing it at its next check.
+    hideAnnouncement({ id }) {
+      const row = one('SELECT id FROM announcements WHERE id = ?', String(id || ''));
+      if (!row) throw new Refusal(404, 'not-found', '没有这条公告');
+      run('UPDATE announcements SET hidden_at = ? WHERE id = ?', now(), row.id);
+      return { ok: true };
+    },
     // A consistent copy of the whole database, written to `file`.
     backup(file) {
       fs.rmSync(file, { force: true });
@@ -880,7 +1013,18 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
       return file;
     },
   };
-  return { activate, trial, refresh, offer, order, orderStatus, notify, admin, lease };
+  return {
+    activate,
+    trial,
+    refresh,
+    offer,
+    order,
+    orderStatus,
+    notify,
+    announcements,
+    admin,
+    lease,
+  };
 }
 
 // 简付 (jian-pay.com, docs at jian-pay.com/docs): an order there gives a checkout page that
@@ -1091,6 +1235,9 @@ export function createServer({ service, adminToken, prefix = '/api/folio', backu
         throw new Refusal(404, 'not-found', '没有这个地址');
       const route = url.pathname.slice(prefix.length);
       if (route === '/health') return send(res, 200, { ok: true });
+      // The app's 福利公告 page; open to everyone, read-only.
+      if (route === '/announcements' && req.method === 'GET')
+        return send(res, 200, service.announcements());
       if (route.startsWith('/admin/')) {
         if (!isAdmin(req)) throw new Refusal(401, 'unauthorized', '管理口令不对');
         if (route === '/admin/backup' && req.method === 'GET') {
@@ -1122,6 +1269,7 @@ export function createServer({ service, adminToken, prefix = '/api/folio', backu
           '/admin/batches': 'batches',
           '/admin/events': 'events',
           '/admin/analytics': 'analytics',
+          '/admin/announcements': 'announcements',
         }[route];
         if (query && req.method === 'GET')
           return send(res, 200, service.admin[query](Object.fromEntries(url.searchParams)));
@@ -1131,6 +1279,8 @@ export function createServer({ service, adminToken, prefix = '/api/folio', backu
           '/admin/restore': 'restore',
           '/admin/allow-move': 'allowMove',
           '/admin/note': 'note',
+          '/admin/announcements': 'publishAnnouncement',
+          '/admin/announcements/hide': 'hideAnnouncement',
         }[route];
         if (!action || req.method !== 'POST') throw new Refusal(404, 'not-found', '没有这个地址');
         return send(res, 200, service.admin[action](await readBody(req)));

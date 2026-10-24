@@ -341,6 +341,10 @@ export default function App() {
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
   // The page the AI settings open on, when not the services.
   const [aiSettingsPage, setAiSettingsPage] = useState<'' | 'voices'>('');
+  function openAiSettings(page: '' | 'voices' = '') {
+    setAiSettingsPage(page);
+    setAiSettingsOpen(true);
+  }
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   // The membership dialog, with what was asked for when a member feature opened it.
   const [membership, setMembership] = useState<{ reason: string } | null>(null);
@@ -601,7 +605,7 @@ export default function App() {
         if (e.type === 'find') liveActions.current.find();
         if (e.type === 'close-request') liveActions.current.close();
         if (e.type === 'files-changed') liveActions.current.refresh();
-        if (e.type === 'ai-settings') setAiSettingsOpen(true);
+        if (e.type === 'ai-settings') openAiSettings();
         if (e.type === 'theme-picker') setThemePickerOpen(true);
         if (e.type === 'membership') setMembership({ reason: '' });
         if (e.type === 'open-file' && sessionReady.current) liveActions.current.openFiles();
@@ -1701,7 +1705,7 @@ export default function App() {
         }),
       ),
     notify,
-    openSettings: () => setAiSettingsOpen(true),
+    openSettings: () => openAiSettings(),
   };
   return (
     <div
@@ -2011,7 +2015,7 @@ export default function App() {
                             : '已应用 AI 修改，保存后写入文件',
                         );
                       }}
-                      onOpenSettings={() => setAiSettingsOpen(true)}
+                      onOpenSettings={() => openAiSettings()}
                       onClose={() => setAiSourceOpen(false)}
                     />
                   ) : null}
@@ -2260,7 +2264,7 @@ export default function App() {
                       onAsk={(q) => assistant.askCard(q)}
                       onStop={() => assistant.stopCard()}
                       onClose={() => assistant.closeCard()}
-                      onOpenSettings={() => setAiSettingsOpen(true)}
+                      onOpenSettings={() => openAiSettings()}
                       onSave={() =>
                         run(async () => {
                           await assistant.saveCard(color);
@@ -2411,7 +2415,7 @@ export default function App() {
                 reading={reading}
                 selection={mode === 'read' ? selection?.exact || '' : ''}
                 onClearSelection={clearSelection}
-                onOpenSettings={() => setAiSettingsOpen(true)}
+                onOpenSettings={() => openAiSettings()}
                 onOpenPair={(other, scope, threadId) =>
                   run(async () => {
                     await assistant.load(scope);
@@ -2535,10 +2539,7 @@ export default function App() {
             awayIn={titleEnd}
             onNotify={notify}
             onHistory={() => setBoardList(true)}
-            onOpenSettings={(page) => {
-              setAiSettingsPage(page === 'voices' ? page : '');
-              setAiSettingsOpen(true);
-            }}
+            onOpenSettings={(page) => openAiSettings(page === 'voices' ? 'voices' : '')}
             noteTarget={lesson.tutor.source || doc?.path}
             onNote={(picture) => boardToNote(lesson.tutor.entry(), lesson.tutor.get(), picture)}
             onReplay={(replay) => void openBoard(lesson.tutor.id, replay)}

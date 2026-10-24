@@ -24,6 +24,7 @@ const { projectFor, filesFromArgv } = require('./open-file.cjs');
 const { createUpdates } = require('./updater.cjs');
 const { createAi } = require('./ai.cjs');
 const { createLicense } = require('./license.cjs');
+const { createAnnouncements } = require('./announcements.cjs');
 const { createSpeech } = require('./speech.cjs');
 const { createSpeechLog } = require('./speech-log.cjs');
 const { createHearing } = require('./hearing.cjs');
@@ -41,6 +42,7 @@ let appearance = null;
 const previews = new Map();
 let ai;
 let license;
+let announcements;
 // PDF and AI need a membership; the window opens the membership dialog on seeing this.
 const memberOnly = '需要会员：PDF 阅读和 AI 功能是会员功能，开通会员或免费试用后就能用';
 const needMember = async () => {
@@ -346,6 +348,10 @@ app
       version: app.getVersion(),
       packaged: app.isPackaged,
       onChange: (status) => toWindow({ type: 'license', status }),
+    });
+    announcements = createAnnouncements({
+      file: path.join(app.getPath('userData'), 'announcements.json'),
+      fetch: (url, init) => net.fetch(url, init),
     });
     speechLog = createSpeechLog(path.join(app.getPath('userData'), 'logs', 'speech.jsonl'));
     ai = createAi({
@@ -674,6 +680,8 @@ app
         case 'license':
           await license.ready;
           return license.status();
+        case 'announcements':
+          return announcements.load(payload || {});
         case 'license-activate':
           return license.activate(payload || {});
         case 'license-trial':
