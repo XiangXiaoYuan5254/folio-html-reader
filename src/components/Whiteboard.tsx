@@ -71,7 +71,6 @@ import { loadSound } from '../ai/board-sound';
 import {
   canTalk,
   listener,
-  onVoiceProblem,
   replayVoice,
   stopSpeech,
   useSpeechSupport,
@@ -1023,7 +1022,6 @@ export default function Whiteboard({
   // The helper goes when the board does, and the voice forgets it: another board opened in
   // its place starts afresh.
   useEffect(() => () => void stopSpeech(), [tutor]);
-  useEffect(() => onVoiceProblem((message) => onNotify(message, true)), [onNotify]);
   // The teacher stopped because the student started talking.
   const [cutIn, setCutIn] = useState(false);
 

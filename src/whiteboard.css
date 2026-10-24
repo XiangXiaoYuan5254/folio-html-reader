@@ -122,7 +122,7 @@
 .whiteboard-head h2 > svg {
   color: var(--ai);
 }
-.whiteboard-note {
+.whiteboard-head .whiteboard-note {
   display: flex;
   align-items: center;
   gap: 5px;
