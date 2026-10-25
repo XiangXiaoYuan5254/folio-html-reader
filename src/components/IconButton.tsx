@@ -11,6 +11,7 @@ export function IconButton({
   children,
   active = false,
   help,
+  tooltipDelay = 300,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   ref?: Ref<HTMLButtonElement>;
@@ -18,6 +19,7 @@ export function IconButton({
   children: ReactNode;
   active?: boolean;
   help?: string;
+  tooltipDelay?: number;
 }) {
   const id = useId();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -38,10 +40,10 @@ export function IconButton({
     }
     setTip(null);
   };
-  const show = (element: HTMLElement, delay = 300) => {
+  const show = (element: HTMLElement, delay = tooltipDelay) => {
     hide();
     const rect = element.getBoundingClientRect();
-    const instant = warm();
+    const instant = delay === 0 || warm();
     timer.current = setTimeout(
       () => {
         const above = rect.bottom + 85 > innerHeight;

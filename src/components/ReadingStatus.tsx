@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
-import { CircleHelp, Settings, X } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { CircleHelp, Palette, Settings, X } from 'lucide-react';
 import { IconButton } from './IconButton';
 import { shortcut } from '../platform';
 import { useUnreadAnnouncements } from '../announcements';
 
 export function ReadingStatus(p: {
   format: string;
-  saving: boolean;
-  error: boolean;
   hint: string;
   onOpenSettings: () => void;
+  membership: ReactNode;
+  updateNotice: ReactNode;
+  themeOpen: boolean;
+  onTheme: () => void;
   annotations: number;
   progress: number;
 }) {
@@ -31,24 +34,34 @@ export function ReadingStatus(p: {
   }, [open]);
   return (
     <footer ref={host} className="statusbar" aria-label="阅读状态">
-      <span className="status-format">{p.format}</span>
-      <span className={`save-state${p.error ? ' error' : ''}`}>
-        <i />
-        {p.saving ? '正在保存…' : p.error ? '请检查提示' : '本地保存'}
-      </span>
-      <IconButton label="阅读提示与快捷键" active={open} onClick={() => setOpen(!open)}>
-        <CircleHelp size={15} />
-      </IconButton>
-      <IconButton
-        label="设置"
-        help={unseen ? '打开设置 · 有未读公告' : '打开设置'}
-        aria-description={unseen ? '有未读公告' : undefined}
-        className="settings-button"
-        onClick={p.onOpenSettings}
-      >
-        <Settings size={15} />
-        {unseen ? <span className="announcement-dot" aria-hidden="true" /> : null}
-      </IconButton>
+      {p.updateNotice ? <div className="sidebar-update">{p.updateNotice}</div> : null}
+      <div className="sidebar-account">
+        {p.membership}
+        <div className="sidebar-preferences">
+          <IconButton
+            label="界面主题"
+            help="切换配色，可跟随系统浅色 / 深色"
+            className="theme-button"
+            active={p.themeOpen}
+            onClick={p.onTheme}
+          >
+            <Palette size={16} />
+          </IconButton>
+          <IconButton label="阅读提示与快捷键" active={open} onClick={() => setOpen(!open)}>
+            <CircleHelp size={15} />
+          </IconButton>
+          <IconButton
+            label="设置"
+            help={unseen ? '打开设置 · 有未读公告' : '打开设置'}
+            aria-description={unseen ? '有未读公告' : undefined}
+            className="settings-button"
+            onClick={p.onOpenSettings}
+          >
+            <Settings size={16} />
+            {unseen ? <span className="announcement-dot" aria-hidden="true" /> : null}
+          </IconButton>
+        </div>
+      </div>
       {open ? (
         <div
           className="reading-help"

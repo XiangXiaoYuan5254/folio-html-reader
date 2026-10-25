@@ -27,6 +27,7 @@ const { createLicense } = require('./license.cjs');
 const { createAnnouncements } = require('./announcements.cjs');
 const { createSpeech } = require('./speech.cjs');
 const { createSpeechLog } = require('./speech-log.cjs');
+const { createAiLog } = require('./ai-log.cjs');
 const { createHearing } = require('./hearing.cjs');
 const { limiter } = require('./cloud-voice.cjs');
 const papers = require('./papers.cjs');
@@ -370,6 +371,7 @@ app
       version: app.getVersion(),
       openUrl: (url) => shell.openExternal(url),
       speechLog,
+      diagnosticLog: createAiLog(path.join(app.getPath('userData'), 'logs', 'ai.jsonl')),
       ...keyProtection(),
     });
     protocol.handle('app', async (request) => {

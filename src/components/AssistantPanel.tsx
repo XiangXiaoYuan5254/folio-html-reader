@@ -235,19 +235,19 @@ export function AssistantPanel(p: {
             />
           ) : null}
         </div>
-        <button
-          type="button"
+        <IconButton
           className="assistant-new"
-          title="开始一段新对话，之前的对话在左边的下拉列表里"
+          label="新对话"
+          help="开始一段新对话，之前的对话保留在历史列表里"
+          tooltipDelay={0}
           disabled={!scope || !thread?.messages.length}
           onClick={() => {
             p.store.newThread(scope);
             input.current?.focus();
           }}
         >
-          <Plus size={13} />
-          新对话
-        </button>
+          <Plus size={15} />
+        </IconButton>
         <IconButton label="AI 设置" onClick={p.onOpenSettings}>
           <Settings2 size={15} />
         </IconButton>

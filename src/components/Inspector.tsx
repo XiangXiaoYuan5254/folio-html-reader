@@ -22,10 +22,10 @@ import { lazy, Suspense, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Annotation, NoteReveal, OutlineItem, OpenDocument } from '../types';
 import { IconButton } from './IconButton';
+import { TabIndicator } from './TabIndicator';
 import { PenIcon } from './PenIcon';
 import { InkThumbnail } from './InkThumbnail';
 import { SidebarResizer } from './SidebarResizer';
-import { TabIndicator } from './TabIndicator';
 import { invoke, isDesktop } from '../api';
 import { ImageViewer } from './ImageViewer';
 // Pictures in the note: where one is shown from, and keeping a new one in the project.
@@ -92,14 +92,14 @@ export function Inspector(p: {
       <SidebarResizer side="right" />
       <div className="inspector-heading">
         <span>批注与笔记</span>
-        <IconButton className="inspector-drawer-close" label="收起批注栏" onClick={p.onClose}>
+        <IconButton className="inspector-drawer-close" label="收起侧栏" onClick={p.onClose}>
           <X size={16} />
         </IconButton>
         <IconButton label="导出 Markdown 笔记" onClick={p.onExport} disabled={!p.doc}>
           <Download size={16} />
         </IconButton>
       </div>
-      <div className="inspector-tabs">
+      <nav className="inspector-tabs" aria-label="阅读侧栏功能">
         {(
           [
             { id: 'annotations', label: '批注', icon: MessageSquare },
@@ -107,21 +107,22 @@ export function Inspector(p: {
             { id: 'outline', label: '目录', icon: List },
             { id: 'assistant', label: '助手', icon: Sparkle },
           ] as const
-        ).map((t) => (
+        ).map(({ id, label, icon: Icon }) => (
           <button
-            key={t.id}
-            className={p.tab === t.id ? 'active' : ''}
-            onClick={() => p.onTab(t.id)}
+            key={id}
+            className={p.tab === id ? 'active' : ''}
+            aria-pressed={p.tab === id}
+            onClick={() => p.onTab(id)}
           >
-            <t.icon size={14} />
-            {t.label}
-            {t.id === 'annotations' && p.doc?.data.annotations.length ? (
+            <Icon size={14} />
+            {label}
+            {id === 'annotations' && p.doc?.data.annotations.length ? (
               <span>{p.doc.data.annotations.length}</span>
             ) : null}
           </button>
         ))}
         <TabIndicator className="inspector-tab-indicator" active={p.tab} />
-      </div>
+      </nav>
       {p.tab === 'annotations' ? (
         <>
           <label className="annotation-search">

@@ -144,7 +144,8 @@ try {
       platform: document.documentElement.dataset.platform,
       overlay: overlay?.visible,
       areaRight: area ? area.x + area.width : null,
-      nameRight: document.querySelector('.titlebar-document').getBoundingClientRect().right,
+      tabsRight: document.querySelector('.document-tab-row').getBoundingClientRect().right,
+      brandLeft: document.querySelector('.brand').getBoundingClientRect().left,
       openKey: document.querySelector('.open-folder kbd')?.textContent,
       font: getComputedStyle(document.body).fontFamily,
     };
@@ -152,9 +153,10 @@ try {
   assert.equal(ui.platform, 'win32');
   assert.equal(ui.overlay, true, 'window controls overlay visible');
   assert.ok(
-    ui.nameRight <= ui.areaRight,
-    `project name clear of caption buttons: ${JSON.stringify(ui)}`,
+    ui.tabsRight <= ui.areaRight,
+    `document tabs clear of caption buttons: ${JSON.stringify(ui)}`,
   );
+  assert.ok(ui.brandLeft < 50, 'brand sits on the left on Windows');
   assert.equal(ui.openKey, 'Ctrl+O');
   assert.match(ui.font, /Microsoft YaHei/);
   assert.deepEqual(

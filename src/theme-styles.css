@@ -15,12 +15,24 @@
 :root[data-style='bold'] :is(.statusbar, .sidebar-footer) {
   border-top: var(--edge);
 }
-:root[data-style='bold'] .split-reading-toggle {
-  border-left: var(--edge);
-  border-bottom: var(--edge);
-}
 :root[data-style='bold'] .reading-column-header {
   border-bottom: var(--edge);
+}
+:root[data-style='bold'] .document-tab-row {
+  gap: 0;
+  padding: 0;
+  border-bottom: 0;
+}
+:root[data-style='bold'] .document-tabs {
+  align-items: stretch;
+  gap: 0;
+  padding: 0 8px;
+}
+:root[data-style='bold'] .document-tab {
+  height: 48px;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
 }
 :root[data-style='bold'] .document-tab.selected {
   border: var(--edge);
@@ -683,4 +695,9 @@
 }
 :root[data-theme='terminal'] :is(.empty-icon, .welcome-mark) {
   transform: none;
+}
+
+/* Titlebar tabs keep the same edge as their surrounding header. */
+:root[data-style='bold'] .titlebar .document-tabs {
+  border-bottom: 0;
 }

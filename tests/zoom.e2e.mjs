@@ -72,8 +72,8 @@ async function point(side = 'left') {
   const b = await page.locator(`[data-pane=${side}] iframe`).boundingBox();
   return { x: b.x + b.width * 0.48, y: b.y + Math.min(270, b.height * 0.45) };
 }
-async function wheel(delta, side = 'left', cmd = true) {
-  const p = await point(side);
+async function wheel(delta, side = 'left', cmd = true, at) {
+  const p = at || (await point(side));
   await page.mouse.move(p.x, p.y);
   if (cmd) await page.keyboard.down('ControlOrMeta');
   await page.mouse.wheel(0, delta);
@@ -117,7 +117,7 @@ try {
   await start();
   assert.equal(await page.title(), '页间 · Folio');
   assert.equal(page.url(), 'app://ui/index.html');
-  await page.getByLabel('收起批注栏', { exact: true }).click();
+  await page.getByLabel('收起侧栏', { exact: true }).click();
   // Measure the toolbar once the panel has slid away.
   await page.locator('.inspector').waitFor({ state: 'hidden' });
   let f = await frame();
@@ -139,7 +139,9 @@ try {
   await page.waitForTimeout(180);
   f = await anchor('left');
   const before = await anchorScreen(f, 'left');
-  await wheel(-65);
+  // Use the actual character center: changing the reader width can put the
+  // arbitrary sampling point in line spacing, where element anchoring is correct.
+  await wheel(-65, 'left', true, before);
   await wait(async () => (await scale()) > 1.1, 'Cmd wheel enlarges');
   await page.waitForTimeout(180);
   const bigger = await scale();
@@ -173,8 +175,15 @@ try {
     'PASS: Cmd+native wheel continuously zooms with a stable text anchor, plain wheel scrolls, percentage matches, app chrome stays unchanged',
   );
   await setZoom(1);
-  await page.getByRole('button', { name: '双栏阅读', exact: true }).click();
-  await page.getByLabel('右栏文档', { exact: true }).selectOption('B.html');
+  const dragSource = await page.locator('.tree-row[data-file-path="B.html"]').boundingBox();
+  const dragTarget = await page.locator('.document-workbench').boundingBox();
+  await page.mouse.move(dragSource.x + 65, dragSource.y + dragSource.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(dragSource.x + 95, dragSource.y + dragSource.height / 2 + 5, { steps: 5 });
+  await page.mouse.move(dragTarget.x + dragTarget.width * 0.8, dragTarget.y + 180, { steps: 22 });
+  await page.mouse.move(dragTarget.x + dragTarget.width * 0.8 + 1, dragTarget.y + 181);
+  await page.locator('.reading-drop-preview.hovered').waitFor();
+  await page.mouse.up();
   await ready();
   await wait(async () => (await page.locator('iframe').count()) === 2, 'split');
   const left = await frame('left'),

@@ -157,6 +157,12 @@ const server = http.createServer(async (req, res) => {
   }
   const system = body.messages.find((m) => m.role === 'system')?.content || '';
   const user = [...body.messages].reverse().find((m) => m.role === 'user')?.content || '';
+  if (user === '测试回答提前结束') {
+    res.writeHead(200, { 'Content-Type': 'text/event-stream', 'x-request-id': 'truncated-e2e' });
+    return res.end(
+      `data: ${JSON.stringify({ choices: [{ delta: { content: '这是保留下来的半截回答' } }] })}\n\n`,
+    );
+  }
   if (user.includes('连接测试')) return stream(res, { text: 'OK' });
   if (system.includes('专业译者'))
     return stream(res, {
@@ -288,7 +294,7 @@ try {
   await frame();
 
   // Setup: the assistant asks for a service first.
-  await page.getByLabel('AI 助手', { exact: true }).click();
+  await showAssistant(page);
   await panel().getByText('接入你自己的 AI').waitFor();
   await panel().getByRole('button', { name: '配置 AI 服务', exact: true }).click();
   const settings = page.getByRole('dialog', { name: 'AI 设置' });
@@ -629,8 +635,8 @@ try {
   console.log('PASS: source mode AI edit -> diff + preview -> applied and saved');
 
   // The project agent reads, then waits for approval before each change.
-  await page.getByLabel('AI 助手', { exact: true }).click();
-  if (!(await panel().isVisible())) await page.getByLabel('AI 助手', { exact: true }).click();
+  await showAssistant(page);
+  if (!(await panel().isVisible())) await showAssistant(page);
   await panel().getByRole('tab', { name: '整个项目' }).click();
   await panel().getByLabel('向 AI 提问').fill('给这篇文档写三句话摘要');
   await panel().getByLabel('向 AI 提问').press('Enter');
@@ -765,7 +771,7 @@ try {
     async () => (await page.locator('.document-frame').first().getAttribute('src')).includes('01_'),
     'document opened',
   );
-  if (!(await panel().isVisible())) await page.getByLabel('AI 助手', { exact: true }).click();
+  if (!(await panel().isVisible())) await showAssistant(page);
   // The 精读笔记 is still open beside it, so the tab reads 这两篇.
   await panel()
     .getByRole('tab', { name: /^(本文|这两篇)$/ })
@@ -931,9 +937,68 @@ try {
     'PASS: pictures pasted, dropped and framed; blocked for text-only models; sent to the model',
   );
 
+  // An upstream EOF is an error, not a completed answer. Preserve the partial text in the
+  // UI and on disk; correlate the attempt and request outcome in the real diagnostic log.
+  await panel()
+    .getByRole('tab', { name: /^(本文|这两篇)$/ })
+    .click();
+  await panel().locator('.assistant-new').click();
+  await composer.fill('测试回答提前结束');
+  await composer.press('Enter');
+  const interrupted = panel().locator('.chat-answer.error');
+  await interrupted
+    .locator('.chat-error')
+    .getByText(/回答尚未完成，连接就结束了/)
+    .waitFor();
+  assert.match(await interrupted.innerText(), /这是保留下来的半截回答/);
+  assert.equal(await panel().locator('.chat-answer.done').count(), 0);
+  await interrupted.getByRole('button', { name: '重试', exact: true }).waitFor();
+  const aiDir = path.join(project, '.html-reader/ai');
+  await waitFor(async () => {
+    for (const name of await fs.readdir(aiDir)) {
+      if (!name.endsWith('.json')) continue;
+      const saved = JSON.parse(await fs.readFile(path.join(aiDir, name), 'utf8'));
+      if (
+        saved.threads?.some((thread) =>
+          thread.messages.some(
+            (m) =>
+              m.text === '这是保留下来的半截回答' &&
+              m.status === 'error' &&
+              /回答尚未完成/.test(m.error),
+          ),
+        )
+      )
+        return true;
+    }
+    return false;
+  }, 'partial answer saved as an error');
+  const logText = await fs.readFile(path.join(userData, 'logs/ai.jsonl'), 'utf8');
+  const log = logText.trim().split('\n').map(JSON.parse);
+  const attempt = log.find((e) => e.serverRequestId === 'truncated-e2e');
+  assert.equal(attempt.end, 'incomplete');
+  assert.equal(attempt.done, false);
+  assert.equal(attempt.eof, true);
+  assert.equal(attempt.finishReason, '');
+  assert.ok(
+    log.some(
+      (e) => e.request === attempt.request && e.event === 'request-end' && e.end === 'error',
+    ),
+  );
+  assert.doesNotMatch(logText, /这是保留下来的半截回答|测试回答提前结束|mock-key-for-local-test/);
+  await page.screenshot({ path: path.join(evidence, 'ai-interrupted-answer.png') });
+  console.log(
+    'PASS: interrupted answer stays visible, is saved as an error, and has private diagnostic metadata',
+  );
+
   assert.deepEqual(errors, []);
   console.log('PASS: no renderer errors');
 } finally {
   await app?.close().catch(() => {});
   server.close();
+}
+
+async function showAssistant(page) {
+  const toggle = page.getByLabel('AI 助手与笔记', { exact: true });
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+  await page.locator('.inspector-tabs').getByRole('button', { name: '助手', exact: true }).click();
 }

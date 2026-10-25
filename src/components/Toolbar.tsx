@@ -8,7 +8,6 @@ import {
   Undo2,
   Redo2,
   PanelLeft,
-  PanelRight,
   Search,
   Save,
   RefreshCw,
@@ -17,19 +16,19 @@ import {
   Type,
   Presentation,
   Sparkles,
-  Maximize,
-  Minimize,
+  Sparkle,
   Link2,
   Minus,
   Plus,
   SquareMousePointer,
   History,
-  Sparkle,
+  Maximize,
   WandSparkles,
   ChevronDown,
   Pin,
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { Ref } from 'react';
 import type { EraserMode, Tool } from '../types';
 import { IconButton } from './IconButton';
 import { PenIcon } from './PenIcon';
@@ -78,8 +77,6 @@ const tools = [
 export function Toolbar(p: {
   mode: 'read' | 'source';
   pdf?: boolean;
-  focusMode: boolean;
-  onFocusMode: () => void;
   onMode: (v: 'read' | 'source') => void;
   tool: Tool;
   onTool: (v: Tool) => void;
@@ -95,17 +92,19 @@ export function Toolbar(p: {
   zoom: number;
   onZoom: (v: number) => void;
   onLeft: () => void;
-  onRight: () => void;
+  sidebarOpen: boolean;
+  onSidebar: () => void;
   onFind: () => void;
   onSave: () => void;
   onReload: () => void;
   onHistory: () => void;
   aiEditing?: boolean;
   onAiEdit?: () => void;
-  assistantOpen?: boolean;
-  onAssistant?: () => void;
+  onFocus: () => void;
   // Explains the selected text, or a framed region of the page, on the whiteboard.
   onWhiteboard?: () => void;
+  whiteboardAway: boolean;
+  whiteboardHost: Ref<HTMLDivElement>;
   inspecting: boolean;
   autosave: boolean;
   onAutosave: () => void;
@@ -156,6 +155,7 @@ export function Toolbar(p: {
   const strip = useRef<HTMLDivElement>(null);
   const more = useRef<HTMLButtonElement>(null);
   const [fit, setFit] = useState<number>(tools.length);
+  const [wrap, setWrap] = useState(false);
   const [moreMenu, setMoreMenu] = useState<MenuAnchor | null>(null);
   useLayoutEffect(() => {
     // Keep menu items in place between the two clicks, even if selecting a tool
@@ -164,25 +164,58 @@ export function Toolbar(p: {
     const host = strip.current;
     const bar = host?.parentElement;
     const spacer = bar?.querySelector<HTMLElement>('.toolbar-flex');
-    if (!host || !bar || !spacer) return;
+    if (!host || !bar || !spacer) {
+      setWrap(false);
+      return;
+    }
     const measure = () => {
       const button = (host.firstElementChild as HTMLElement).offsetWidth;
-      const step = button + (parseFloat(getComputedStyle(host).columnGap) || 0);
-      const moreWidth =
-        (more.current?.offsetWidth || button) + (parseFloat(getComputedStyle(bar).columnGap) || 0);
-      // The room the tools would have with the spacer squeezed and no menu button.
+      const hostStyle = getComputedStyle(host);
+      const barStyle = getComputedStyle(bar);
+      const gap = parseFloat(barStyle.columnGap) || 0;
+      const toolGap = parseFloat(hostStyle.columnGap) || 0;
+      const step = button + toolGap;
+      const peers = [...bar.children].filter(
+        (el) =>
+          el !== host &&
+          el !== spacer &&
+          el !== more.current &&
+          getComputedStyle(el).display !== 'none',
+      );
+      const reserved = peers.reduce((width, el) => {
+        const style = getComputedStyle(el);
+        return (
+          width +
+          el.getBoundingClientRect().width +
+          (parseFloat(style.marginLeft) || 0) +
+          (parseFloat(style.marginRight) || 0)
+        );
+      }, 0);
+      // Count a single row's available room even when a very narrow toolbar wraps.
+      // The spare space on a second row must not make every hidden tool reappear.
       const room =
-        host.clientWidth +
-        Math.max(0, spacer.offsetWidth - parseFloat(getComputedStyle(spacer).minWidth)) +
-        (more.current ? moreWidth : 0);
-      const count = (width: number) => Math.floor((width + step - button) / step);
+        bar.clientWidth -
+        parseFloat(barStyle.paddingLeft) -
+        parseFloat(barStyle.paddingRight) -
+        reserved -
+        gap * (peers.length + 1) -
+        (parseFloat(getComputedStyle(spacer).minWidth) || 0);
+      const moreWidth =
+        (more.current?.offsetWidth ||
+          bar.querySelector<HTMLElement>(':scope > .icon-button')?.offsetWidth ||
+          button) + gap;
+      const padding = parseFloat(hostStyle.paddingLeft) + parseFloat(hostStyle.paddingRight);
+      const count = (width: number) => Math.floor((width - padding + toolGap) / step);
       setFit(count(room) >= tools.length ? tools.length : Math.max(1, count(room - moreWidth)));
+      // A lesson status can be wider than an icon. If even one tool plus the menu
+      // no longer fits, allow another row instead of covering the right panel.
+      setWrap(room < padding + button + moreWidth);
     };
     measure();
     const observer = new ResizeObserver(measure);
-    for (const el of [bar, host, spacer]) observer.observe(el);
+    for (const el of [bar, ...bar.children]) observer.observe(el);
     return () => observer.disconnect();
-  }, [p.mode, moreMenu]);
+  }, [p.mode, p.tool, p.canLinkScroll, p.whiteboardAway, moreMenu]);
   useEffect(() => setMoreMenu(null), [p.mode, fit]);
   const overflow = tools.slice(fit);
   const hiddenActive = overflow.find((t) => t.id === p.tool);
@@ -202,7 +235,7 @@ export function Toolbar(p: {
     return () => document.removeEventListener('pointerdown', dismiss, true);
   }, [settings, setSettings]);
   return (
-    <div className="reader-toolbar">
+    <div className={`reader-toolbar${wrap ? ' wrap' : ''}`}>
       <IconButton className="focus-hide" label="显示或隐藏文件树" onClick={p.onLeft}>
         <PanelLeft size={17} />
       </IconButton>
@@ -514,41 +547,46 @@ export function Toolbar(p: {
         <Search size={17} />
       </IconButton>
       {p.onWhiteboard ? (
-        <IconButton
-          className="focus-hide"
-          label="白板讲解"
-          help="选中文字，或点这里框选公式、图片，页老师在白板上边写边讲"
-          disabled={p.disabled}
-          onClick={p.onWhiteboard}
+        <div
+          className={`whiteboard-tool focus-hide${p.whiteboardAway ? ' is-away' : ''}`}
+          ref={p.whiteboardHost}
         >
-          <Presentation size={17} />
-        </IconButton>
+          {!p.whiteboardAway ? (
+            <IconButton
+              label="白板讲解"
+              help="选中文字，或点这里框选公式、图片，页老师在白板上边写边讲"
+              disabled={p.disabled}
+              onClick={p.onWhiteboard}
+            >
+              <Presentation size={17} />
+            </IconButton>
+          ) : null}
+        </div>
       ) : null}
-      {p.onAssistant ? (
-        <button
-          type="button"
-          className={`ai-toolbar-button focus-hide ${p.assistantOpen ? 'active' : ''}`}
-          aria-label="AI 助手"
-          aria-pressed={!!p.assistantOpen}
-          title="AI 助手：就当前文档提问、总结、划重点，或让 AI 在整个项目里整理"
-          onClick={p.onAssistant}
-        >
-          <Sparkle size={14} />
-          AI<span className="ai-toolbar-extra"> 助手</span>
-        </button>
-      ) : null}
-      <IconButton className="focus-hide" label="显示或隐藏批注栏" onClick={p.onRight}>
-        <PanelRight size={17} />
-      </IconButton>
       <IconButton
-        label={p.focusMode ? '退出专注阅读' : '专注阅读'}
+        className="focus-hide"
+        label="专注阅读"
         help={`全屏沉浸阅读 · ${shortcut('mod', 'shift', 'F')} 切换 · Esc 退出`}
-        active={p.focusMode}
         disabled={p.disabled}
-        onClick={p.onFocusMode}
+        onClick={p.onFocus}
       >
-        {p.focusMode ? <Minimize size={17} /> : <Maximize size={17} />}
+        <Maximize size={17} />
       </IconButton>
+      <button
+        type="button"
+        className={`ai-toolbar-button focus-hide ${p.sidebarOpen ? 'active' : ''}`}
+        aria-label="AI 助手与笔记"
+        title={
+          p.sidebarOpen ? '收起右侧栏，扩大阅读区' : '打开右侧栏，可切换助手、批注、笔记和目录'
+        }
+        aria-pressed={p.sidebarOpen}
+        aria-expanded={p.sidebarOpen}
+        aria-controls="inspector-panel"
+        onClick={p.onSidebar}
+      >
+        <Sparkle size={14} />
+        AI<span className="ai-toolbar-extra"> 助手与笔记</span>
+      </button>
     </div>
   );
 }

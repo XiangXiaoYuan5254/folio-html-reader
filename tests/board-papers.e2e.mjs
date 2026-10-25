@@ -222,7 +222,7 @@ try {
   await frame();
 
   // A service pointed at the mock, as in tests/ai.e2e.mjs.
-  await page.getByLabel('AI 助手', { exact: true }).click();
+  await showAssistant(page);
   await panel().getByRole('button', { name: '配置 AI 服务', exact: true }).click();
   const settings = page.getByRole('dialog', { name: 'AI 设置' });
   await settings.getByRole('button', { name: /^DeepSeek/ }).click();
@@ -285,7 +285,7 @@ try {
 
   // The assistant finds papers and, once approved, saves one into the project.
   // Still open from setting up the service; a click would slide it shut.
-  if (!(await panel().isVisible())) await page.getByLabel('AI 助手', { exact: true }).click();
+  if (!(await panel().isVisible())) await showAssistant(page);
   await panel().getByRole('tab', { name: '整个项目' }).click();
   await panel().getByLabel('向 AI 提问').fill('找一篇 Transformer 的原始论文存到“论文”文件夹');
   await panel().getByLabel('向 AI 提问').press('Enter');
@@ -352,4 +352,10 @@ try {
   server.closeAllConnections();
   server.close();
   await fs.rm(temp, { recursive: true, force: true }).catch(() => {});
+}
+
+async function showAssistant(page) {
+  const toggle = page.getByLabel('AI 助手与笔记', { exact: true });
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+  await page.locator('.inspector-tabs').getByRole('button', { name: '助手', exact: true }).click();
 }

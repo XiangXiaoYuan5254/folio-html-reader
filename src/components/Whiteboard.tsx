@@ -322,7 +322,8 @@ function Away({
       className="wb-away"
       data-ready={ready || undefined}
       data-error={state.phase === 'error' || undefined}
-      title="展开白板"
+      aria-label={`展开白板：${text}`}
+      title={text + ' · 点击展开白板'}
       onClick={onShow}
     >
       {thinking && !ready ? (
@@ -888,7 +889,7 @@ export default function Whiteboard({
   tutor: Tutor;
   selection: string;
   // Put away for a while, to read on while the teacher thinks, with the way back to it shown
-  // in `awayIn` (the title bar).
+  // in `awayIn` (the reading toolbar's whiteboard button).
   away: boolean;
   onAway: (away: boolean) => void;
   awayIn: HTMLElement | null;
@@ -1483,7 +1484,7 @@ export default function Whiteboard({
           </IconButton>
           <IconButton
             label="收起白板"
-            help="页老师接着想，想好了点右下角的提示回来"
+            help="页老师接着想，点击阅读工具栏里的白板进度即可回来"
             onClick={() => onAway(true)}
           >
             <Minus size={16} />

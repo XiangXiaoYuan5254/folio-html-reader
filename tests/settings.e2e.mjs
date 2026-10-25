@@ -173,7 +173,7 @@ try {
   await menu('AI 设置…');
   await checkLegacyAi();
   await closeLegacyAi();
-  await page.getByLabel('AI 助手', { exact: true }).click();
+  await showAssistant(page);
   await page
     .locator('.assistant-panel')
     .getByRole('button', { name: 'AI 设置', exact: true })
@@ -368,4 +368,10 @@ try {
   await app?.close().catch(() => {});
   server.closeAllConnections();
   await new Promise((resolve) => server.close(resolve));
+}
+
+async function showAssistant(page) {
+  const toggle = page.getByLabel('AI 助手与笔记', { exact: true });
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+  await page.locator('.inspector-tabs').getByRole('button', { name: '助手', exact: true }).click();
 }

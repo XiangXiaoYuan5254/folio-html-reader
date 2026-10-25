@@ -1,3 +1,4 @@
+import { selectTool } from './toolbar-helper.mjs';
 import { _electron as electron } from 'playwright';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -116,7 +117,7 @@ async function screenBox(locator) {
   };
 }
 async function lineDraw(label, from, to) {
-  await page.getByLabel(label, { exact: true }).click();
+  await selectTool(page, label);
   const f = await rendered();
   const box = await screenBox(f.locator('#draw-area'));
   await page.mouse.move(box.x + from[0], box.y + from[1]);
@@ -184,7 +185,7 @@ try {
     ),
   );
   await page.getByLabel('高亮', { exact: true }).click();
-  await page.getByLabel('显示或隐藏批注栏', { exact: true }).click();
+  await page.getByLabel('AI 助手与笔记', { exact: true }).click();
   await page.locator('.inspector').waitFor({ state: 'hidden' });
   const target = await screenBox(f.locator('#target'));
   await page.mouse.move(target.x + 1, target.y + target.height / 2);
@@ -197,7 +198,7 @@ try {
     false,
     'annotation must not open inspector',
   );
-  await page.getByLabel('显示或隐藏批注栏', { exact: true }).click();
+  await page.getByLabel('AI 助手与笔记', { exact: true }).click();
   const actualSelection = await f.evaluate(() => window.actualSelection);
   assert.ok(actualSelection.includes(quote));
   assert.equal(await page.locator('.annotation-quote').innerText(), actualSelection);
@@ -209,7 +210,7 @@ try {
   );
   console.log('PASS: mouse-selected text -> anchored highlight -> annotation note persisted');
   for (const [label, type] of [['下划线', 'underline']]) {
-    await page.getByLabel(label, { exact: true }).click();
+    await selectTool(page, label);
     const b = await screenBox(f.locator('h1'));
     await page.mouse.move(b.x + 2, b.y + b.height / 2);
     await page.mouse.down();
@@ -245,7 +246,7 @@ try {
   await page.getByLabel('重做批注', { exact: true }).click();
   assert.equal(await page.locator('.annotation-card').count(), 4);
 
-  await page.getByLabel('橡皮擦', { exact: true }).click();
+  await selectTool(page, '橡皮擦');
   const eraseBox = await screenBox(f.locator('[data-folio-ui="overlay"] path').first());
   await page.mouse.click(eraseBox.x + eraseBox.width / 2, eraseBox.y + eraseBox.height / 2);
   await waitFor(

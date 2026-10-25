@@ -24,6 +24,9 @@ export type AnnouncementFeed = {
 
 // All entry points share the existing read marker, including the standalone AI window.
 const seenKey = 'folio.announcements-seen';
+// A window that stays open still hears about new offers. The main process keeps its
+// copy for 30 minutes, so most of these checks cost no request.
+const pollEvery = 6 * 60 * 60_000;
 let latest = 0;
 let unseen = false;
 let loading: Promise<AnnouncementFeed> | null = null;
@@ -78,7 +81,10 @@ function subscribe(listener: () => void) {
 }
 export function useUnreadAnnouncements() {
   useEffect(() => {
-    if (isDesktop) void loadAnnouncements().catch(() => {});
+    if (!isDesktop) return;
+    void loadAnnouncements().catch(() => {});
+    const timer = setInterval(() => void loadAnnouncements().catch(() => {}), pollEvery);
+    return () => clearInterval(timer);
   }, []);
   return useSyncExternalStore(subscribe, () => unseen);
 }

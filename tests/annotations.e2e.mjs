@@ -200,7 +200,7 @@ try {
   assert.equal(await page.title(), '页间 · Folio');
   assert.equal(await page.locator('vite-error-overlay').count(), 0);
   let f = await openFile(sampleName);
-  await page.getByLabel('收起批注栏', { exact: true }).click();
+  await page.getByLabel('收起侧栏', { exact: true }).click();
   // The panel slides away before it is hidden.
   await page.locator('.inspector').waitFor({ state: 'hidden' });
   for (const label of [
@@ -346,12 +346,12 @@ try {
   );
   assert.equal(await page.locator('.inspector').isVisible(), false);
   const beforeErase = (await dataFor(sampleName)).data.annotations.filter((a) => a.type === 'pen');
-  await page.getByLabel('显示或隐藏批注栏', { exact: true }).click();
+  await page.getByLabel('AI 助手与笔记', { exact: true }).click();
   const selectedPen = page.locator(`[data-annotation="${beforeErase[0].id}"]`);
   await selectedPen.getByRole('button', { name: '定位画笔批注', exact: true }).click();
   await f.locator(`[data-selection-outline="${beforeErase[0].id}"]`).waitFor();
   assert.ok((await selectedPen.getAttribute('class')).includes('selected'));
-  await page.getByLabel('收起批注栏', { exact: true }).click();
+  await page.getByLabel('收起侧栏', { exact: true }).click();
   await page.getByLabel('橡皮擦', { exact: true }).click();
   const box = await screenBox(f.locator('#draw-area'));
   // A fast single move across both long strokes must cut both, not delete either.
@@ -504,7 +504,7 @@ try {
   const textEditor = textCard.getByLabel('文本注释内容', { exact: true });
   await textEditor.fill('这条文字只在列表定位时显示虚线');
   await noLocator(f, 'creating and editing page text does not show a locator');
-  await page.getByLabel('显示或隐藏批注栏', { exact: true }).click();
+  await page.getByLabel('AI 助手与笔记', { exact: true }).click();
   await page.getByRole('button', { name: '查看页面中的文本注释', exact: true }).click();
   await f.locator('[data-selection-outline]').waitFor();
   await textEditor.click();
@@ -515,7 +515,7 @@ try {
   await textCard.hover();
   await textCard.getByLabel('删除文本注释', { exact: true }).click();
   await page.getByLabel('显示或隐藏文件树', { exact: true }).click();
-  await page.getByLabel('收起批注栏', { exact: true }).click();
+  await page.getByLabel('收起侧栏', { exact: true }).click();
   console.log(
     'PASS: only explicit sidebar navigation enables the dashed locator; drawing, highlights, sticky notes, page text editing and later sync stay clear',
   );
@@ -549,13 +549,13 @@ try {
     await page.locator('.reader-toolbar').evaluate((e) => e.clientWidth >= e.scrollWidth),
     true,
   );
-  await page.getByLabel('显示或隐藏批注栏', { exact: true }).click();
+  await page.getByLabel('AI 助手与笔记', { exact: true }).click();
   assert.equal(
     await page.locator('.reader-toolbar').evaluate((e) => e.clientWidth >= e.scrollWidth),
     true,
     'tools fit at 900px with inspector',
   );
-  await page.getByLabel('收起批注栏', { exact: true }).click();
+  await page.getByLabel('收起侧栏', { exact: true }).click();
   await page.locator('.inspector').waitFor({ state: 'hidden' });
   await page.screenshot({ path: path.join(evidence, 'interactions-compact.png') });
   const errors = consoleErrors.filter(

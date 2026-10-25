@@ -412,7 +412,7 @@
   padding: 0;
   overflow: visible;
 }
-.statusbar > .icon-button.settings-button {
+.statusbar .icon-button.settings-button {
   position: relative;
   margin-left: 0;
 }
@@ -439,7 +439,7 @@
 .statusbar .save-state {
   white-space: nowrap;
 }
-.statusbar > .icon-button {
+.statusbar .icon-button {
   flex-shrink: 0;
 }
 @container (max-width: 190px) {

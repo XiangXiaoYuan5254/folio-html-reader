@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { FileCode2, FileText, X, Plus, Columns2 } from 'lucide-react';
+import { FileCode2, FileText, X, Plus } from 'lucide-react';
 import type { OpenDocument } from '../types';
 import { IconButton } from './IconButton';
 export function DocumentTabs({
@@ -8,8 +8,6 @@ export function DocumentTabs({
   onSelect,
   onClose,
   onNew,
-  split,
-  onSplit,
   autosave,
 }: {
   docs: OpenDocument[];
@@ -17,8 +15,6 @@ export function DocumentTabs({
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
   onNew: () => void;
-  split: boolean;
-  onSplit: () => void;
   // Auto-saved edits are written at once, so only a failed save leaves a tab marked unsaved.
   autosave: boolean;
 }) {
@@ -71,16 +67,6 @@ export function DocumentTabs({
           <Plus size={17} />
         </IconButton>
       </div>
-      <button
-        className={`split-reading-toggle${split ? ' active' : ''}`}
-        disabled={!docs.length}
-        aria-pressed={split}
-        onClick={onSplit}
-        title={split ? '退出双栏，保留当前文档' : '左右同时阅读两篇文档；点击任一栏切换操作对象'}
-      >
-        <Columns2 size={16} />
-        {split ? '退出双栏' : '双栏阅读'}
-      </button>
     </div>
   );
 }

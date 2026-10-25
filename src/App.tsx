@@ -19,7 +19,6 @@ import {
   Languages,
   Lightbulb,
   MessageCircleQuestion,
-  Palette,
   Presentation,
   Crown,
   ArrowUpToLine,
@@ -406,9 +405,9 @@ export default function App() {
   // The whiteboard teacher explaining a selection.
   const [lesson, setLesson] = useState<{ tutor: Tutor; selection: string } | null>(null);
   // The board put away for a while, to read on while the teacher thinks; the way back to it
-  // is in the title bar.
+  // replaces the whiteboard button in the reading toolbar.
   const [boardAway, setBoardAway] = useState(false);
-  const [titleEnd, setTitleEnd] = useState<HTMLDivElement | null>(null);
+  const [whiteboardTool, setWhiteboardTool] = useState<HTMLDivElement | null>(null);
   // Framing a formula or figure on the page for the whiteboard.
   const [boardCapture, setBoardCapture] = useState(false);
   const [boardList, setBoardList] = useState(false);
@@ -650,7 +649,7 @@ export default function App() {
         !e.altKey &&
         !input &&
         !document.querySelector('[role="dialog"]') &&
-        !target?.closest('.file-sidebar,.inspector,.find-bar,.reading-column-header') &&
+        !target?.closest('.file-sidebar,.inspector,.titlebar,.find-bar,.reading-column-header') &&
         current.current.mode === 'read' &&
         current.current.doc
       ) {
@@ -885,17 +884,6 @@ export default function App() {
     addEventListener('blur', cancel);
     addEventListener('keydown', escape, true);
     setPaneDrag({ side, over: null });
-  }
-  function toggleSplit() {
-    setMode('read');
-    if (split) {
-      setSplit(null);
-      return;
-    }
-    if (!doc) return;
-    const other = model.docs.find((d) => d.id !== doc.id);
-    focusedSide.current = 'left';
-    setSplit({ left: doc.id, right: other?.id || null });
   }
   async function loadWorkspace(w: WorkspaceInfo) {
     sessionReady.current = false;
@@ -1731,79 +1719,41 @@ export default function App() {
       className={`app-shell ${left ? '' : 'hide-left'} ${right ? '' : 'hide-right'}${focus.enabled ? ' focus-mode' : ''}${focus.toolsVisible ? ' focus-tools-visible' : ''}`}
     >
       <header className="titlebar">
-        {!isDesktop ? (
-          <div className="traffic-lights">
+        {!isDesktop && isMac ? (
+          <div className="traffic-lights" aria-hidden="true">
             <i />
             <i />
             <i />
           </div>
         ) : null}
-        {isDesktop ? (
-          // Also the way to check for updates on Windows, where the menu bar is hidden.
-          <button
-            type="button"
-            className="brand"
-            title={`页间 ${appVersion} · 点击检查更新`}
-            onClick={checkUpdates}
-          >
-            <BookOpen size={18} />
-            <strong>页间</strong>
-            <span>Folio</span>
-          </button>
-        ) : (
-          <div className="brand">
-            <BookOpen size={18} />
-            <strong>页间</strong>
-            <span>Folio</span>
-          </div>
-        )}
-        <div className="titlebar-end" ref={setTitleEnd}>
-          {updateHidden && (update.status === 'ready' || update.status === 'manual') ? (
-            <button type="button" className="update-chip" onClick={() => setUpdateHidden(false)}>
-              {update.status === 'ready' ? '重启以更新' : '有新版本'} {update.version}
-            </button>
-          ) : null}
-          {isDesktop && license ? (
+        <DocumentTabs
+          docs={model.docs}
+          active={model.active}
+          onSelect={selectDocument}
+          onClose={requestCloseDocument}
+          onNew={() => fileAction('create-file', '')}
+          autosave={autosave}
+        />
+        <div className="titlebar-end">
+          {isDesktop ? (
+            // Also the way to check for updates on Windows, where the menu bar is hidden.
             <button
               type="button"
-              className={`member-chip is-${license.state}`}
-              title={
-                license.member && license.forever
-                  ? '永久会员'
-                  : license.member && license.expires
-                    ? `会员到 ${new Date(license.expires).toLocaleString('zh-CN', { hour12: false })}`
-                    : 'PDF 阅读、AI 功能和界面主题需要会员'
-              }
-              onClick={() => setMembership({ reason: '' })}
+              className="brand"
+              title={`页间 ${appVersion} · 点击检查更新`}
+              onClick={checkUpdates}
             >
-              {license.state === 'paid' ? <Crown size={13} /> : null}
-              {
-                {
-                  paid: license.forever ? '永久会员' : '会员',
-                  trial: '试用中',
-                  offline: '会员待验证',
-                  clock: '会员待验证',
-                  expired: '会员已到期',
-                  none: '开通会员',
-                }[license.state]
-              }
+              <BookOpen size={18} />
+              <strong>页间</strong>
+              <span>Folio</span>
             </button>
-          ) : null}
-          <span className="titlebar-document">{workspace?.name}</span>
-          <div className="theme-menu">
-            <IconButton
-              label="界面主题"
-              help="切换配色，可跟随系统浅色 / 深色"
-              className="theme-button"
-              active={themePickerOpen}
-              onClick={() => setThemePickerOpen((open) => !open)}
-            >
-              <Palette size={16} />
-            </IconButton>
-            <Exit when={themePickerOpen}>
-              {() => <ThemePicker onClose={() => setThemePickerOpen(false)} />}
-            </Exit>
-          </div>
+          ) : (
+            <div className="brand">
+              <BookOpen size={18} />
+              <strong>页间</strong>
+              <span>Folio</span>
+            </div>
+          )}
         </div>
       </header>
       <div className="workspace-layout">
@@ -1852,10 +1802,51 @@ export default function App() {
           }
           status={
             <ReadingStatus
+              membership={
+                isDesktop && license ? (
+                  <button
+                    type="button"
+                    className={`member-chip is-${license.state}`}
+                    title={
+                      license.member && license.forever
+                        ? '永久会员'
+                        : license.member && license.expires
+                          ? `会员到 ${new Date(license.expires).toLocaleString('zh-CN', { hour12: false })}`
+                          : 'PDF 阅读、AI 功能和界面主题需要会员'
+                    }
+                    onClick={() => setMembership({ reason: '' })}
+                  >
+                    {license.state === 'paid' ? <Crown size={16} /> : null}
+                    <span>
+                      {
+                        {
+                          paid: license.forever ? '永久会员' : '会员',
+                          trial: '试用中',
+                          offline: '会员待验证',
+                          clock: '会员待验证',
+                          expired: '会员已到期',
+                          none: '开通会员',
+                        }[license.state]
+                      }
+                    </span>
+                  </button>
+                ) : null
+              }
+              updateNotice={
+                updateHidden && (update.status === 'ready' || update.status === 'manual') ? (
+                  <button
+                    type="button"
+                    className="update-chip"
+                    onClick={() => setUpdateHidden(false)}
+                  >
+                    {update.status === 'ready' ? '重启以更新' : '有新版本'} {update.version}
+                  </button>
+                ) : null
+              }
+              themeOpen={themePickerOpen}
+              onTheme={() => setThemePickerOpen((open) => !open)}
               onOpenSettings={() => openSettings()}
               format={doc?.kind === 'pdf' ? 'PDF' : 'HTML'}
-              saving={model.saving}
-              error={!!notice?.error}
               annotations={doc?.data.annotations.length || 0}
               progress={progress}
               hint={
@@ -1873,16 +1864,6 @@ export default function App() {
           }
         />
         <main className="main-panel">
-          <DocumentTabs
-            docs={model.docs}
-            active={model.active}
-            onSelect={selectDocument}
-            onClose={requestCloseDocument}
-            onNew={() => fileAction('create-file', '')}
-            split={!!split}
-            onSplit={toggleSplit}
-            autosave={autosave}
-          />
           {focus.enabled ? (
             <>
               <div className="focus-top-edge" onPointerEnter={() => focus.setToolsVisible(true)} />
@@ -1910,10 +1891,9 @@ export default function App() {
           ) : null}
           <div className="toolbar-host" inert={focus.enabled && !focus.toolsVisible}>
             <Toolbar
-              focusMode={focus.enabled}
               onLeft={() => setLeft((v) => !v)}
-              onRight={() => setRight((v) => !v)}
-              onFocusMode={() => liveActions.current.focus()}
+              sidebarOpen={right}
+              onSidebar={() => setRight((v) => !v)}
               pdf={doc?.kind === 'pdf'}
               mode={mode}
               onMode={setMode}
@@ -1941,15 +1921,12 @@ export default function App() {
               onHistory={() => setHistoryOpen({})}
               aiEditing={aiSourceOpen}
               onAiEdit={isDesktop ? () => setAiSourceOpen((v) => !v) : undefined}
-              assistantOpen={right && tab === 'assistant'}
+              onFocus={() => liveActions.current.focus()}
+              whiteboardAway={!!lesson && boardAway}
+              whiteboardHost={setWhiteboardTool}
               onWhiteboard={
                 isDesktop
                   ? () => (selection && mode === 'read' ? openWhiteboard() : setBoardCapture(true))
-                  : undefined
-              }
-              onAssistant={
-                isDesktop
-                  ? () => (right && tab === 'assistant' ? setRight(false) : openAssistant())
                   : undefined
               }
               dirty={!!doc && doc.draft !== doc.source}
@@ -2453,6 +2430,13 @@ export default function App() {
           }
         />
       </div>
+      <Exit when={themePickerOpen}>
+        {() => (
+          <div className="sidebar-theme-popover">
+            <ThemePicker onClose={() => setThemePickerOpen(false)} />
+          </div>
+        )}
+      </Exit>
       <Exit when={notice}>
         {(notice) => (
           <div
@@ -2556,7 +2540,7 @@ export default function App() {
             selection={lesson.selection}
             away={boardAway}
             onAway={setBoardAway}
-            awayIn={titleEnd}
+            awayIn={whiteboardTool}
             onNotify={notify}
             onHistory={() => setBoardList(true)}
             onOpenSettings={(page) => openAiSettings(page === 'voices' ? 'voices' : '')}

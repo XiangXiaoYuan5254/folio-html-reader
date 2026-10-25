@@ -136,7 +136,7 @@ async function dragFile(name, side = 'right', cancel = false) {
 }
 try {
   await start();
-  await page.getByLabel('收起批注栏', { exact: true }).click();
+  await page.getByLabel('收起侧栏', { exact: true }).click();
   await tool('选择文字');
   await page.keyboard.press('ControlOrMeta+a');
   assert.equal(

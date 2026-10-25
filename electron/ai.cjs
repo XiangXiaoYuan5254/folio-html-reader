@@ -36,6 +36,7 @@ function createAi({
   version = '',
   openUrl,
   speechLog,
+  diagnosticLog,
 }) {
   let cache = null;
   const running = new Map();
@@ -283,12 +284,83 @@ function createAi({
   }
   // Chat requests go to the provider's protocol; ChatGPT plans go through Codex, Kimi
   // memberships through the Kimi Code CLI.
-  function stream({ provider, key, request, signal, onDelta }) {
-    if (provider.kind === 'codex')
-      return codex.streamCodex({ provider, request, signal, onDelta, version });
-    if (provider.kind === 'kimi')
-      return kimi.streamKimi({ provider, request, signal, onDelta, home: kimiHome, version });
-    return streamChat({ provider, key, request, signal, onDelta, fetch });
+  async function stream({
+    provider,
+    key,
+    request,
+    signal,
+    onDelta,
+    requestId = crypto.randomUUID(),
+  }) {
+    const started = Date.now();
+    const record = async (entry) => {
+      try {
+        await diagnosticLog?.({
+          request: requestId,
+          service: provider.preset,
+          model: provider.model,
+          protocol: provider.kind,
+          version,
+          ...entry,
+        });
+      } catch {}
+    };
+    let result;
+    let failure;
+    let textChars = 0;
+    let reasoningChars = 0;
+    const delta = (d) => {
+      textChars += d.text?.length || 0;
+      reasoningChars += d.reasoning?.length || 0;
+      onDelta(d);
+    };
+    try {
+      if (provider.kind === 'codex')
+        result = await codex.streamCodex({ provider, request, signal, onDelta: delta, version });
+      else if (provider.kind === 'kimi')
+        result = await kimi.streamKimi({
+          provider,
+          request,
+          signal,
+          onDelta: delta,
+          home: kimiHome,
+          version,
+        });
+      else
+        result = await streamChat({
+          provider,
+          key,
+          request,
+          signal,
+          onDelta: delta,
+          fetch,
+          onDiagnostic: record,
+        });
+      return result;
+    } catch (e) {
+      failure = e;
+      throw e;
+    } finally {
+      await record({
+        event: 'request-end',
+        end:
+          signal?.aborted || failure?.name === 'AbortError'
+            ? 'aborted'
+            : failure
+              ? 'error'
+              : 'complete',
+        elapsedMs: Date.now() - started,
+        finishReason: result?.stopReason || '',
+        errorName: failure?.name,
+        code: failure?.cause?.code || failure?.code,
+        status: failure?.status,
+        textChars,
+        reasoningChars,
+        inputTokens: result?.usage?.input,
+        outputTokens: result?.usage?.output,
+        cachedTokens: result?.usage?.cached,
+      });
+    }
   }
   async function models(payload) {
     const { provider, key } = await resolve(payload || {});
@@ -411,6 +483,7 @@ function createAi({
         provider,
         key,
         request,
+        requestId,
         signal: controller.signal,
         onDelta: (delta) => emit({ type: 'ai-delta', requestId, ...delta }),
       });

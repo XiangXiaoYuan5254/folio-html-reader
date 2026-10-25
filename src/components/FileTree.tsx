@@ -352,9 +352,14 @@ export function FileTree({
           <RefreshCw size={15} />
         </IconButton>
       </div>
-      <button className="open-folder" onClick={onFolder}>
+      <button
+        className="open-folder"
+        title={workspace?.root || '选择项目'}
+        onClick={onFolder}
+      >
         <FolderOpen size={17} />
-        选择项目 <kbd>{shortcut('mod', 'O')}</kbd>
+        <span className="open-folder-name">{workspace?.name || '选择项目'}</span>
+        <kbd>{shortcut('mod', 'O')}</kbd>
       </button>
       <label className="tree-search">
         <Search size={14} />
@@ -383,7 +388,7 @@ export function FileTree({
         {...dropHandlers('')}
       >
         <FolderOpen size={16} />
-        <span title={workspace?.root}>{workspace?.name || '选择一个项目'}</span>
+        <span title="项目根目录">项目文件</span>
         <IconButton
           label="新建 HTML"
           onClick={() => onAction('create-file', '')}

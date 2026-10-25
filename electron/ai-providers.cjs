@@ -8,6 +8,7 @@
 // `images` are data: URLs on user turns; they go before the text, as the services suggest.
 // `raw` keeps Claude's content blocks (thinking included) so a tool loop can send them back
 // unchanged; `reasoning` is echoed to providers that require it during tool use.
+const { randomUUID } = require('node:crypto');
 
 // `thinking` says how a request sets the reasoning level:
 //   type     -> { thinking: { type: 'enabled' | 'disabled' } }, and reasoning_effort for a
@@ -329,11 +330,12 @@ const presetFor = (id) => presets.find((p) => p.id === id) || presets.at(-1);
 
 class AiError extends Error {
   // `noImages`: the service turned pictures away, so the model doesn't take them.
-  constructor(message, { status = 0, retry = false, noImages = false } = {}) {
+  constructor(message, { status = 0, retry = false, noImages = false, code = '' } = {}) {
     super(message);
     this.status = status;
     this.retry = retry;
     this.noImages = noImages;
+    this.code = code;
   }
 }
 function detail(body) {
@@ -375,7 +377,7 @@ function networkError(e, provider) {
     local
       ? `无法连接到本机模型服务，请确认 ${provider.name || '服务'} 已启动`
       : `无法连接到 ${provider.name || provider.baseUrl}，请检查网络或代理设置（${e?.message || e}）`,
-    { retry: true },
+    { retry: true, code: e?.cause?.code || e?.code || 'NETWORK_ERROR' },
   );
 }
 function endpoint(baseUrl, suffix) {
@@ -395,17 +397,26 @@ const sleep = (ms, signal) =>
   });
 
 // Server-sent events: yields each `data:` payload.
-async function* sseData(body, signal, idleMs) {
+async function* sseData(body, signal, idleMs, diagnostic = {}) {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
   let data = [];
+  const cancel = () => void reader.cancel().catch(() => {});
+  signal?.addEventListener('abort', cancel);
   try {
     while (true) {
+      if (signal?.aborted) throw Object.assign(new Error('已停止'), { name: 'AbortError' });
       let timer;
       const idle = new Promise((_, reject) => {
         timer = setTimeout(
-          () => reject(new AiError('服务长时间没有响应，已停止', { retry: true })),
+          () =>
+            reject(
+              new AiError('服务长时间没有响应，已停止', {
+                retry: true,
+                code: 'STREAM_IDLE_TIMEOUT',
+              }),
+            ),
           idleMs,
         );
       });
@@ -416,8 +427,15 @@ async function* sseData(body, signal, idleMs) {
         clearTimeout(timer);
       }
       if (signal?.aborted) throw Object.assign(new Error('已停止'), { name: 'AbortError' });
-      if (chunk.done) break;
-      buffer += decoder.decode(chunk.value, { stream: true });
+      if (chunk.done) {
+        diagnostic.eof = true;
+        buffer += decoder.decode();
+        // Some compatible services omit the final newline. Consume that last line too.
+        if (buffer && !buffer.endsWith('\n')) buffer += '\n';
+      } else {
+        diagnostic.bytes = (diagnostic.bytes || 0) + chunk.value.byteLength;
+        buffer += decoder.decode(chunk.value, { stream: true });
+      }
       let newline;
       while ((newline = buffer.search(/\r?\n/)) !== -1) {
         const line = buffer.slice(0, newline);
@@ -427,9 +445,12 @@ async function* sseData(body, signal, idleMs) {
           data = [];
         } else if (line.startsWith('data:')) data.push(line.slice(5).replace(/^ /, ''));
       }
+      if (chunk.done) break;
     }
     if (data.length) yield data.join('\n');
   } finally {
+    signal?.removeEventListener('abort', cancel);
+    cancel();
     reader.releaseLock?.();
   }
 }
@@ -684,7 +705,7 @@ const webServerTools = {
   mimo: [{ type: 'web_search' }],
   openrouter: [{ type: 'openrouter:web_search' }],
 };
-async function streamOpenAI({ provider, key, request, signal, onDelta, fetch }) {
+async function streamOpenAI({ provider, key, request, signal, onDelta, fetch, onDiagnostic }) {
   const preset = presetFor(provider.preset);
   const web = request.web ? preset.web || '' : '';
   const functions = [...(request.tools || []), ...(webBackends[web] ? webTools : [])];
@@ -728,153 +749,267 @@ async function streamOpenAI({ provider, key, request, signal, onDelta, fetch }) 
     headers['HTTP-Referer'] = 'https://helloxxy.com/works/folio/';
     headers['X-Title'] = 'Folio';
   }
+  const started = Date.now();
+  const diagnostic = {
+    event: 'stream-end',
+    protocol: 'openai',
+    attempt: randomUUID(),
+    maxTokens: body.max_tokens ?? null,
+    effort: body.reasoning_effort || '',
+    done: false,
+    eof: false,
+    events: 0,
+    invalidEvents: 0,
+    bytes: 0,
+    finishReason: '',
+  };
+  const result = { text: '', reasoning: '', toolCalls: [], stopReason: '', usage: null };
   let response;
   try {
-    response = await fetch(endpoint(provider.baseUrl, '/chat/completions'), {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal,
-    });
-  } catch (e) {
-    throw networkError(e, provider);
-  }
-  if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    if (
-      hasImages(request.messages) &&
-      // OpenRouter answers 404 when none of a model's hosts takes images.
-      [400, 404, 415, 422].includes(response.status) &&
-      /image|vision|multimodal|modal|picture/i.test(text)
-    )
-      throw new AiError(
-        `${provider.model} 不能看图，请换一个能看图的模型，或去掉图片再问（${provider.name}：${detail(text)}）`,
-        { status: response.status, noImages: true },
-      );
-    // Some services reject the JSON response format or a large output limit; retry without.
-    if (request.json && response.status === 400 && /response_format|json/i.test(text))
-      return streamOpenAI({
-        provider,
-        key,
-        request: { ...request, json: false },
-        signal,
-        onDelta,
-        fetch,
-      });
-    if (
-      request.maxTokens &&
-      !provider.maxOutput &&
-      response.status === 400 &&
-      /max_tokens|max_completion_tokens|maximum/i.test(text)
-    )
-      return streamOpenAI({
-        provider,
-        key,
-        request: { ...request, maxTokens: 0 },
-        signal,
-        onDelta,
-        fetch,
-      });
-    // A model the service can't search with (or that takes no tools) still answers, from what
-    // it knows.
-    if (web && [400, 404, 422].includes(response.status) && /search|tool|function/i.test(text))
-      return streamOpenAI({
-        provider,
-        key,
-        request: { ...request, web: false },
-        signal,
-        onDelta,
-        fetch,
-      });
-    throw httpError(response.status, text, provider.name);
-  }
-  const split = thinkSplitter();
-  const result = { text: '', reasoning: '', toolCalls: [], stopReason: '', usage: null };
-  const calls = [];
-  // A service's own searches, as steps once they're done: what OpenRouter searched for, or
-  // else the pages MiMo and OpenRouter cite.
-  let queried = false;
-  const pages = new Set();
-  const found = (id, urls) => {
-    for (const url of urls) if (url) pages.add(url);
-    if (pages.size && !queried)
-      onDelta({ search: { id, title: `联网搜索：找到 ${pages.size} 个网页`, done: true } });
-  };
-  // Thinking counts as a sign of life; only a long silence gives up. Some models think
-  // without saying so (OpenAI's reasoning models), sometimes for minutes.
-  for await (const data of sseData(response.body, signal, request.idleMs || 10 * 60_000)) {
-    if (data === '[DONE]') break;
-    let chunk;
     try {
-      chunk = JSON.parse(data);
-    } catch {
-      continue;
+      response = await fetch(endpoint(provider.baseUrl, '/chat/completions'), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal,
+      });
+    } catch (e) {
+      throw networkError(e, provider);
     }
-    if (chunk.error) throw new AiError(`${provider.name}：${detail(JSON.stringify(chunk))}`);
-    const said = chunk.choices?.[0]?.delta || {};
-    if (builtin.length) {
-      for (const r of Array.isArray(said.reasoning_details) ? said.reasoning_details : [])
-        if (r?.type === 'reasoning.server_tool_call' && /web_search/.test(r.tool_name || '')) {
-          const input = typeof r.arguments === 'string' ? parseArguments(r.arguments) : r.arguments;
-          queried = true;
-          onDelta({
-            search: {
-              id: r.tool_call_id || r.id || `${chunk.id}:${input?.query}`,
-              title: webTitle(false, input?.query),
-              done: true,
-            },
-          });
-        }
-      if (Array.isArray(said.annotations))
-        found(
-          chunk.id,
-          said.annotations.map((a) => a?.url_citation?.url || a?.url),
+    diagnostic.status = response.status;
+    diagnostic.serverRequestId =
+      response.headers?.get('x-request-id') || response.headers?.get('request-id') || '';
+    diagnostic.contentType = response.headers?.get('content-type')?.split(';')[0] || '';
+    if (!response.ok) {
+      diagnostic.end = 'http_error';
+      const text = await response.text().catch(() => '');
+      if (
+        hasImages(request.messages) &&
+        // OpenRouter answers 404 when none of a model's hosts takes images.
+        [400, 404, 415, 422].includes(response.status) &&
+        /image|vision|multimodal|modal|picture/i.test(text)
+      )
+        throw new AiError(
+          `${provider.model} 不能看图，请换一个能看图的模型，或去掉图片再问（${provider.name}：${detail(text)}）`,
+          { status: response.status, noImages: true },
         );
-    }
-    if (chunk.usage) {
-      const u = chunk.usage;
-      result.usage = {
-        input: u.prompt_tokens || 0,
-        output: u.completion_tokens || 0,
-        cached: u.prompt_cache_hit_tokens || u.prompt_tokens_details?.cached_tokens || 0,
-      };
-    }
-    const choice = chunk.choices?.[0];
-    if (!choice) continue;
-    const delta = choice.delta || {};
-    const reasoning = delta.reasoning_content || delta.reasoning || '';
-    if (typeof reasoning === 'string' && reasoning) {
-      result.reasoning += reasoning;
-      onDelta({ reasoning });
-    }
-    if (typeof delta.content === 'string' && delta.content) {
-      const part = split(delta.content);
-      if (part.reasoning) {
-        result.reasoning += part.reasoning;
-        onDelta({ reasoning: part.reasoning });
+      // Some services reject the JSON response format or a large output limit; retry without.
+      if (request.json && response.status === 400 && /response_format|json/i.test(text)) {
+        diagnostic.end = 'fallback';
+        return streamOpenAI({
+          provider,
+          key,
+          request: { ...request, json: false },
+          signal,
+          onDelta,
+          fetch,
+          onDiagnostic,
+        });
       }
-      if (part.text) {
-        result.text += part.text;
-        onDelta({ text: part.text });
+      if (
+        request.maxTokens &&
+        !provider.maxOutput &&
+        response.status === 400 &&
+        /max_tokens|max_completion_tokens|maximum/i.test(text)
+      ) {
+        diagnostic.end = 'fallback';
+        return streamOpenAI({
+          provider,
+          key,
+          request: { ...request, maxTokens: 0 },
+          signal,
+          onDelta,
+          fetch,
+          onDiagnostic,
+        });
+      }
+      // A model the service can't search with (or that takes no tools) still answers, from what
+      // it knows.
+      if (web && [400, 404, 422].includes(response.status) && /search|tool|function/i.test(text)) {
+        diagnostic.end = 'fallback';
+        return streamOpenAI({
+          provider,
+          key,
+          request: { ...request, web: false },
+          signal,
+          onDelta,
+          fetch,
+          onDiagnostic,
+        });
+      }
+      throw httpError(response.status, text, provider.name);
+    }
+    if (!response.body)
+      throw new AiError('服务没有返回回答数据，请重试', { retry: true, code: 'INCOMPLETE_STREAM' });
+    const split = thinkSplitter();
+    const calls = [];
+    // A service's own searches, as steps once they're done: what OpenRouter searched for, or
+    // else the pages MiMo and OpenRouter cite.
+    let queried = false;
+    const pages = new Set();
+    const found = (id, urls) => {
+      for (const url of urls) if (url) pages.add(url);
+      if (pages.size && !queried)
+        onDelta({ search: { id, title: `联网搜索：找到 ${pages.size} 个网页`, done: true } });
+    };
+    // Thinking counts as a sign of life; only a long silence gives up. Some models think
+    // without saying so (OpenAI's reasoning models), sometimes for minutes.
+    for await (const data of sseData(
+      response.body,
+      signal,
+      request.idleMs || 10 * 60_000,
+      diagnostic,
+    )) {
+      diagnostic.events++;
+      if (data.trim() === '[DONE]') {
+        diagnostic.done = true;
+        break;
+      }
+      let chunk;
+      try {
+        chunk = JSON.parse(data);
+        if (!chunk || typeof chunk !== 'object' || Array.isArray(chunk))
+          throw Error('Invalid event');
+      } catch {
+        diagnostic.invalidEvents++;
+        continue;
+      }
+      if (typeof chunk.id === 'string') diagnostic.responseId = chunk.id;
+      if (typeof chunk.request_id === 'string') diagnostic.responseRequestId = chunk.request_id;
+      if (chunk.error) {
+        diagnostic.end = 'provider_error';
+        if (typeof chunk.error.code === 'number' || /^[\w.:-]{1,80}$/.test(chunk.error.code || ''))
+          diagnostic.providerCode = String(chunk.error.code);
+        throw new AiError(`${provider.name}：${detail(JSON.stringify(chunk))}`, {
+          code: 'PROVIDER_STREAM_ERROR',
+        });
+      }
+      const said = chunk.choices?.[0]?.delta || {};
+      if (builtin.length) {
+        for (const r of Array.isArray(said.reasoning_details) ? said.reasoning_details : [])
+          if (r?.type === 'reasoning.server_tool_call' && /web_search/.test(r.tool_name || '')) {
+            const input =
+              typeof r.arguments === 'string' ? parseArguments(r.arguments) : r.arguments;
+            queried = true;
+            onDelta({
+              search: {
+                id: r.tool_call_id || r.id || `${chunk.id}:${input?.query}`,
+                title: webTitle(false, input?.query),
+                done: true,
+              },
+            });
+          }
+        if (Array.isArray(said.annotations))
+          found(
+            chunk.id,
+            said.annotations.map((a) => a?.url_citation?.url || a?.url),
+          );
+      }
+      if (chunk.usage) {
+        const u = chunk.usage;
+        result.usage = {
+          input: u.prompt_tokens || 0,
+          output: u.completion_tokens || 0,
+          cached: u.prompt_cache_hit_tokens || u.prompt_tokens_details?.cached_tokens || 0,
+        };
+      }
+      const choice = chunk.choices?.[0];
+      if (!choice) continue;
+      const delta = choice.delta || {};
+      const reasoning = delta.reasoning_content || delta.reasoning || '';
+      if (typeof reasoning === 'string' && reasoning) {
+        result.reasoning += reasoning;
+        onDelta({ reasoning });
+      }
+      if (typeof delta.content === 'string' && delta.content) {
+        const part = split(delta.content);
+        if (part.reasoning) {
+          result.reasoning += part.reasoning;
+          onDelta({ reasoning: part.reasoning });
+        }
+        if (part.text) {
+          result.text += part.text;
+          onDelta({ text: part.text });
+        }
+      }
+      for (const call of delta.tool_calls || []) {
+        const index = call.index ?? calls.length;
+        const current = (calls[index] ||= { id: '', name: '', arguments: '' });
+        if (call.id) current.id = call.id;
+        if (call.function?.name) {
+          current.name += call.function.name;
+          onDelta({ tool: current.name });
+        }
+        if (call.function?.arguments) current.arguments += call.function.arguments;
+      }
+      if (typeof choice.finish_reason === 'string' && choice.finish_reason) {
+        result.stopReason = choice.finish_reason;
+        diagnostic.finishReason = choice.finish_reason;
       }
     }
-    for (const call of delta.tool_calls || []) {
-      const index = call.index ?? calls.length;
-      const current = (calls[index] ||= { id: '', name: '', arguments: '' });
-      if (call.id) current.id = call.id;
-      if (call.function?.name) {
-        current.name += call.function.name;
-        onDelta({ tool: current.name });
-      }
-      if (call.function?.arguments) current.arguments += call.function.arguments;
-    }
-    if (choice.finish_reason) result.stopReason = choice.finish_reason;
+    if (signal?.aborted) throw Object.assign(new Error('已停止'), { name: 'AbortError' });
+    if (diagnostic.invalidEvents)
+      throw new AiError('服务返回的数据不完整，回答可能被截断。已保留收到的内容，请重试。', {
+        code: 'INVALID_STREAM_DATA',
+        retry: true,
+      });
+    if (!diagnostic.done && !result.stopReason)
+      throw new AiError('回答尚未完成，连接就结束了。已保留收到的内容，请重试或让模型接着写。', {
+        code: 'INCOMPLETE_STREAM',
+        retry: true,
+      });
+    if (result.stopReason === 'network_error')
+      throw new AiError('服务报告网络异常，回答未完成。已保留收到的内容，请重试。', {
+        code: 'PROVIDER_STREAM_ERROR',
+        retry: true,
+      });
+    result.toolCalls = calls.filter(Boolean).map((c, i) => ({
+      id: c.id || `call_${i}`,
+      name: c.name,
+      input: parseArguments(c.arguments),
+    }));
+    if (result.stopReason === 'length') result.stopReason = 'max_tokens';
+    if (['content_filter', 'sensitive'].includes(result.stopReason)) result.stopReason = 'refusal';
+    diagnostic.end = 'complete';
+    return result;
+  } catch (e) {
+    const aborted = signal?.aborted || e?.name === 'AbortError';
+    diagnostic.code = e?.cause?.code || e?.code || '';
+    diagnostic.errorName = e?.name || 'Error';
+    diagnostic.end = aborted
+      ? 'aborted'
+      : diagnostic.end ||
+        {
+          INCOMPLETE_STREAM: 'incomplete',
+          INVALID_STREAM_DATA: 'invalid_data',
+          STREAM_IDLE_TIMEOUT: 'idle_timeout',
+          PROVIDER_STREAM_ERROR: 'provider_error',
+        }[diagnostic.code] ||
+        (response?.ok ? 'stream_error' : 'network_error');
+    if (aborted) throw Object.assign(new Error('已停止'), { name: 'AbortError' });
+    if (response?.ok && !(e instanceof AiError))
+      throw new AiError(
+        `接收 ${provider.name} 的回答时连接中断。已保留收到的内容，请重试或让模型接着写。`,
+        {
+          retry: true,
+          code: diagnostic.code || 'STREAM_READ_ERROR',
+        },
+      );
+    throw e;
+  } finally {
+    // Diagnostics contain metadata only; never include chunks, messages, keys or headers.
+    try {
+      await onDiagnostic?.({
+        ...diagnostic,
+        elapsedMs: Date.now() - started,
+        textChars: result.text.length,
+        reasoningChars: result.reasoning.length,
+        inputTokens: result.usage?.input,
+        outputTokens: result.usage?.output,
+        cachedTokens: result.usage?.cached,
+      });
+    } catch {}
   }
-  result.toolCalls = calls
-    .filter(Boolean)
-    .map((c, i) => ({ id: c.id || `call_${i}`, name: c.name, input: parseArguments(c.arguments) }));
-  if (result.stopReason === 'length') result.stopReason = 'max_tokens';
-  return result;
 }
 const addUsage = (a, b) =>
   a && b
@@ -883,7 +1018,7 @@ const addUsage = (a, b) =>
 // Kimi and GLM with the web: the searches and pages the model asks for are run here and its
 // reply goes on, so the caller gets one reply. Calls to the caller's own tools still go back
 // to it, with the turn's searches in `raw` for the next request.
-async function streamSearching({ provider, key, request, signal, onDelta, fetch }) {
+async function streamSearching({ provider, key, request, signal, onDelta, fetch, onDiagnostic }) {
   const turn = [];
   let text = '';
   let reasoning = '';
@@ -904,6 +1039,7 @@ async function streamSearching({ provider, key, request, signal, onDelta, fetch 
         } else onDelta(d);
       },
       fetch,
+      onDiagnostic,
     });
     if (result.text) text += gap + result.text;
     reasoning += result.reasoning;
@@ -1218,7 +1354,7 @@ function resendingStuck(run, args, ms) {
 
 // Retries rate limits and outages, but only before anything has been shown. With
 // `request.resend`, thinking that comes word by word and stops is sent again (resendingStuck).
-async function streamChat({ provider, key, request, signal, onDelta, fetch }) {
+async function streamChat({ provider, key, request, signal, onDelta, fetch, onDiagnostic }) {
   if (!provider.model) throw new AiError('请先在 AI 设置中选择模型');
   const preset = presetFor(provider.preset);
   if (!key && !preset.noKey && preset.id !== 'custom')
@@ -1250,6 +1386,7 @@ async function streamChat({ provider, key, request, signal, onDelta, fetch }) {
         request,
         signal,
         fetch,
+        onDiagnostic,
         onDelta: (d) => {
           started = true;
           onDelta(d);

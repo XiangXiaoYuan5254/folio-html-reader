@@ -60,6 +60,8 @@ async function framePoint(x, y) {
 async function addText(f, x, y, text) {
   const cards = f.getByRole('group', { name: '页面文本注释', exact: true });
   const before = await cards.count();
+  // End the previous temporary note before choosing the text tool again.
+  await page.getByLabel('选择文字', { exact: true }).click();
   await page.getByLabel('文本注释', { exact: true }).click();
   const p = await framePoint(x, y);
   await page.mouse.click(p.x, p.y);

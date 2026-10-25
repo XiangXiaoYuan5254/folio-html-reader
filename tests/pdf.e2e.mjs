@@ -1,3 +1,4 @@
+import { selectTool } from './toolbar-helper.mjs';
 // Browser plugin not available in this task: use the real Electron app with
 // native input and isolated copies. No personal PDF is committed to the repo.
 import { _electron as electron } from 'playwright';
@@ -158,7 +159,7 @@ try {
     return { blocked, bridge: typeof window.folio };
   });
   assert.deepEqual(isolation, { blocked: true, bridge: 'undefined' });
-  await page.getByLabel('收起批注栏', { exact: true }).click();
+  await page.getByLabel('收起侧栏', { exact: true }).click();
   await page.waitForTimeout(200);
   const text = f.locator('.textLayer span').filter({ hasText: 'Select this sentence' }).first();
   await text.waitFor();
@@ -197,13 +198,13 @@ try {
     async () => (await data()).annotations.find((a) => a.id === highlight.id).note.includes('PDF'),
     'highlight note',
   );
-  await page.getByLabel('画笔', { exact: true }).click();
+  await selectTool(page, '画笔');
   await stroke(await point(f, 80, 300), await point(f, 350, 340));
   await wait(async () => (await data()).annotations.some((a) => a.type === 'pen'), 'PDF pen');
   const pen = (await data()).annotations.find((a) => a.type === 'pen');
   assert.equal(pen.anchor.selector, '#pdf-page-1');
   assert.equal(await f.locator('[data-selection-outline]').count(), 0);
-  await page.getByLabel('橡皮擦', { exact: true }).click();
+  await selectTool(page, '橡皮擦');
   await stroke(await point(f, 210, 290), await point(f, 210, 360));
   await wait(
     async () => (await data()).annotations.find((a) => a.id === pen.id)?.paths?.length === 2,
@@ -222,12 +223,12 @@ try {
     'whole PDF eraser',
   );
   await page.getByLabel('撤销批注', { exact: true }).click();
-  await page.getByLabel('便签', { exact: true }).click();
+  await selectTool(page, '便签');
   const sp = await point(f, 90, 390);
   await page.mouse.click(sp.x, sp.y);
   await f.getByLabel('页面便签内容').fill('PDF 页面便签，缩放后位置仍在原页。');
   await page.keyboard.press('Tab');
-  await page.getByLabel('文本注释', { exact: true }).click();
+  await selectTool(page, '文本注释');
   const tp = await point(f, 450, 390);
   await page.mouse.click(tp.x, tp.y);
   await f.getByLabel('文本注释内容').fill('页面文字');
@@ -268,20 +269,20 @@ try {
     async () => (await page.locator('.pdf-page-hint').getAttribute('title')).includes('无可选文字'),
     'image-only/blank-page guidance',
   );
-  await page.getByLabel('便签', { exact: true }).click();
+  await selectTool(page, '便签');
   const np = await point(f, 90, 95, 'left', 3);
   await page.mouse.click(np.x, np.y);
   await f.getByLabel('页面便签内容').last().fill('无文字页面也能批注');
   await page.keyboard.press('Escape');
   await pageNumber(1);
-  await page.getByLabel('显示或隐藏批注栏', { exact: true }).click();
+  await page.getByLabel('AI 助手与笔记', { exact: true }).click();
   await page.locator(`[data-annotation="${highlight.id}"] .annotation-quote`).click();
   await f.locator('[data-selection-outline]').waitFor();
   await page.screenshot({ path: path.join(evidence, 'pdf-annotations.png') });
   console.log(
     'PASS: PDF rendering/text selection, page-local highlight notes, pen, both erasers, sticky/text, page jump, rotation, blank pages, locator and source protection',
   );
-  await page.getByLabel('收起批注栏', { exact: true }).click();
+  await page.getByLabel('收起侧栏', { exact: true }).click();
   await page.getByLabel('选择文字', { exact: true }).click();
   await f.evaluate(() => {
     const start = document.querySelector('#pdf-page-1 .textLayer span').firstChild;
@@ -346,7 +347,7 @@ try {
   assert.deepEqual((await data()).annotations, snapshot);
   assert.equal((await data()).zoom, savedZoom);
   assert.deepEqual(await fs.readFile(path.join(workspace, '00_PDF.pdf')), original);
-  await page.getByRole('button', { name: '退出双栏', exact: true }).click();
+  await page.getByLabel('关闭右栏文档', { exact: true }).click();
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(900, 700));
   await page.waitForTimeout(200);
   await page.screenshot({ path: path.join(evidence, 'pdf-narrow.png') });

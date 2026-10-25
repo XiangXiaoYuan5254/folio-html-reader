@@ -154,7 +154,7 @@ try {
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
   await page.waitForSelector('.document-frame');
   await frame();
-  await page.getByLabel('AI 助手', { exact: true }).click();
+  await showAssistant(page);
   if (codexMode) {
     await panel().getByRole('button', { name: '配置 AI 服务', exact: true }).click();
     const settings = page.getByRole('dialog', { name: 'AI 设置' });
@@ -369,4 +369,10 @@ try {
 } finally {
   await app?.close().catch(() => {});
   await fs.rm(path.join(userData, 'ai.json'), { force: true });
+}
+
+async function showAssistant(page) {
+  const toggle = page.getByLabel('AI 助手与笔记', { exact: true });
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+  await page.locator('.inspector-tabs').getByRole('button', { name: '助手', exact: true }).click();
 }
