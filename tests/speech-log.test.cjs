@@ -34,7 +34,8 @@ test('speech logs serialize concurrent writes and exclude request bodies, keys a
   assert.equal(entries[0].status, 429);
   assert.ok(entries.every((e) => !Number.isNaN(Date.parse(e.time))));
   assert.doesNotMatch(raw, /private text|secret|audio-bytes|Authorization/);
-  assert.equal((await fs.stat(file)).mode & 0o777, 0o600);
+  // Windows exposes synthetic POSIX mode bits; file access uses its ACLs.
+  if (process.platform !== 'win32') assert.equal((await fs.stat(file)).mode & 0o777, 0o600);
 });
 
 test('speech logs rotate and a write failure cannot fail synthesis', async (t) => {

@@ -41,7 +41,8 @@ test('AI logs serialize writes, retain boolean/null metadata and exclude content
   assert.equal(entries[0].maxTokens, null);
   assert.ok(entries.every((e) => !Number.isNaN(Date.parse(e.time))));
   assert.doesNotMatch(raw, /private-content|secret-key/);
-  assert.equal((await fs.stat(file)).mode & 0o777, 0o600);
+  // Windows exposes synthetic POSIX mode bits; file access uses its ACLs.
+  if (process.platform !== 'win32') assert.equal((await fs.stat(file)).mode & 0o777, 0o600);
 });
 
 test('AI logs rotate, bound field lengths, and recover after a write failure', async (t) => {
