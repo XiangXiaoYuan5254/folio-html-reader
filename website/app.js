@@ -11,7 +11,7 @@ const RELEASE = {
 // url 留空时，对应的下载按钮显示为“即将开放下载”且不可点击，不会给访客死链。
 const DOWNLOADS = {
   mac: { url: 'downloads/Folio-0.29.0-mac-arm64.dmg', size: '131 MB' },
-  win: { url: 'downloads/Folio-0.29.0-win-x64-setup.exe', size: '116 MB' },
+  win: { url: 'downloads/Folio-0.29.0-win-x64-setup.exe', size: '117 MB' },
 };
 
 // 页脚的“意见反馈”邮箱。留空则不显示。

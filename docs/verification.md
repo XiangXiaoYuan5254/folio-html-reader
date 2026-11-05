@@ -10,6 +10,12 @@
 - `npm run test:ai`：在本地模拟的 OpenAI 兼容服务上验证 AI 设置（模型列表、测试连接、Key 不以明文保存）、首次发送确认、流式回答与思考过程、原文引用的核对与跳转、存入笔记、AI 划重点（HTML 与 PDF，一次撤销）、划词翻译存为高亮笔记、源码 AI 修改的对比预览与写入、项目 Agent 的确认与跳过、对话保存。不需要真实 API Key，也不联网。`npm test` 另外覆盖三种接入方式（OpenAI 兼容、Claude、通过模拟的 Codex App Server 使用 ChatGPT 账号）的流式解析与工具调用、各服务的联网搜索、错误说明与重试、原文引用的模糊定位、查找/替换修改和长文档分段。
 - `npm run test:ai-live`：用 AI 设置里已配置的真实服务跑一遍问答、划重点、总结、翻译、源码修改、项目 Agent 和 PDF（需要联网，会产生少量费用）；`FOLIO_AI_LIVE=codex` 改为通过本机 Codex 使用 ChatGPT 账号。不在 CI 中运行。
 - `npm run test:settings`：统一设置的分类导航，原有助手、白板与菜单仍打开独立 AI 设置，原有主题与会员入口，服务草稿跨分类保留，键盘焦点与关闭返回，主题和白板声音共用状态，默认出声与已选静音保留，公告独立分类及新旧入口未读红点同步（包括离开公告页后才返回的请求），阅读偏好、读者画像与公告已读状态重启恢复，以及窄窗口布局。使用临时项目与本地公告、会员服务，不使用真实账号或 API Key。
+- `npm run test:model-picks`：勾选模型后，已打开过的模型菜单同步更新，保留当前使用的模型。
+- `npm run test:companion-prompt`：自定义精读提示词参与生成，保留 HTML 格式、目录与页码链接要求。
+- `npm run test:storage`：按类别统计项目数据，确认后清理旧白板、语音、无用数据及旧备份；单元测试另外验证每篇文档最新备份和外部改名文档的数据保留。
+- `npm run test:new-file`：新建时建议未占用的文件名，遇到同名文件自动编号并告知实际名称。
+- `npm run test:ui-type`：界面字体与缩放即时生效并在重启后保留，正文显示大小不变，可恢复默认值。
+- `node --test tests/license-pricing.mjs tests/license-devices.mjs`：本地临时数据库中的价格、邀请优惠截止时间、设备状态与访问日志统计；不修改线上数据。
 - `npm run dist:mac`：类型检查、生产构建、macOS arm64 安装包和 SHA-256 校验文件。
 
 测试数据均在临时工作空间中运行。`FOLIO_TEST_SAMPLES` 可指定额外本地 HTML，`FOLIO_QA_DIR` 可指定截图目录。默认示例不加载远程服务。
@@ -19,6 +25,16 @@
 检查 DMG 完整性、挂载后的应用与 Applications 快捷方式、应用签名完整性、可执行文件架构、全新用户目录首次启动及示例文档。Apple Silicon 版本在本地真实 Mac 验证，当前不发布 Intel 版本。
 
 macOS 版使用 Developer ID 签名并经过 Apple 公证，公证票据已贴进应用。`npm run dist:mac` 用 `spctl` 确认应用来自已公证的 Developer ID（`source=Notarized Developer ID`），否则不出包；开发机关掉了 Gatekeeper，所以只看这一项，不看 accepted。
+
+## 0.29.0 发布验证（2026-11-05）
+
+- macOS 单元测试 146 项通过，1 项 Windows 专属测试跳过；价格、设备状态与日志统计的 9 项本地服务测试通过。
+- 桌面回归覆盖布局、阅读、批注、双栏、缩放、PDF、标签、源码编辑、文件打开、AI 助手与设置；新增模型勾选、精读提示词、存储清理、新建文件、界面字体与大小、会员窗口测试通过。
+- 实际联网验证 PubMed 搜索与公开 PDF 下载；检索筛选、去重与失败回退另有本地单元测试。
+- Mac arm64 正式包通过 Developer ID 签名、苹果公证、票据与 DMG 完整性检查；挂载后确认版本、Applications 快捷方式及五篇示例文档。独立用户目录中启动、创建批注并重启恢复通过，无界面脚本错误。
+- 两个平台包内的 302 个应用文件与构建输出和 Electron 源码一致；更新清单的版本、更新说明、文件大小与 SHA-512 校验值一致。Windows 包只包含 Windows 语音原生模块。
+- [Windows 完整验证](https://github.com/XiangXiaoYuan5254/folio-html-reader/actions/runs/41963320649)中的原生构建、静默安装、资源管理器集成、安装版运行与语音、阅读、批注、PDF、标签、源码、白板、论文、卸载和自动更新均通过。此轮 AI 与设置测试分别暴露了按随机 DOM 顺序定位左右栏、调用仅 macOS 存在的菜单等测试假设，已修正。
+- 修正后 [Windows 专项复验](https://github.com/XiangXiaoYuan5254/folio-html-reader/actions/runs/41965852343)中的 AI、统一设置、模型勾选、精读提示词、项目存储、新建文件和界面字体与大小全部通过；Mac 的 AI 与设置也重新验证通过。修正仅涉及测试和工作流，正式包的应用代码未变化。
 
 ## 已知范围
 
