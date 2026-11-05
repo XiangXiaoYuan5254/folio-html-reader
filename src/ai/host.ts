@@ -29,13 +29,17 @@ export type AiHost = {
   // Replaces an HTML file the AI wrote, as a source save does (backup included), and shows the
   // new version where it's open. Fails while it has edits not saved yet.
   writeHtml(path: string, content: string): Promise<void>;
-  // Papers from OpenAlex and arXiv; `notes` says which of them could not be reached.
+  // Papers from OpenAlex, PubMed and arXiv: the `sources` named, or the ones suiting `fields`.
+  // `searched` names the libraries asked; `notes` says which failed and how venues were matched.
   searchPapers(options: {
     query: string;
     limit?: number;
     fromYear?: number;
     pdfOnly?: boolean;
-  }): Promise<{ papers: Paper[]; notes: string[] }>;
+    fields?: string[];
+    sources?: string[];
+    venues?: string[];
+  }): Promise<{ papers: Paper[]; notes: string[]; searched: string[] }>;
   // Downloads a PDF into the project, creating folders on the way; resolves with its size.
   savePdf(url: string, path: string): Promise<number>;
   open(path: string): Promise<void>;

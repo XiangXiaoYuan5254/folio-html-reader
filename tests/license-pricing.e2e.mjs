@@ -54,7 +54,8 @@ try {
   page.setDefaultTimeout(15_000);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.clock.install({ time: new Date(now) });
+  // Start the fake clock a moment early: pausing at the very time it started is "the past".
+  await page.clock.install({ time: new Date(now - 1_000) });
   await page.clock.pauseAt(new Date(now));
   await page.getByRole('button', { name: '开通会员', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '页间会员' });

@@ -85,6 +85,7 @@ import { ThemePicker } from './components/ThemePicker';
 import { MembershipDialog, MemberLock } from './components/MembershipDialog';
 import { memberNow, renewLicense, useLicense } from './license';
 import { setThemesUnlocked } from './theme';
+import { freeName } from './names';
 import { Exit, objectKey, prefersReducedMotion } from './motion';
 import type { ScreenBox, ToolbarSide } from './components/SelectionToolbar';
 const SourceEditor = lazy(() => import('./components/SourceEditor'));
@@ -1056,10 +1057,9 @@ export default function App() {
     setDialog({
       title: create ? (folder ? '新建文件夹' : '新建 HTML 文档') : rename ? '重命名' : '移动文件',
       input: true,
+      // A new file or folder starts with a name not taken there yet.
       initial: create
-        ? folder
-          ? '新文件夹'
-          : '未命名.html'
+        ? freeName(workspace?.tree || [], path, folder ? '新文件夹' : '未命名.html', folder)
         : rename
           ? path.split('/').at(-1)
           : path,
@@ -1075,8 +1075,18 @@ export default function App() {
         const target = create ? (path ? path + '/' : '') + name : rename ? parent + name : name;
         await model.flush();
         if (create) {
-          setWorkspace(await invoke('create', { path: target, kind: folder ? 'folder' : 'file' }));
-          if (!folder) await openDocument(target);
+          // A name already taken gets a number instead; say which.
+          const made = await invoke<WorkspaceInfo & { created: string }>('create', {
+            path: target,
+            kind: folder ? 'folder' : 'file',
+            unique: true,
+          });
+          setWorkspace(made);
+          if (made.created !== target)
+            notify(
+              `已有同名${folder ? '文件夹' : '文件'}「${name}」，已创建为「${made.created.split('/').at(-1)}」`,
+            );
+          if (!folder) await openDocument(made.created);
         } else {
           await relocate(path, target);
         }
@@ -2589,6 +2599,7 @@ export default function App() {
               setUpdateHidden(false);
             }}
             onNotify={notify}
+            onBoardDeleted={boardDeleted}
           />
         )}
       </Exit>

@@ -231,6 +231,118 @@
   line-height: 1.7;
   margin: 12px 0 0;
 }
+/* The interface's font: the current one, and the computer's fonts to pick from. */
+.settings-font-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-shrink: 0;
+  min-width: 150px;
+  max-width: 240px;
+  padding: 6px 9px 6px 10px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.settings-font-button > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-font-button svg {
+  flex-shrink: 0;
+  color: var(--faint);
+}
+.settings-font-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 0 4px;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.settings-font-panel > input {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: 13px;
+  outline: none;
+}
+.settings-font-panel > input:focus {
+  border-color: var(--accent-line-strong);
+}
+.settings-font-list {
+  max-height: 280px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.settings-font-list button {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 6px;
+  text-align: left;
+  font-size: 14px;
+  color: var(--text-2);
+}
+.settings-font-list button:hover {
+  background: var(--surface);
+}
+.settings-font-list button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.settings-font-list button small {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.settings-font-list button svg {
+  margin-left: auto;
+  align-self: center;
+  flex-shrink: 0;
+}
+.settings-font-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 9px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.settings-font-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.settings-font-actions > span {
+  flex: 1;
+}
+.settings-link {
+  padding: 0;
+  font-size: 12px;
+  color: var(--accent);
+}
+.settings-link:hover:not(:disabled) {
+  background: none;
+  text-decoration: underline;
+}
+.settings-reset {
+  margin-top: 12px;
+}
 .settings-subnav {
   display: flex;
   align-items: center;
@@ -525,4 +637,179 @@
     border-right: 0;
     border-bottom: 1px solid var(--line);
   }
+}
+/* 项目存储: what Folio keeps in the project, by kind, and clearing boards and backups. */
+.settings-storage > .settings-group:first-child {
+  margin-top: 0;
+}
+.settings-storage-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.settings-storage-head h4 {
+  margin-bottom: 6px;
+}
+.settings-storage-head p {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+.settings-storage-head p strong {
+  color: var(--text-strong);
+  font-size: 15px;
+}
+.settings-storage-head .secondary-button {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.settings-storage-bar {
+  display: flex;
+  gap: 2px;
+  height: 10px;
+  margin: 14px 0 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--fill);
+}
+.settings-storage-bar span {
+  min-width: 3px;
+}
+.kind-backups {
+  background: #5b7cf0;
+}
+.kind-boards {
+  background: #2f9e86;
+}
+.kind-noteImages {
+  background: #e0a03a;
+}
+.kind-ai {
+  background: #8b6bd9;
+}
+.kind-documents {
+  background: #d9677a;
+}
+.kind-other {
+  background: #9aa4ad;
+}
+.settings-storage-kinds {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.settings-storage-kinds li,
+.settings-storage-boards label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 13px;
+}
+.settings-storage-kinds i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.settings-storage-kinds li > span,
+.settings-storage-boards label > span {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.settings-storage-kinds strong,
+.settings-storage-boards strong {
+  font-weight: 500;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-storage-kinds small,
+.settings-storage-boards small {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.settings-storage-kinds output,
+.settings-storage-boards output {
+  flex-shrink: 0;
+  font-size: 12.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.settings-storage-tools {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.settings-storage-tools > span {
+  flex: 1;
+}
+.settings-storage-boards {
+  max-height: 320px;
+  overflow: auto;
+}
+.settings-storage-boards label {
+  cursor: pointer;
+}
+.settings-storage-boards input {
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
+.settings-storage-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+.settings-storage-actions button {
+  padding: 7px 12px;
+  font-size: 12.5px;
+}
+.settings-storage-error {
+  color: var(--danger);
+}
+.settings-storage-note {
+  margin: 0 0 6px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+.settings-storage-left {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.settings-storage-left li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 13px;
+  color: var(--text-2);
+}
+.settings-storage-left li > span {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.settings-storage-left small {
+  font-size: 12px;
+  color: var(--muted);
+}
+.settings-storage-left output {
+  font-size: 12.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
 }

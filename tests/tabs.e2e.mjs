@@ -85,6 +85,44 @@ try {
     async () => JSON.stringify((await session()).paths) === JSON.stringify(after),
     'session saved after eviction',
   );
+  // Twenty tabs don't fit: a mouse wheel scrolls them sideways, the ends fade where tabs
+  // are hidden, and every tab is a click away in the list.
+  const strip = page.getByRole('tablist', { name: '打开的文档' });
+  await strip.evaluate((el) => (el.scrollLeft = 0));
+  await waitFor(
+    async () => !(await strip.getAttribute('class')).includes('hides-before'),
+    'no fade at the start',
+  );
+  assert.match(await strip.getAttribute('class'), /hides-after/);
+  const box = await strip.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(0, 400);
+  await waitFor(async () => (await strip.evaluate((el) => el.scrollLeft)) > 0, 'wheel scrolls');
+  await waitFor(
+    async () => (await strip.getAttribute('class')).includes('hides-before'),
+    'fade at the start once scrolled',
+  );
+  await strip.evaluate((el) => (el.scrollLeft = 0));
+  await page.getByRole('button', { name: `全部 ${after.length} 个标签` }).click();
+  const list = page.getByRole('menu', { name: '全部标签' });
+  assert.equal(await list.getByRole('menuitem').count(), after.length);
+  const last = after.at(-1);
+  await list.getByRole('menuitem', { name: last }).click();
+  await list.waitFor({ state: 'hidden' });
+  const lastTab = page.getByRole('tab', { name: last, exact: true });
+  await waitFor(async () => (await lastTab.getAttribute('aria-selected')) === 'true', 'picked');
+  await waitFor(async () => {
+    const tab = await lastTab.boundingBox();
+    const shown = await strip.boundingBox();
+    return tab.x >= shown.x && tab.x + tab.width <= shown.x + shown.width + 1;
+  }, 'picked tab scrolled into view');
+  // A click anywhere else closes the list.
+  await page.getByRole('button', { name: `全部 ${after.length} 个标签` }).click();
+  await list.waitFor();
+  await page.locator('.document-frame').first().hover();
+  await page.mouse.down();
+  await page.mouse.up();
+  await list.waitFor({ state: 'hidden' });
   assert.equal(await page.getByRole('alert').count(), 0, 'no error toast');
   assert.deepEqual(consoleErrors, []);
   console.log('TABS E2E PASS');

@@ -35,6 +35,8 @@ export type AiProvider = {
   hasKey: boolean;
   // Models known to take images or not, learned from sending them some.
   vision?: Record<string, boolean>;
+  // The models picked to show in the model menu; none shows the service's whole list.
+  picks?: string[];
 };
 export type AiPrefs = {
   consented?: string[];
@@ -42,6 +44,9 @@ export type AiPrefs = {
   language?: 'auto' | 'zh' | 'en';
   // The reader in their own words, for pitching 精读笔记 at the right depth.
   profile?: string;
+  // The reader's own writing for 精读笔记 in place of Folio's (src/ai/companion.ts); empty
+  // uses Folio's. The format is always Folio's.
+  companionPrompt?: string;
 };
 // The parts of the app that ask the AI. Chat uses the active service; the others can each
 // have their own service, model and reasoning level, and follow chat when they don't.
@@ -54,6 +59,8 @@ export type AiConfig = {
   prefs: AiPrefs;
   presets: AiPreset[];
   speech?: SpeechService[];
+  // The paper libraries' keys; only OpenAlex takes one.
+  papers?: { openalex: { hasKey: boolean; keyHint: string } };
 };
 // An online speech service whose voices the whiteboard teacher can read its script in.
 // `named`: it has a name to introduce itself by (芊悦), not only a description (温柔学姐).
@@ -149,6 +156,25 @@ export type ChatResult = {
   quota?: Quota | null;
 };
 
+// The fields search_papers can narrow to, as FIELDS in electron/papers.cjs names them.
+export const PAPER_FIELDS = [
+  'computer_science',
+  'mathematics',
+  'physics',
+  'engineering',
+  'materials',
+  'chemistry',
+  'earth_environment',
+  'biology',
+  'medicine',
+  'neuroscience',
+  'psychology',
+  'economics',
+  'business',
+  'social_sciences',
+  'humanities',
+];
+
 // A paper found by search_papers (electron/papers.cjs).
 export type Paper = {
   title: string;
@@ -158,9 +184,11 @@ export type Paper = {
   citations?: number;
   doi?: string;
   arxiv?: string;
+  pmid?: string;
   url: string;
   pdf: string[];
   abstract: string;
+  // The libraries it came from: "OpenAlex", or "OpenAlex、arXiv" when both had it.
   source: string;
 };
 

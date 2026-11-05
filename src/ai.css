@@ -1490,6 +1490,61 @@
   width: 26px;
   height: 26px;
 }
+/* The conversations about this file, floating over the window so the panel doesn't scroll. */
+.ai-edit-history {
+  position: fixed;
+  z-index: 200;
+  width: 286px;
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 8px 28px rgb(var(--shadow-rgb) / calc(0.149 * var(--shadow-k)));
+}
+.ai-edit-history p {
+  margin: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.ai-edit-history-item {
+  display: flex;
+  align-items: center;
+  border-radius: 5px;
+}
+.ai-edit-history-item.active {
+  background: var(--accent-soft);
+}
+.ai-edit-history-item > button:first-child {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 8px;
+  font-size: 12.5px;
+  text-align: left;
+  background: none;
+}
+.ai-edit-history-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-edit-history-item time {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.ai-edit-history-item .icon-button {
+  width: 24px;
+  height: 24px;
+  opacity: 0;
+}
+.ai-edit-history-item:hover .icon-button,
+.ai-edit-history-item .icon-button:focus-visible {
+  opacity: 1;
+}
 .ai-source-input {
   display: flex;
   align-items: flex-end;
@@ -1972,6 +2027,122 @@
   border-color: var(--accent-line);
   background: var(--accent-soft);
   color: var(--accent);
+}
+/* The models picked to show in the model menu. */
+.ai-picks-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ai-picks-chips > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  font-size: 12px;
+  padding: 2px 4px 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--text-3);
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+.ai-picks-chips > span.active {
+  padding-right: 9px;
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.ai-picks-chips em,
+.ai-pick em {
+  font-style: normal;
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--accent);
+}
+.ai-picks-chips em {
+  font-family: system-ui, sans-serif;
+}
+.ai-picks-chips button {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 999px;
+  color: var(--faint);
+}
+.ai-picks-chips button:hover {
+  color: var(--text-2);
+}
+.ai-picks-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.ai-provider-form .ai-picks-panel > input {
+  padding: 6px 9px;
+  font-size: 13px;
+}
+.ai-picks-list {
+  max-height: 240px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ai-provider-form .ai-pick {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.ai-provider-form .ai-pick:hover {
+  background: var(--surface);
+}
+.ai-provider-form .ai-pick input {
+  width: auto;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0;
+}
+.ai-provider-form .ai-pick > span {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--text-2);
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+.ai-provider-form .ai-pick:has(input:disabled) {
+  cursor: default;
+}
+.ai-picks-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.ai-picks-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.ai-picks-actions > span {
+  flex: 1;
 }
 .ai-advanced-toggle {
   align-self: flex-start;
@@ -2731,4 +2902,12 @@
   border-radius: 50%;
   background: var(--danger);
   flex-shrink: 0;
+}
+/* 精读笔记提示词: a long text, so wider than the other fields. */
+.ai-form-fields > label:has(.ai-companion-prompt) {
+  max-width: 760px;
+}
+.ai-provider-form textarea.ai-companion-prompt {
+  font-size: 13px;
+  line-height: 1.75;
 }

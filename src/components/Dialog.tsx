@@ -45,7 +45,10 @@ export function Dialog({ options, onClose }: { options: DialogOptions; onClose: 
             await options.onConfirm(value);
             onClose();
           } catch (e) {
-            setError((e as Error).message);
+            // Without Electron's wrapping around errors from the main process.
+            setError(
+              (e as Error).message.replace(/Error invoking remote method '[^']+': Error: /, ''),
+            );
           } finally {
             setBusy(false);
           }

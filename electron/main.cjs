@@ -40,6 +40,9 @@ let watcher;
 let refreshTimer;
 let focusWindowState = null;
 let appearance = null;
+// The interface's size (src/ui-type.ts): the window's zoom.
+const uiZooms = [0.8, 0.9, 1, 1.1, 1.25, 1.5];
+let uiZoom = 1;
 const previews = new Map();
 let ai;
 let license;
@@ -139,6 +142,25 @@ async function rememberAppearance(colors) {
   const settings = await readSettings();
   if (JSON.stringify(settings.appearance) === JSON.stringify(colors)) return;
   await atomicWrite(settingsFile(), JSON.stringify({ ...settings, appearance: colors }));
+}
+async function rememberUiZoom(zoom) {
+  const settings = await readSettings();
+  if (settings.uiZoom === zoom) return;
+  await atomicWrite(settingsFile(), JSON.stringify({ ...settings, uiZoom: zoom }));
+}
+// The page's title bar grows with the zoom; the window's own buttons stay centred in it.
+const buttonsTop = () => Math.round(24 * uiZoom - 7);
+const overlayHeight = () => Math.round(47 * uiZoom);
+function applyUiZoom() {
+  if (!win || win.isDestroyed()) return;
+  win.webContents.setZoomFactor(uiZoom);
+  if (isMac) win.setWindowButtonPosition?.({ x: 18, y: buttonsTop() });
+  else
+    win.setTitleBarOverlay({
+      color: appearance?.titlebar || '#ffffff',
+      symbolColor: appearance?.symbol || '#5f6b77',
+      height: overlayHeight(),
+    });
 }
 async function rememberWorkspace(root) {
   const settings = await readSettings();
@@ -350,7 +372,9 @@ app
   .whenReady()
   .then(async () => {
     await initialWorkspace();
-    appearance = appearanceColors((await readSettings()).appearance);
+    const saved = await readSettings();
+    appearance = appearanceColors(saved.appearance);
+    if (uiZooms.includes(saved.uiZoom)) uiZoom = saved.uiZoom;
     license = createLicense({
       file: path.join(app.getPath('userData'), 'license.json'),
       fetch: (url, init) => net.fetch(url, init),
@@ -462,6 +486,8 @@ app
           !!details.isMainFrame &&
           isUiUrl(details.requestingUrl || '') &&
           (permission === 'clipboard-sanitized-write' ||
+            // The installed fonts, to pick the interface's font from.
+            permission === 'local-fonts' ||
             (permission === 'media' &&
               !!details.mediaTypes?.length &&
               details.mediaTypes.every((t) => t === 'audio'))),
@@ -472,6 +498,7 @@ app
         contents === win?.webContents &&
         isUiUrl(details.requestingUrl || '') &&
         (permission === 'clipboard-sanitized-write' ||
+          permission === 'local-fonts' ||
           (permission === 'media' && details.mediaType === 'audio')),
     );
     ipcMain.handle('folio:invoke', async (event, action, payload, token) => {
@@ -509,12 +536,14 @@ app
           'codex-voice',
           'microphone',
           'appearance',
+          'ui-zoom',
           'speech-voices',
           'speech',
           'speech-listen',
           'speech-stop',
           'hearing',
           'ai-speech-key',
+          'ai-paper-key',
           'cloud-voice',
           'cloud-voice-hush',
           'speech-diagnostic',
@@ -591,7 +620,17 @@ app
         // The AI assistant finding papers and saving one into the project.
         case 'papers-search':
           await needMember();
-          return papers.search(net.fetch, payload);
+          return papers.search(net.fetch, payload, await ai.paperKeys());
+        // Saved only once OpenAlex takes it; kept as well when OpenAlex can't be asked now.
+        case 'ai-paper-key': {
+          const key = typeof payload?.key === 'string' ? payload.key.trim() : '';
+          const checked = key ? await papers.checkOpenAlexKey(net.fetch, key) : true;
+          if (checked === false)
+            throw Error(
+              'OpenAlex 不认这个 Key。请检查是否复制完整，以及是否已经点过 OpenAlex 邮件里的确认链接。',
+            );
+          return { config: await ai.savePaperKey({ key }), checked: checked === true };
+        }
         case 'save-pdf': {
           await needMember();
           const data = await papers.download(net.fetch, payload?.url);
@@ -629,6 +668,12 @@ app
         }
         case 'trash':
           return workspace.trash(payload, (file) => shell.trashItem(file));
+        case 'storage':
+          return workspace.storage();
+        case 'clear-backups':
+          return workspace.clearBackups(payload);
+        case 'clear-unused':
+          return workspace.clearUnused();
         case 'preview': {
           const id = require('node:crypto').randomUUID();
           previews.set(id, payload);
@@ -806,9 +851,19 @@ app
             win.setTitleBarOverlay({
               color: colors.titlebar,
               symbolColor: colors.symbol,
-              height: 47,
+              height: overlayHeight(),
             });
           await rememberAppearance(colors);
+          return true;
+        }
+        case 'ui-zoom': {
+          const zoom = Number(payload?.zoom);
+          if (!uiZooms.includes(zoom)) throw Error('界面大小无效');
+          if (zoom !== uiZoom || win.webContents.getZoomFactor() !== zoom) {
+            uiZoom = zoom;
+            applyUiZoom();
+          }
+          await rememberUiZoom(zoom);
           return true;
         }
         case 'ai-history':
@@ -861,15 +916,17 @@ app
         titleBarStyle: 'hidden',
         // The title bar is drawn by the page; Windows keeps its own caption buttons on top of it.
         ...(isMac
-          ? { trafficLightPosition: { x: 18, y: 17 }, vibrancy: 'sidebar' }
+          ? { trafficLightPosition: { x: 18, y: buttonsTop() }, vibrancy: 'sidebar' }
           : {
               titleBarOverlay: {
                 color: appearance?.titlebar || '#ffffff',
                 symbolColor: appearance?.symbol || '#5f6b77',
-                height: 47,
+                height: overlayHeight(),
               },
             }),
         webPreferences: {
+          // The interface's size, from the first frame.
+          zoomFactor: uiZoom,
           preload: path.join(__dirname, 'preload.cjs'),
           contextIsolation: true,
           nodeIntegration: false,

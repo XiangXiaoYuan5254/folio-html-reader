@@ -1,10 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   CircleStop,
   CircleX,
+  History,
   ImagePlus,
   LoaderCircle,
   MessageSquarePlus,
+  Trash2,
   WandSparkles,
   X,
 } from 'lucide-react';
@@ -14,12 +17,14 @@ import { chat, errorText, isAbort, providerFor, useAiConfig } from '../ai/client
 import { documentBudget, estimateTokens } from '../ai/context';
 import { diffText } from '../ai/diff';
 import { applyReply } from '../ai/edits';
+import { loadEditHistory, saveEditHistory } from '../ai/edit-history';
+import type { EditHistory, EditThread, EditTurnRecord } from '../ai/edit-history';
 import { imageTokens, isImageFile, maxImages, prepareImage, refusesImages } from '../ai/images';
 import { loadedModelOptions } from '../ai/levels';
 import { sourceEditPrompt, sourceEditSystem } from '../ai/prompts';
-import type { EditTurn } from '../ai/prompts';
 import { Markdown } from '../ai/Markdown';
 import { DiffView } from './DiffView';
+import { IconButton } from './IconButton';
 import { ImageViewer } from './ImageViewer';
 import { ModelMenu } from './ModelMenu';
 
@@ -30,7 +35,16 @@ type Proposal = {
   source: string;
   failed: string[];
 };
-type Turn = EditTurn & { images: number };
+const newId = (): string => crypto.randomUUID();
+const titleOf = (turn: EditTurnRecord) =>
+  (turn.request || '按图片修改').replace(/\s+/g, ' ').slice(0, 28);
+const when = (time: number) => {
+  const d = new Date(time);
+  const today = new Date();
+  return d.toDateString() === today.toDateString()
+    ? d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+    : d.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
+};
 const examples = [
   '改成深色配色',
   '给表格加上斑马纹和表头底色',
@@ -65,7 +79,16 @@ export function AiSourceEdit(p: {
   const [error, setError] = useState('');
   const [progress, setProgress] = useState(0);
   const [proposal, setProposal] = useState<Proposal | null>(null);
-  const [turns, setTurns] = useState<Turn[]>([]);
+  // Conversations about this file, newest first, and the one being shown.
+  const [threads, setThreads] = useState<EditThread[]>([]);
+  const [activeId, setActiveId] = useState(newId);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [place, setPlace] = useState<{
+    left: number;
+    top?: number;
+    bottom?: number;
+    maxHeight: number;
+  }>();
   const [showOriginal, setShowOriginal] = useState(false);
   // Screenshots of the page, or how it should look, sent with the request.
   const [images, setImages] = useState<string[]>([]);
@@ -74,7 +97,20 @@ export function AiSourceEdit(p: {
   const controller = useRef<AbortController | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
-  const thread = useRef<HTMLDivElement>(null);
+  const threadBox = useRef<HTMLDivElement>(null);
+  const historyButton = useRef<HTMLButtonElement>(null);
+  const historyMenu = useRef<HTMLDivElement>(null);
+  // Saving: conversations change as turns are added and settled; saves are delayed, and the
+  // last one before the panel closes is written on the way out.
+  const latest = useRef({ threads, activeId });
+  latest.current = { threads, activeId };
+  const dirty = useRef(false);
+  const started = useRef(false);
+  const activeThread = threads.find((t) => t.id === activeId);
+  const turns = activeThread?.turns || [];
+  const savedThreads = [...threads]
+    .filter((t) => t.turns.length)
+    .sort((a, b) => b.updatedAt - a.updatedAt);
   const provider = providerFor(useAiConfig(), 'edit');
   const blocked = images.length > 0 && refusesImages(provider, loadedModelOptions(provider?.id));
   // Pictures are scaled down as they arrive; the latest list is used when each one is ready.
@@ -91,32 +127,194 @@ export function AiSourceEdit(p: {
     }
     input.current?.focus();
   }
+  // Earlier conversations about this file, loaded when the panel opens; those started while
+  // loading stay ahead of them.
+  useEffect(() => {
+    let live = true;
+    void loadEditHistory(p.doc.id).then((h) => {
+      if (!live) return;
+      const saved = (h?.threads || [])
+        .filter((t) => Array.isArray(t?.turns) && t.turns.length)
+        // A change still waiting for review when the panel closed was never applied.
+        .map((t) => ({
+          ...t,
+          turns: t.turns.map((turn) =>
+            turn.outcome === 'pending' ? { ...turn, outcome: 'discarded' as const } : turn,
+          ),
+        }));
+      setThreads((local) => [...local, ...saved.filter((s) => !local.some((t) => t.id === s.id))]);
+      if (!started.current && h?.active) {
+        const active = saved.find((t) => t.id === h.active);
+        // A new conversation started before closing comes back empty, not as the one before.
+        setActiveId(active?.id || newId());
+      } else if (!started.current && saved.length) {
+        const newest = [...saved].sort((a, b) => b.updatedAt - a.updatedAt)[0];
+        setActiveId(newest.id);
+      }
+    });
+    return () => {
+      live = false;
+    };
+  }, [p.doc.id]);
+  function persist() {
+    if (!dirty.current) return Promise.resolve();
+    dirty.current = false;
+    const now = latest.current;
+    const data: EditHistory = {
+      version: 1,
+      active: now.activeId,
+      threads: now.threads
+        .filter((t) => t.turns.length)
+        .slice(0, 40)
+        .map((t) => ({
+          ...t,
+          turns: t.turns.map((turn) =>
+            turn.outcome === 'pending' ? { ...turn, outcome: 'discarded' as const } : turn,
+          ),
+        })),
+    };
+    return saveEditHistory(p.doc.id, data).catch((e) =>
+      p.store.notify('修改记录保存失败：' + errorText(e), true),
+    );
+  }
+  useEffect(() => {
+    if (!dirty.current) return;
+    const timer = setTimeout(() => void persist(), 500);
+    return () => clearTimeout(timer);
+  }, [threads, activeId]);
   useEffect(() => {
     input.current?.focus();
     return () => {
       controller.current?.abort();
       p.onPreview(null);
+      void persist();
     };
   }, []);
   useEffect(() => {
     p.onPreview(proposal && !showOriginal ? proposal.source : null);
   }, [proposal, showOriginal]);
   useLayoutEffect(() => {
-    if (thread.current) thread.current.scrollTop = thread.current.scrollHeight;
-  }, [turns.length]);
-  const settle = (outcome: Turn['outcome']) =>
-    setTurns((all) => all.map((t) => (t.outcome === 'pending' ? { ...t, outcome } : t)));
+    if (threadBox.current) threadBox.current.scrollTop = threadBox.current.scrollHeight;
+  }, [turns.length, activeId]);
+  function addTurn(turn: EditTurnRecord) {
+    const at = Date.now();
+    dirty.current = true;
+    started.current = true;
+    setThreads((all) =>
+      all.some((t) => t.id === activeId)
+        ? all.map((t) =>
+            t.id === activeId ? { ...t, updatedAt: at, turns: [...t.turns, turn] } : t,
+          )
+        : [
+            { id: activeId, title: titleOf(turn), createdAt: at, updatedAt: at, turns: [turn] },
+            ...all,
+          ],
+    );
+  }
+  function settle(outcome: 'applied' | 'discarded') {
+    dirty.current = true;
+    setThreads((all) =>
+      all.map((t) =>
+        t.id === activeId
+          ? {
+              ...t,
+              updatedAt: Date.now(),
+              turns: t.turns.map((x) => (x.outcome === 'pending' ? { ...x, outcome } : x)),
+            }
+          : t,
+      ),
+    );
+  }
   function discard() {
     setProposal(null);
     settle('discarded');
   }
+  // Starts a fresh conversation; the one shown stays in the history list.
   function restart() {
-    setProposal(null);
-    setTurns([]);
+    if (proposal) {
+      setProposal(null);
+      settle('discarded');
+    }
+    dirty.current = true;
+    started.current = true;
+    setActiveId(newId());
     setStatus('idle');
     setError('');
+    setShowOriginal(false);
+    setImages([]);
     input.current?.focus();
   }
+  function selectThread(id: string) {
+    if (id === activeId) return setHistoryOpen(false);
+    controller.current?.abort();
+    if (proposal) {
+      setProposal(null);
+      settle('discarded');
+    }
+    dirty.current = true;
+    started.current = true;
+    setActiveId(id);
+    setStatus('idle');
+    setError('');
+    setShowOriginal(false);
+    setImages([]);
+    setHistoryOpen(false);
+    input.current?.focus();
+  }
+  function removeThread(id: string) {
+    dirty.current = true;
+    started.current = true;
+    const left = threads.filter((t) => t.id !== id);
+    if (id === activeId) {
+      controller.current?.abort();
+      setProposal(null);
+      setStatus('idle');
+      setError('');
+      setShowOriginal(false);
+      setImages([]);
+      setActiveId(left[0]?.id || newId());
+    }
+    if (!left.length) setHistoryOpen(false);
+    setThreads(left);
+  }
+  useLayoutEffect(() => {
+    if (!historyOpen || !historyButton.current) return;
+    const r = historyButton.current.getBoundingClientRect();
+    const width = 286;
+    const room = 320;
+    const left = Math.max(8, Math.min(r.right - width, innerWidth - width - 8));
+    const below = innerHeight - r.bottom - 12;
+    const above = r.top - 12;
+    setPlace(
+      below >= Math.min(room, above)
+        ? { left, top: r.bottom + 6, maxHeight: Math.min(room, below) }
+        : { left, bottom: innerHeight - r.top + 6, maxHeight: Math.min(room, above) },
+    );
+  }, [historyOpen]);
+  useEffect(() => {
+    if (!historyOpen) return;
+    const dismiss = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (historyMenu.current?.contains(t) || historyButton.current?.contains(t)) return;
+      setHistoryOpen(false);
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      setHistoryOpen(false);
+    };
+    const close = () => setHistoryOpen(false);
+    document.addEventListener('pointerdown', dismiss, true);
+    document.addEventListener('keydown', key, true);
+    window.addEventListener('blur', close);
+    window.addEventListener('resize', close);
+    return () => {
+      document.removeEventListener('pointerdown', dismiss, true);
+      document.removeEventListener('keydown', key, true);
+      window.removeEventListener('blur', close);
+      window.removeEventListener('resize', close);
+    };
+  }, [historyOpen]);
   async function run() {
     const text = request.trim();
     if ((!text && !images.length) || blocked || status === 'running') return;
@@ -189,10 +387,12 @@ export function AiSourceEdit(p: {
         source: edit.source,
         failed: edit.failed,
       });
-      setTurns((all) => [
-        ...all,
-        { request: text, images: images.length, explanation: edit.explanation, outcome: 'pending' },
-      ]);
+      addTurn({
+        request: text,
+        images: images.length,
+        explanation: edit.explanation,
+        outcome: 'pending',
+      });
       setRequest('');
       setImages([]);
       setShowOriginal(false);
@@ -256,23 +456,68 @@ export function AiSourceEdit(p: {
             : '描述想怎么改，确认改动后再写入源码'}
         </span>
         <ModelMenu use="edit" className="model-pick-mini" onOpenSettings={p.onOpenSettings} />
+        {savedThreads.length ? (
+          <IconButton
+            ref={historyButton}
+            label="历史对话"
+            help="这篇文档以前的 AI 修改，点一段接着改"
+            tooltipDelay={0}
+            active={historyOpen}
+            disabled={status === 'running'}
+            onClick={() => setHistoryOpen((v) => !v)}
+          >
+            <History size={15} />
+          </IconButton>
+        ) : null}
         {turns.length ? (
-          <button
-            className="icon-button"
-            aria-label="新对话"
-            title="新对话：清空上面的对话，重新开始"
+          <IconButton
+            label="新对话"
+            help="开始一段新的修改对话，这段保留在历史里"
+            tooltipDelay={0}
             disabled={status === 'running'}
             onClick={restart}
           >
             <MessageSquarePlus size={15} />
-          </button>
+          </IconButton>
         ) : null}
         <button className="icon-button" aria-label="关闭 AI 修改" onClick={p.onClose}>
           <X size={15} />
         </button>
       </div>
+      {historyOpen && place
+        ? createPortal(
+            <div
+              ref={historyMenu}
+              className="ai-edit-history"
+              role="menu"
+              aria-label="AI 修改的历史对话"
+              style={place}
+            >
+              {!savedThreads.length ? <p>还没有历史对话</p> : null}
+              {savedThreads.map((t) => (
+                <div
+                  key={t.id}
+                  className={`ai-edit-history-item${t.id === activeId ? ' active' : ''}`}
+                >
+                  <button type="button" role="menuitem" onClick={() => selectThread(t.id)}>
+                    <span>{t.title}</span>
+                    <time>{when(t.updatedAt)}</time>
+                  </button>
+                  <IconButton
+                    label="删除这段对话"
+                    tooltipDelay={0}
+                    onClick={() => removeThread(t.id)}
+                  >
+                    <Trash2 size={12} />
+                  </IconButton>
+                </div>
+              ))}
+            </div>,
+            document.body,
+          )
+        : null}
       {turns.length ? (
-        <div className="ai-source-thread" ref={thread} aria-label="修改对话">
+        <div className="ai-source-thread" ref={threadBox} aria-label="修改对话">
           {turns.map((t, i) => (
             <div key={i} className={`ai-source-turn ${t.outcome}`}>
               <div className="ai-source-ask">

@@ -88,6 +88,10 @@ bash server/deploy.sh
 
 管理应用的「下载」页向服务器要 `/admin/downloads`：服务器读网站的 nginx 访问日志（`/www/wwwlogs/helloxxy.com.log`，服务里的 `FOLIO_LICENSE_ACCESS_LOG`），数出页间官网页面的访客、从官网下载安装包的（`.dmg` / `.exe`）、页间自己自动更新的（electron-builder 来下新版本）。同一天同一个 IP 每样只算一次；爬虫、`curl` 和只问大小的 HEAD 请求不算；调过管理接口的网络（同一个 /24 网段）算是你自己，也不算。日志从 2026-09-26 开始，宝塔以后要是开了日志切割，切走的旧日志就数不到了。
 
+同一份日志里还有每份装好的页间检查更新的记录：启动时和开着时每 4 小时要一次 `latest-mac.yml` / `latest.yml`，会员和免费版都会。`/admin/downloads` 的 `opens` 按 IP 列出这些检查（第一次、最后一次，有几天），`daily[].opens` 是每天有几个 IP，管理应用的「电脑」页用它们看有多少人在用，排除规则和上面一样。
+
+「电脑」页的下半部分来自 `/admin/devices`：服务器认识的电脑（试用过、激活过或下过单），带现在的状态、试用到期时间、第一次和最后一次联网、所用激活码的备注、没付款的订单数；`status=member|trial|trial-ended|other` 筛选。电脑编号只给前 8 位。
+
 ## 备份
 
 服务器每天把数据库复制一份到 `/var/lib/folio-license/backups/`，保留最近 14 天。服务器硬盘坏了这些也会丢，所以 Mac 上也每天自动下载一份到 `~/.folio-license/backups/`，保留 30 天（由「页间激活码管理」项目的 `npm run install-backup` 装好，见那里的 README）。

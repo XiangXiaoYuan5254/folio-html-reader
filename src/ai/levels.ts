@@ -31,6 +31,10 @@ export function modelOptions(providerId: string, refresh = false) {
 }
 export const loadedModelOptions = (providerId: string | undefined) =>
   providerId ? loaded.get(providerId) : undefined;
+export function rememberModelOptions(providerId: string, list: ModelOption[]) {
+  cache.set(providerId, Promise.resolve(list));
+  loaded.set(providerId, list);
+}
 export function forgetModelOptions(providerId?: string) {
   if (providerId) {
     cache.delete(providerId);

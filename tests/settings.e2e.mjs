@@ -110,7 +110,7 @@ try {
   await gearDot().waitFor();
   await page.getByRole('button', { name: '设置', exact: true }).click();
   await dialog().getByRole('heading', { name: '外观与阅读', exact: true }).waitFor();
-  assert.equal(await nav().getByRole('button').count(), 6);
+  assert.equal(await nav().getByRole('button').count(), 7);
   await announcementDot().waitFor();
   await page.screenshot({ path: path.join(evidence, 'settings-overview.png') });
   await dialog().getByLabel('划词工具条位置', { exact: true }).selectOption('above');

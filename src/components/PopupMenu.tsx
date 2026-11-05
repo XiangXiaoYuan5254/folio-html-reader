@@ -36,11 +36,13 @@ export function PopupMenu({
   items,
   label,
   onClose,
+  className = '',
 }: {
   at: MenuAnchor;
   items: MenuItem[];
   label: string;
   onClose: () => void;
+  className?: string;
 }) {
   const menu = useRef<HTMLDivElement>(null);
   const [place, setPlace] = useState<{ left: number; top: number; above: boolean } | null>(null);
@@ -97,7 +99,7 @@ export function PopupMenu({
   return createPortal(
     <div
       ref={menu}
-      className="popup-menu"
+      className={`popup-menu ${className}`}
       role="menu"
       aria-label={label}
       style={

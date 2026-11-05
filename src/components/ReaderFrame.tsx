@@ -9,6 +9,7 @@ import {
 import type { Annotation, EraserMode, FrameEvent, Tool } from '../types';
 import type { NoteSize } from '../reader/note-size';
 import { useTheme } from '../theme';
+import { useUiType } from '../ui-type';
 import { invoke } from '../api';
 import { ImageViewer } from './ImageViewer';
 export type ReaderHandle = {
@@ -55,6 +56,7 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
   const frame = useRef<HTMLIFrameElement>(null);
   const paper = useRef<HTMLDivElement>(null);
   const actualScale = useRef(1);
+  const shownZoom = useRef(1);
   const [width, setWidth] = useState(800);
   const [pdf, setPdf] = useState({ page: 1, total: 0, width: 0, hasText: null as boolean | null });
   const [pageInput, setPageInput] = useState('1');
@@ -225,7 +227,7 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
       }
       live.current.onEvent(
         e.data.type === 'zoom-wheel'
-          ? { ...e.data, scale: actualScale.current }
+          ? { ...e.data, scale: shownZoom.current }
           : e.data.type === 'selection' || e.data.type === 'selection-box'
             ? { ...e.data, rect: onScreen(e.data.rect) }
             : e.data,
@@ -240,9 +242,15 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
       window.removeEventListener('message', message);
     };
   }, [p.url]);
-  const scale =
-    p.zoom || (p.kind === 'pdf' && pdf.width ? Math.max(0.1, width / (pdf.width + 64)) : 1);
+  // The interface's size (src/ui-type.ts) zooms the whole window, the document too: undo it
+  // here, so a document looks the same at any interface size. A PDF fitted to the width
+  // already fits whatever the window's zoom.
+  const { zoom: uiZoom } = useUiType();
+  const fitted = !p.zoom && p.kind === 'pdf' && !!pdf.width;
+  const scale = fitted ? Math.max(0.1, width / (pdf.width + 64)) : (p.zoom || 1) / uiZoom;
   actualScale.current = scale;
+  // The zoom as the toolbar counts it, where wheel zooming starts from.
+  shownZoom.current = scale * uiZoom;
   useLayoutEffect(() => {
     if (ready) send('zoom-state', { scale: p.zoom || 1, enabled: p.zoomable !== false });
   }, [ready, scale, p.zoomable, p.url]);

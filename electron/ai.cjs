@@ -53,6 +53,7 @@ function createAi({
     cache.prefs = cache.prefs && typeof cache.prefs === 'object' ? cache.prefs : {};
     cache.uses = cache.uses && typeof cache.uses === 'object' ? cache.uses : {};
     cache.speech = cache.speech && typeof cache.speech === 'object' ? cache.speech : {};
+    cache.papers = cache.papers && typeof cache.papers === 'object' ? cache.papers : {};
     return cache;
   }
   async function write(next) {
@@ -98,6 +99,9 @@ function createAi({
           shared: shared ? shared.name : '',
         };
       }),
+      papers: {
+        openalex: { hasKey: !!c.papers.openalex?.key, keyHint: c.papers.openalex?.keyHint || '' },
+      },
     };
   }
   // The AI service whose key a speech service can use too, when it has none of its own.
@@ -118,6 +122,21 @@ function createAi({
     else delete speech[service];
     await write({ ...c, speech });
     return config();
+  }
+  // The paper libraries' keys: OpenAlex works without one, on a small shared allowance.
+  async function savePaperKey({ key }) {
+    const c = await read();
+    key = typeof key === 'string' ? key.trim() : '';
+    if (key.length > 4096 || /\s/.test(key)) throw new AiError('API Key 格式不正确');
+    const papers = { ...c.papers };
+    if (key)
+      papers.openalex = { key: protect(key), keyHint: `${key.slice(0, 3)}…${key.slice(-4)}` };
+    else delete papers.openalex;
+    await write({ ...c, papers });
+    return config();
+  }
+  async function paperKeys() {
+    return { openalexKey: keyOf((await read()).papers.openalex) };
   }
   // A speech service's key and the host it goes to; `draft` is one the settings are trying.
   async function speechAccess(service, draft = '') {
@@ -191,6 +210,15 @@ function createAi({
       keyHint: previous?.keyHint || '',
       key: previous?.key || '',
       vision: previous?.vision || {},
+      // The models picked to show in the model menu; none shows the service's whole list.
+      picks:
+        preset.kind === 'codex' || preset.kind === 'kimi'
+          ? []
+          : Array.isArray(input.picks)
+            ? [...new Set(input.picks.map((m) => clean(m, 200)).filter(Boolean))]
+                .sort((a, b) => a.localeCompare(b))
+                .slice(0, 500)
+            : previous?.picks || [],
     };
   }
   async function saveProvider(input) {
@@ -271,6 +299,8 @@ function createAi({
       ].slice(0, 200);
     if (['auto', 'zh', 'en'].includes(patch?.language)) prefs.language = patch.language;
     if (typeof patch?.profile === 'string') prefs.profile = clean(patch.profile, 2000);
+    if (typeof patch?.companionPrompt === 'string')
+      prefs.companionPrompt = clean(patch.companionPrompt, 20000);
     await write({ ...c, prefs });
     return config();
   }
@@ -367,13 +397,29 @@ function createAi({
     if (provider.kind === 'codex') return codex.listModels(version);
     if (provider.kind === 'kimi') return kimi.listModels(kimiHome);
     const preset = presetFor(provider.preset);
+    const option = (id) => {
+      const { efforts, effort } = modelLevels(preset, id);
+      return { id, efforts, defaultEffort: effort };
+    };
+    // Just the picked models, and the ones in use, without asking the service: Qwen's list
+    // tries each model with a billed call, and can't tell which ones have free quota.
+    // `all` is the settings asking for everything to pick from.
+    if (!payload?.all && provider.picks?.length) {
+      const c = await read();
+      const using = Object.values(c.uses)
+        .filter((u) => u?.provider === provider.id)
+        .map((u) => u.model);
+      return [...new Set([...provider.picks, provider.model, ...using].filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b))
+        .map(option);
+    }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 20_000);
     try {
-      return (await listModels({ provider, key, fetch, signal: controller.signal })).map((m) => {
-        const { efforts, effort } = modelLevels(preset, m.id);
-        return { ...m, efforts, defaultEffort: effort };
-      });
+      return (await listModels({ provider, key, fetch, signal: controller.signal })).map((m) => ({
+        ...m,
+        ...option(m.id),
+      }));
     } catch (e) {
       if (e.name === 'AbortError') throw new AiError('获取模型列表超时');
       throw e;
@@ -539,6 +585,8 @@ function createAi({
     kimiLogin,
     kimiLogout,
     saveSpeechKey,
+    savePaperKey,
+    paperKeys,
     speak,
     hearingKey,
   };

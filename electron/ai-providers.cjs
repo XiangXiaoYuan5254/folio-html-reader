@@ -75,6 +75,8 @@ const presets = [
       ['^qwen3(\\.\\d)?-', ['off', 'on'], 'on'],
     ],
     usage: true,
+    // Probe chat access, not free quota: a successful call may be billed.
+    probe: true,
     keyUrl: 'https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key',
     web: 'qwen',
     region: 'cn',
@@ -1438,26 +1440,28 @@ async function localImages(provider, ids, fetch, signal) {
   return found;
 }
 
-// Qwen and Doubao list every model on their platforms: other makers', pictures, speech,
-// retired models, open-weight sizes, previews and dated snapshots. Only their own current
-// chat models show.
+// Keep chat models from the platform, including other makers. Dated versions must stay:
+// they are distinct callable models and can have their own free quota.
+const qwenMakers = /^(qwen|deepseek|kimi|moonshot|glm|minimax)/i;
 const qwenOther =
-  /tts|asr|realtime|livetranslate|image|embedding|rerank|-mt-|ocr|s2s|deep-|audio|omni|math|character|gui|longcontext|^qwen-coder/i;
+  /tts|asr|speech|realtime|livetranslate|image|embedding|rerank|-mt-|ocr|s2s|deep-|audio|omni|math|character|gui|longcontext|^qwen-coder/i;
 function shown(preset, m, id) {
   if (preset === 'qwen')
     return (
-      /^qwen/i.test(id) &&
+      qwenMakers.test(id) &&
       !qwenOther.test(id) &&
       !/-\d+(\.\d+)?[bt](-|$)/i.test(id) &&
-      !/-(\d{4}-\d{2}-\d{2}|\d{4}|latest|preview)$/.test(id)
+      !/-(latest|preview)$/.test(id)
     );
-  if (preset === 'doubao')
-    return /^doubao-/.test(id) && m?.status !== 'Shutdown' && ['LLM', 'VLM'].includes(m?.domain);
+  if (preset === 'doubao') return m?.status !== 'Shutdown' && ['LLM', 'VLM'].includes(m?.domain);
   if (preset === 'xiaomi') return !/tts|asr/i.test(id);
   return true;
 }
-// Whether a model is opened on the account: Doubao answers ModelNotOpen for one that isn't,
-// before any reply, so the reply is dropped unread.
+// Doubao rejects unopened models before streaming. Qwen can return HTTP 200 and put the
+// error inside the stream, so only an actual chat response confirms access. This does
+// not reveal whether a successful request uses free quota or paid credit.
+const notOpen =
+  /ModelNotOpen|Model\.AccessDenied|AccessDenied\.Unpurchased|model_not_found|the product is not activated/i;
 async function opened(provider, key, model, fetch, signal) {
   try {
     const response = await fetch(endpoint(provider.baseUrl, '/chat/completions'), {
@@ -1471,15 +1475,47 @@ async function opened(provider, key, model, fetch, signal) {
       }),
       signal,
     });
+    if (provider.preset === 'qwen') {
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => {});
+        return false;
+      }
+      const answered = (chunk) =>
+        !chunk?.error &&
+        chunk?.choices?.some((choice) => {
+          const said = choice.delta || choice.message;
+          return (
+            !!choice.finish_reason ||
+            [said?.content, said?.reasoning_content, said?.reasoning].some(
+              (value) => typeof value === 'string' && value.length > 0,
+            )
+          );
+        });
+      if (/application\/json/i.test(response.headers.get('content-type') || ''))
+        return !!answered(await response.json());
+      if (!response.body) return false;
+      for await (const data of sseData(response.body, signal, 10_000)) {
+        if (data.trim() === '[DONE]') break;
+        let chunk;
+        try {
+          chunk = JSON.parse(data);
+        } catch {
+          continue;
+        }
+        if (chunk?.error) return false;
+        if (answered(chunk)) return true;
+      }
+      return false;
+    }
     if (response.ok) {
       await response.body?.cancel().catch(() => {});
       return true;
     }
     const text = await response.text().catch(() => '');
-    return response.status !== 404 && !/ModelNotOpen/i.test(text);
+    return response.status !== 404 && !notOpen.test(text);
   } catch (e) {
     if (signal?.aborted) throw e;
-    return true;
+    return provider.preset !== 'qwen';
   }
 }
 

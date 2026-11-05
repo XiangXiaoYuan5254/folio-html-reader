@@ -826,6 +826,61 @@ export function createService({ db, privateKey, pay = null, now = Date.now }) {
         })),
       };
     },
+    // The computers the server knows: those that tried, activated or started a purchase, the
+    // latest check-in first. A computer checks in while it uses 页间 as a member or during the
+    // trial; after the trial the app only calls when its membership window opens, so a `seen`
+    // after `trialUntil` means it came back to that window. `status` picks: member, trial,
+    // trial-ended (tried, not a member now) or other (no membership left: expired, revoked or
+    // moved away, or a purchase never paid).
+    devices({ status, limit }) {
+      const at = now();
+      const rows = all(
+        `SELECT d.*, t.started_at AS trial_at,
+           (SELECT count(*) FROM orders o WHERE o.device = d.device AND o.code IS NULL) AS unpaid
+         FROM devices d LEFT JOIN trials t ON t.device = d.device
+         ORDER BY d.last_seen DESC, d.device`,
+      );
+      const computers = rows.map((r) => {
+        const plan = runningPlan(r.device, at);
+        const trialUntil = r.trial_at ? r.trial_at + rules.trialDays * DAY : null;
+        return {
+          // Enough of the id to tell computers apart; the full one never leaves the server.
+          device: r.device.slice(0, 8),
+          platform: r.platform || null,
+          version: r.version || null,
+          first: r.first_seen,
+          seen: r.last_seen,
+          trial: r.trial_at || null,
+          trialUntil,
+          status: plan
+            ? 'member'
+            : trialUntil > at
+              ? 'trial'
+              : trialUntil
+                ? 'trial-ended'
+                : 'other',
+          plan,
+          // The note of the code it's on, to know whose computer it is.
+          batch:
+            one(
+              `SELECT batch FROM codes WHERE device = ? AND revoked_at IS NULL
+               ORDER BY activated_at DESC LIMIT 1`,
+              r.device,
+            )?.batch ?? null,
+          unpaid: r.unpaid,
+        };
+      });
+      const counts = { member: 0, trial: 0, 'trial-ended': 0, other: 0 };
+      for (const c of computers) counts[c.status]++;
+      const picked = Object.hasOwn(counts, status)
+        ? computers.filter((c) => c.status === status)
+        : computers;
+      return {
+        total: picked.length,
+        counts,
+        computers: picked.slice(0, Math.min(Math.max(Number(limit) || 300, 1), 5000)),
+      };
+    },
     // Numbers to read the business by, over the last `days` days, today being the last (0 or
     // none: since the start). Money is in fen; days are China's, from midnight. Refunded
     // purchases are counted apart, not as sales.
@@ -1124,6 +1179,8 @@ export function createJianPay({
 // asks for the new version). Over the last `days` days, today being the last (0 or none: the
 // whole log); days are China's. A day counts an address once for each; bots, HEAD requests and
 // the owner's own network (any /24 that has called the admin API) are left out.
+// Every installed copy, member or not, also asks for latest-mac.yml / latest.yml when it starts
+// and every 4 hours while it runs: those `opens`, by address, are who has 页间 open.
 export async function downloadStats({ file, days, now = Date.now() }) {
   const dayOf = (ms) => new Date(ms + 8 * 3_600_000).toISOString().slice(0, 10);
   const span = Math.min(Math.max(Math.floor(Number(days)) || 0, 0), 3650);
@@ -1171,6 +1228,18 @@ export async function downloadStats({ file, days, now = Date.now() }) {
         from: hostOf(referrer),
       });
     else if (
+      /^\/works\/folio\/downloads\/latest(-mac)?\.yml$/.test(pathname) &&
+      agent.includes('electron-builder') &&
+      (status === '200' || status === '304')
+    )
+      hits.push({
+        at,
+        day,
+        ip,
+        kind: 'open',
+        platform: pathname.endsWith('-mac.yml') ? 'darwin' : 'win32',
+      });
+    else if (
       /^\/works\/folio\/(index\.html)?$/.test(pathname) &&
       (status === '200' || status === '304')
     )
@@ -1184,17 +1253,37 @@ export async function downloadStats({ file, days, now = Date.now() }) {
       visitors: 0,
       downloads: { darwin: 0, win32: 0 },
       updates: { darwin: 0, win32: 0 },
+      opens: { darwin: 0, win32: 0 },
     });
   const byDay = new Map(daily.map((d) => [d.day, d]));
   const seen = new Set();
   const events = [];
   const sources = {};
   const versions = {};
+  // Each address (and system) that had 页间 open: first and last time, and on how many days.
+  const open = new Map();
   for (const hit of hits) {
+    if (owner.has(network(hit.ip))) continue;
+    if (hit.kind === 'open') {
+      const id = `${hit.platform} ${hit.ip}`;
+      const o = open.get(id) || {
+        ip: hit.ip,
+        platform: hit.platform,
+        first: hit.at,
+        days: new Set(),
+      };
+      o.last = hit.at;
+      o.days.add(hit.day);
+      open.set(id, o);
+    }
     const key = `${hit.day} ${hit.ip} ${hit.kind} ${hit.platform}`;
-    if (owner.has(network(hit.ip)) || seen.has(key)) continue;
+    if (seen.has(key)) continue;
     seen.add(key);
     const d = byDay.get(hit.day);
+    if (hit.kind === 'open') {
+      d.opens[hit.platform]++;
+      continue;
+    }
     if (hit.kind === 'visit') {
       d.visitors++;
       sources[hit.from] = (sources[hit.from] || 0) + 1;
@@ -1219,6 +1308,18 @@ export async function downloadStats({ file, days, now = Date.now() }) {
     versions: Object.entries(versions)
       .map(([version, n]) => ({ version, n }))
       .sort((a, b) => b.n - a.n),
+    // Addresses that had 页间 open, the latest first: `days` is on how many days.
+    opened: open.size,
+    opens: [...open.values()]
+      .sort((a, b) => b.last - a.last)
+      .slice(0, 300)
+      .map((o) => ({
+        ip: o.ip,
+        platform: o.platform,
+        first: o.first,
+        last: o.last,
+        days: o.days.size,
+      })),
   };
 }
 
@@ -1299,6 +1400,7 @@ export function createServer({ service, adminToken, prefix = '/api/folio', backu
           '/admin/stats': 'stats',
           '/admin/info': 'info',
           '/admin/list': 'list',
+          '/admin/devices': 'devices',
           '/admin/batches': 'batches',
           '/admin/events': 'events',
           '/admin/analytics': 'analytics',

@@ -784,6 +784,61 @@ button.brand {
 .document-tabs::-webkit-scrollbar {
   display: none;
 }
+/* Tabs scrolled past an end fade out there, and the tab scrolled to keeps clear of the fade. */
+.document-tabs {
+  scroll-padding-inline: 28px;
+}
+.document-tabs.hides-before {
+  mask-image: linear-gradient(to right, transparent, #000 28px);
+}
+.document-tabs.hides-after {
+  mask-image: linear-gradient(to left, transparent, #000 28px);
+}
+.document-tabs.hides-before.hides-after {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 28px,
+    #000 calc(100% - 28px),
+    transparent
+  );
+}
+.document-tab-row > .document-tabs-all {
+  align-self: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  margin-left: 2px;
+  border-radius: 7px;
+  -webkit-app-region: no-drag;
+}
+.popup-menu.document-tab-list {
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+}
+.document-tab-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.document-tab-list-item > span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.document-tab-list-item svg {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.document-tab-list-item.active {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.document-tab-list-item.active svg {
+  color: var(--accent-text);
+}
 .document-tab-row {
   display: flex;
   flex: 1;

@@ -18,6 +18,9 @@ import type { AiConfig, AiProvider, AiUse, ModelOption } from '../ai/types';
 import { BalanceLine } from './BalanceLine';
 
 const shortName = (p: AiProvider) => p.name.replace(/（.*?）|\(.*?\)/g, '').trim() || p.name;
+// What a service's model list depends on. A picked list always holds the model in use.
+const listKey = (p: AiProvider) =>
+  [p.baseUrl, p.keyHint, ...(p.picks?.length ? [p.model, ...p.picks] : [])].join('\n');
 
 // Service, model and reasoning level, switched right where you type, like Codex's picker.
 // Chat's picks the active service; another part's picks its own, or follows chat.
@@ -50,18 +53,44 @@ export function ModelMenu({
   }>({ left: 0, bottom: 0, maxHeight: 0 });
   const button = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
-  const load = (id: string, refresh = false) => {
-    if (!id || (!refresh && lists[id] && lists[id] !== 'loading')) return;
+  // What each list was loaded for, and the latest request for it.
+  const loadedFor = useRef<Record<string, string>>({});
+  const requests = useRef<Record<string, number>>({});
+  function fetchList(id: string, refresh = false) {
+    const p = config?.providers.find((x) => x.id === id);
+    loadedFor.current[id] = p ? listKey(p) : '';
+    const n = (requests.current[id] = (requests.current[id] || 0) + 1);
     setLists((l) => ({ ...l, [id]: 'loading' }));
     modelOptions(id, refresh).then(
-      (list) => setLists((l) => ({ ...l, [id]: list })),
-      (e) => setLists((l) => ({ ...l, [id]: { error: errorText(e) } })),
+      (list) => requests.current[id] === n && setLists((l) => ({ ...l, [id]: list })),
+      (e) =>
+        requests.current[id] === n && setLists((l) => ({ ...l, [id]: { error: errorText(e) } })),
     );
+  }
+  const load = (id: string, refresh = false) => {
+    if (!id || (!refresh && lists[id] && lists[id] !== 'loading')) return;
+    fetchList(id, refresh);
   };
   useEffect(() => {
     // The model's levels are shown on the button before the menu is opened.
     if (provider?.id) load(provider.id);
   }, [provider?.id]);
+  // A list loaded before its service's address, key or picked models changed (in the
+  // settings, or another menu) is asked for again: the one in use and the one on show now,
+  // the others when next opened.
+  useEffect(() => {
+    const stale = (config?.providers || []).filter(
+      (p) => p.id in loadedFor.current && loadedFor.current[p.id] !== listKey(p),
+    );
+    if (!stale.length) return;
+    for (const p of stale) delete loadedFor.current[p.id];
+    setLists((l) => {
+      const next = { ...l };
+      for (const p of stale) delete next[p.id];
+      return next;
+    });
+    for (const p of stale) if (p.id === provider?.id || (open && p.id === viewing)) fetchList(p.id);
+  }, [config]);
   useLayoutEffect(() => {
     if (!open || !button.current) return;
     const r = button.current.getBoundingClientRect();

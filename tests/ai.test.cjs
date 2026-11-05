@@ -293,51 +293,195 @@ test('a level the model lacks becomes the nearest; parts start at their own', ()
   assert.equal(levelFor([], '', 'high', 'chat'), '');
 });
 
-test('Qwen, Doubao and MiMo lists keep their own chat models, and Doubao only opened ones', async () => {
+test('Qwen, Doubao and MiMo lists keep chat models, Qwen and Doubao only usable ones', async () => {
+  // Each key is a preset, and gets that platform's list.
+  const catalog = {
+    qwen: [
+      { id: 'qwen3.8-flash' },
+      { id: 'qwen3.8-plus' },
+      { id: 'qwen3.8-max-0902' },
+      { id: 'qwen3.8-27b' },
+      { id: 'qwen3-tts-flash' },
+      { id: 'qwen3.7-max-preview' },
+      { id: 'deepseek-v3.2' },
+      { id: 'deepseek-v4-pro-0813' },
+      { id: 'deepseek-v4-flash-0731' },
+      { id: 'MiniMax/speech-2.8-hd' },
+      { id: 'kimi-not-activated' },
+      { id: 'glm-other-parameter-error' },
+      { id: 'deepseek-r1-distill-qwen-7b' },
+      { id: 'kimi-k3' },
+      { id: 'wan2.6-t2i' },
+    ],
+    doubao: [
+      { id: 'doubao-seed-open', domain: 'VLM' },
+      { id: 'doubao-seed-closed', domain: 'LLM' },
+      { id: 'doubao-seed-old', domain: 'LLM', status: 'Shutdown' },
+      { id: 'doubao-seedream-5-0', domain: 'ImageGeneration' },
+      { id: 'deepseek-v3-2-251201', domain: 'LLM' },
+      { id: 'glm-5-3-flash-260828', domain: 'LLM' },
+    ],
+    xiaomi: [{ id: 'mimo-v2.6-pro' }, { id: 'mimo-v2.5-tts-voiceclone' }, { id: 'mimo-v2.5-asr' }],
+  };
+  const usable = [
+    'qwen3.8-flash',
+    'deepseek-v3.2',
+    'deepseek-v4-pro-0813',
+    'deepseek-v4-flash-0731',
+    'doubao-seed-open',
+    'deepseek-v3-2-251201',
+  ];
   const server = await mockServer((req, res) => {
     if (req.url === '/v1/chat/completions') {
-      if (req.body.model === 'doubao-seed-open') return sse(res, [{ choices: [{ delta: {} }] }]);
+      if (usable.includes(req.body.model))
+        return sse(res, [{ choices: [{ delta: { content: '1' } }] }]);
+      if (req.body.model === 'qwen3.8-plus') {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        return res.end(
+          JSON.stringify({
+            error: { code: 'Model.AccessDenied', message: 'Model access denied.' },
+          }),
+        );
+      }
+      if (
+        req.body.model === 'kimi-not-activated' ||
+        req.body.model === 'glm-other-parameter-error'
+      ) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(
+          JSON.stringify({
+            error: {
+              code: 'invalid_parameter_error',
+              message:
+                req.body.model === 'kimi-not-activated'
+                  ? 'The product is not activated, please confirm that you have activated products and try again after activation.'
+                  : 'Invalid max_tokens parameter',
+            },
+          }),
+        );
+      }
       res.writeHead(404, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ error: { code: 'ModelNotOpen', message: '未开通' } }));
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(
-      JSON.stringify({
-        data: [
-          { id: 'qwen3.8-flash' },
-          { id: 'qwen3.8-max-0902' },
-          { id: 'qwen3.8-27b' },
-          { id: 'qwen3-tts-flash' },
-          { id: 'qwen3.7-max-preview' },
-          { id: 'kimi/kimi-k3' },
-          { id: 'doubao-seed-open', domain: 'VLM' },
-          { id: 'doubao-seed-closed', domain: 'LLM' },
-          { id: 'doubao-seed-old', domain: 'LLM', status: 'Shutdown' },
-          { id: 'doubao-seedream-5-0', domain: 'ImageGeneration' },
-          { id: 'glm-5-3-flash-260828', domain: 'LLM' },
-          { id: 'mimo-v2.6-pro' },
-          { id: 'mimo-v2.5-tts-voiceclone' },
-          { id: 'mimo-v2.5-asr' },
-        ],
-      }),
-    );
+    res.end(JSON.stringify({ data: catalog[req.headers.authorization.replace('Bearer ', '')] }));
   });
   try {
     const list = async (preset) =>
       (
-        await providers.listModels({ provider: provider(server.url, { preset }), key: 'k', fetch })
+        await providers.listModels({
+          provider: provider(server.url, { preset }),
+          key: preset,
+          fetch,
+        })
       ).map((m) => m.id);
-    assert.deepEqual(await list('qwen'), ['qwen3.8-flash']);
-    assert.deepEqual(await list('doubao'), ['doubao-seed-open']);
+    assert.deepEqual(await list('qwen'), [
+      'deepseek-v3.2',
+      'deepseek-v4-flash-0731',
+      'deepseek-v4-pro-0813',
+      'qwen3.8-flash',
+    ]);
+    assert.deepEqual(await list('doubao'), ['deepseek-v3-2-251201', 'doubao-seed-open']);
     assert.ok((await list('xiaomi')).includes('mimo-v2.6-pro'));
     assert.ok(!(await list('xiaomi')).some((id) => /tts|asr/.test(id)));
     assert.deepEqual(
-      server.requests.filter((r) => r.body).map((r) => r.body.model),
-      ['doubao-seed-open', 'doubao-seed-closed'],
+      server.requests
+        .filter((r) => r.body)
+        .map((r) => r.body.model)
+        .sort(),
+      [
+        'deepseek-v3-2-251201',
+        'deepseek-v3.2',
+        'deepseek-v4-flash-0731',
+        'deepseek-v4-pro-0813',
+        'doubao-seed-closed',
+        'doubao-seed-open',
+        'glm-5-3-flash-260828',
+        'glm-other-parameter-error',
+        'kimi-k3',
+        'kimi-not-activated',
+        'qwen3.8-flash',
+        'qwen3.8-max-0902',
+        'qwen3.8-plus',
+      ],
     );
   } finally {
     await server.close();
   }
+});
+
+test('Qwen probes inspect streamed errors, reject unverified access and cancel after a reply', async () => {
+  const cases = {
+    'kimi-stream-error': [
+      200,
+      { error: { code: 'invalid_parameter_error', message: 'The product is not activated.' } },
+    ],
+    'qwen-quota-empty': [403, { error: { code: 'AllocationQuota.FreeTierOnly' } }],
+    'deepseek-quota-empty': [403, { error: { code: 'insufficient_quota' } }],
+    'qwen-rate-limited': [429, { error: { code: 'rate_limit_exceeded' } }],
+    'qwen-unknown-parameter': [
+      400,
+      { error: { code: 'invalid_parameter_error', message: 'Invalid max_tokens' } },
+    ],
+    'qwen-json-error': [200, { error: { code: 'invalid_parameter_error' } }, 'json'],
+    'qwen-json-ok': [200, { choices: [{ message: { content: '1' } }] }, 'json'],
+    'qwen-empty': [200, null],
+    'qwen-network': null,
+    'qwen-thinking': [200, { choices: [{ delta: { reasoning_content: '1' } }] }],
+  };
+  const cancelled = new Set();
+  const fakeFetch = async (url, init) => {
+    if (url.endsWith('/models'))
+      return Response.json({ data: Object.keys(cases).map((id) => ({ id })) });
+    const model = JSON.parse(init.body).model;
+    const entry = cases[model];
+    if (!entry) throw new TypeError('Connection lost');
+    const [status, value, format] = entry;
+    if (status !== 200 || format === 'json') return Response.json(value, { status });
+    const encoder = new TextEncoder();
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          // A role-only delta is not proof of access; an error can follow it.
+          controller.enqueue(
+            encoder.encode('data: {"choices":[{"delta":{"role":"assistant"}}]}\n\n'),
+          );
+          const event = value ? `data: ${JSON.stringify(value)}\n\n` : 'data: [DONE]\n\n';
+          controller.enqueue(encoder.encode(event.slice(0, 12)));
+          controller.enqueue(encoder.encode(event.slice(12)));
+          // Leave it open to ensure probing stops at the first real answer/error.
+        },
+        cancel() {
+          cancelled.add(model);
+        },
+      }),
+      { headers: { 'Content-Type': 'text/event-stream' } },
+    );
+  };
+  const list = await providers.listModels({
+    provider: provider('https://mock.invalid/v1', { preset: 'qwen' }),
+    key: 'test',
+    fetch: fakeFetch,
+  });
+  assert.deepEqual(
+    list.map((m) => m.id),
+    ['qwen-json-ok', 'qwen-thinking'],
+  );
+  assert.deepEqual([...cancelled].sort(), ['kimi-stream-error', 'qwen-empty', 'qwen-thinking']);
+  const controller = new AbortController();
+  await assert.rejects(
+    providers.listModels({
+      provider: provider('https://mock.invalid/v1', { preset: 'qwen' }),
+      key: 'test',
+      signal: controller.signal,
+      fetch: async (url) => {
+        if (url.endsWith('/models')) return Response.json({ data: [{ id: 'qwen-plus' }] });
+        controller.abort();
+        throw new DOMException('Aborted', 'AbortError');
+      },
+    }),
+    { name: 'AbortError' },
+  );
 });
 
 test('<think> tags from local models become reasoning', () => {
@@ -400,6 +544,60 @@ test('settings store keeps keys out of the window and encrypted at rest', async 
   });
   await ai.removeProvider({ id: saved.id });
   assert.equal((await ai.config()).providers.length, 0);
+});
+
+test('picked models are listed without asking the service; settings still get everything', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'folio-ai-'));
+  const server = await mockServer((req, res) => {
+    if (req.url.endsWith('/models')) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({ data: [{ id: 'qwen-plus' }, { id: 'glm-5' }, { id: 'deepseek-v4-pro' }] }),
+      );
+    } else sse(res, [{ choices: [{ delta: { content: '1' }, finish_reason: 'stop' }] }]);
+  });
+  try {
+    const ai = createAi({
+      file: path.join(dir, 'ai.json'),
+      fetch,
+      atomicWrite,
+      protect: (k) => k,
+      unprotect: (v) => v,
+    });
+    const { provider: saved } = await ai.saveProvider({
+      preset: 'qwen',
+      baseUrl: server.url,
+      key: 'sk-q',
+      model: 'qwen-plus',
+      picks: ['deepseek-v4-pro', ' deepseek-v4-pro', '', 'deepseek-v4-flash'],
+    });
+    assert.deepEqual(saved.picks, ['deepseek-v4-flash', 'deepseek-v4-pro']);
+    // Other fields saved later keep the picks.
+    await ai.saveProvider({ id: saved.id, name: '千问' });
+    await ai.setUse({ use: 'translate', provider: saved.id, model: 'qwen-flash' });
+    const picked = await ai.models({ id: saved.id });
+    assert.deepEqual(
+      picked.map((m) => m.id),
+      ['deepseek-v4-flash', 'deepseek-v4-pro', 'qwen-flash', 'qwen-plus'],
+      'the picks, with the models in use',
+    );
+    assert.ok(picked.every((m) => Array.isArray(m.efforts)));
+    assert.equal(server.requests.length, 0, 'no list and no trial calls');
+    const all = await ai.models({ id: saved.id, all: true });
+    assert.deepEqual(
+      all.map((m) => m.id),
+      ['deepseek-v4-pro', 'glm-5', 'qwen-plus'],
+    );
+    assert.ok(server.requests.length > 1, 'the whole list is asked for and tried');
+    // No picks: the whole list again.
+    await ai.saveProvider({ id: saved.id, picks: [] });
+    assert.deepEqual(
+      (await ai.models({ id: saved.id })).map((m) => m.id),
+      ['deepseek-v4-pro', 'glm-5', 'qwen-plus'],
+    );
+  } finally {
+    await server.close();
+  }
 });
 
 test('stopping a request resolves as stopped', async () => {

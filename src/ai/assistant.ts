@@ -1419,7 +1419,7 @@ export class Assistant {
         let current = '';
         const result = await chat(
           {
-            system: companionSystem(config.prefs.profile),
+            system: companionSystem(config.prefs.profile, config.prefs.companionPrompt),
             messages: reply
               ? [
                   ask,
@@ -1464,7 +1464,8 @@ export class Assistant {
       finished = true;
       const pdf = doc.kind === 'pdf' ? fileName(source) : undefined;
       const cleaned = cleanCompanion(reply, pdf);
-      if (cleaned.sections < 3)
+      // Folio's writing asks for at least five parts; the reader's own may ask for fewer.
+      if (cleaned.sections < (config.prefs.companionPrompt?.trim() ? 1 : 3))
         throw Error(
           cut
             ? '笔记太长，续写多次仍没有写完。可以换用输出更长的模型再试。'

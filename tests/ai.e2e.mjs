@@ -132,7 +132,9 @@ const server = http.createServer(async (req, res) => {
   requests.push({ url: req.url, auth: req.headers.authorization, body });
   if (req.url.endsWith('/models')) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ data: [{ id: 'mock-model' }, { id: 'mock-large' }] }));
+    return res.end(
+      JSON.stringify({ data: [{ id: 'mock-model' }, { id: 'mock-large' }, { id: 'mock-extra' }] }),
+    );
   }
   if (req.headers.authorization !== `Bearer ${testKey}`) {
     res.writeHead(401, { 'Content-Type': 'application/json' });
@@ -311,8 +313,23 @@ try {
   assert.equal(await settings.getByLabel('模型', { exact: true }).inputValue(), 'mock-model');
   await settings.getByRole('button', { name: '测试连接' }).click();
   await settings.getByText(/连接成功/).waitFor();
+  // Only some of the service's models are shown in the model menu; the one in use always is.
+  await settings.getByRole('button', { name: '只显示部分模型' }).click();
+  const shownModels = settings.getByRole('group', { name: '要显示的模型' });
+  await shownModels.getByRole('checkbox', { name: 'mock-large' }).check();
+  assert.ok(await shownModels.getByRole('checkbox', { name: /mock-model/ }).isDisabled());
+  assert.ok(!(await shownModels.getByRole('checkbox', { name: 'mock-extra' }).isChecked()));
+  await settings.getByText('已勾选 1 个，保存后生效').waitFor();
+  await page.screenshot({ path: path.join(evidence, 'ai-settings-picks.png') });
+  await settings.getByRole('button', { name: '完成' }).click();
+  await settings.locator('.ai-picks-chips', { hasText: 'mock-large' }).waitFor();
   await settings.getByRole('button', { name: '添加', exact: true }).click();
-  await settings.getByText('已保存').waitFor();
+  await settings.getByText('已保存', { exact: true }).waitFor();
+  assert.deepEqual(
+    JSON.parse(await fs.readFile(path.join(userData, 'ai.json'), 'utf8')).providers[0].picks,
+    ['mock-large'],
+  );
+  const listsAsked = requests.filter((r) => r.url.endsWith('/models')).length;
   await page.screenshot({ path: path.join(evidence, 'ai-settings-provider.png') });
   const stored = await fs.readFile(path.join(userData, 'ai.json'), 'utf8');
   assert.ok(!stored.includes(testKey), 'the key is not stored as plain text');
@@ -454,6 +471,12 @@ try {
   await picker.click();
   const menu = page.getByRole('menu', { name: '模型和推理强度' });
   await menu.getByRole('menuitemradio', { name: 'mock-large' }).waitFor();
+  assert.equal(await menu.getByRole('menuitemradio', { name: 'mock-extra' }).count(), 0);
+  assert.equal(
+    requests.filter((r) => r.url.endsWith('/models')).length,
+    listsAsked,
+    'picked models are listed without asking the service',
+  );
   await menu.locator('.balance-line', { hasText: '余额 ¥12.34' }).waitFor();
   await page.screenshot({ path: path.join(evidence, 'ai-model-menu.png') });
   await menu.getByRole('menuitemradio', { name: '最高', exact: true }).click();
@@ -840,7 +863,7 @@ try {
   await aiSettings.getByLabel('接口地址').fill(mockUrl);
   await aiSettings.getByLabel('模型', { exact: true }).fill('mock-model');
   await aiSettings.getByRole('button', { name: '添加', exact: true }).click();
-  await aiSettings.getByText('已保存').waitFor();
+  await aiSettings.getByText('已保存', { exact: true }).waitFor();
   await aiSettings.getByRole('button', { name: '关闭 AI 设置' }).click();
   await panel().getByRole('button', { name: '选择模型和推理强度' }).click();
   const models = page.getByRole('menu', { name: '模型和推理强度' });

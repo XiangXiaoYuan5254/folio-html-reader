@@ -3,6 +3,7 @@ import {
   AudioLines,
   BookOpen,
   Crown,
+  HardDrive,
   Info,
   LoaderCircle,
   Megaphone,
@@ -24,11 +25,13 @@ import { Announcements } from './Announcements';
 import { VoiceButton } from './BoardVoice';
 import { MembershipDialog } from './MembershipDialog';
 import { ThemePicker } from './ThemePicker';
+import { StorageSettings } from './StorageSettings';
+import { UiTypeSettings } from './UiTypeSettings';
 import '../whiteboard.css';
 import '../settings.css';
 
 export type SettingsPage =
-  'appearance' | 'ai' | 'voices' | 'membership' | 'announcements' | 'about';
+  'appearance' | 'ai' | 'voices' | 'storage' | 'membership' | 'announcements' | 'about';
 const pages = [
   { id: 'appearance', name: '外观与阅读', icon: Palette, detail: '让页间更适合你的阅读习惯。' },
   { id: 'ai', name: 'AI', icon: Sparkles, detail: '连接自己的服务，为不同功能选择合适的模型。' },
@@ -37,6 +40,12 @@ const pages = [
     name: '语音',
     icon: AudioLines,
     detail: '选择页老师的声音与讲解方式，管理语音服务。',
+  },
+  {
+    id: 'storage',
+    name: '项目存储',
+    icon: HardDrive,
+    detail: '看看页间在当前项目里存了多少数据，清理用不到的数据、白板和旧备份。',
   },
   { id: 'membership', name: '会员', icon: Crown, detail: '查看会员状态、管理激活与邀请。' },
   {
@@ -64,6 +73,7 @@ export function SettingsDialog(p: {
   onCheckUpdates: () => Promise<string>;
   onShowUpdate: () => void;
   onNotify: (message: string) => void;
+  onBoardDeleted: (id: string) => void;
 }) {
   const [page, setPage] = useState<SettingsPage>(p.request.page);
   const [visited, setVisited] = useState(() => new Set<SettingsPage>([p.request.page]));
@@ -192,6 +202,7 @@ export function SettingsDialog(p: {
               onClose={() => {}}
               onRequireMembership={() => navigate('membership')}
             />
+            <UiTypeSettings />
             <section className="settings-group">
               <h4>阅读偏好</h4>
               <label className="settings-row">
@@ -277,6 +288,20 @@ export function SettingsDialog(p: {
             aria-label="语音设置"
           >
             {visited.has('voices') ? <VoiceSettings /> : null}
+          </section>
+          <section
+            className="settings-page settings-scroll"
+            hidden={page !== 'storage'}
+            aria-label="项目存储"
+          >
+            {/* Counted afresh each time the page is opened. */}
+            {page === 'storage' ? (
+              <StorageSettings
+                projectName={p.projectName}
+                onBoardDeleted={p.onBoardDeleted}
+                onNotify={p.onNotify}
+              />
+            ) : null}
           </section>
           <section
             className="settings-page settings-scroll settings-membership"

@@ -141,7 +141,7 @@
             </a>
           </div>
           <p class="hero-meta">
-            <span data-release="version">0.28.0</span> 版 · macOS 12+（Apple 芯片）· Windows 10 / 11
+            <span data-release="version">0.29.0</span> 版 · macOS 12+（Apple 芯片）· Windows 10 / 11
             <span data-other-download hidden>· <a href="#download"></a></span>
           </p>
           <p class="platform-hint" data-platform-hint hidden>
@@ -304,8 +304,10 @@
             <article class="ai-tile ai-wide reveal" id="papers">
               <div class="ai-copy">
                 <h3><svg class="icon" aria-hidden="true"><use href="#i-cap" /></svg>找论文，下到文件夹<span class="tag-new">新</span></h3>
-                <p>在「整个项目」里说一句想读哪个方向，AI 去 OpenAlex 和 arXiv 里查，告诉你每篇的作者、年份、出处，哪些有公开的 PDF。</p>
+                <p>在「整个项目」里说一句想读哪个方向，AI 去论文库里查，告诉你每篇的作者、年份、出处，哪些有公开的 PDF。</p>
                 <ul class="checks">
+                  <li>各学科都能查：OpenAlex 收录所有学科，医学加查 PubMed，理工科加查 arXiv</li>
+                  <li>也可以指定去哪查：“只在 PubMed 找”“只要 The Lancet 上的”</li>
                   <li>下载前逐篇给你确认，可以跳过不要的</li>
                   <li>存进你指定的文件夹，没有的会自动新建</li>
                   <li>下好就能打开、批注，接着写精读笔记</li>
@@ -661,8 +663,8 @@
               </div>
             </div>
             <dl class="specs">
-              <div><dt>版本</dt><dd data-release="version">0.28.0</dd></div>
-              <div><dt>更新于</dt><dd data-release="date">2026.10.22</dd></div>
+              <div><dt>版本</dt><dd data-release="version">0.29.0</dd></div>
+              <div><dt>更新于</dt><dd data-release="date">2026.11.05</dd></div>
               <div><dt>macOS</dt><dd>12+ · Apple 芯片</dd></div>
               <div><dt>Windows</dt><dd>10 / 11 · 64 位</dd></div>
             </dl>
@@ -735,13 +737,14 @@
 
             <div class="install-col reveal" id="changelog">
               <h3>
-                <span data-release="version">0.28.0</span> 更新了什么
+                <span data-release="version">0.29.0</span> 更新了什么
               </h3>
               <ul class="changes">
-                <li><strong>更宽敞的阅读界面</strong>文档标签并入顶部标题栏，主题、阅读提示和设置集中到左下角。</li>
-                <li><strong>统一右侧面板</strong>批注、笔记、目录和 AI 助手在同一面板切换，重新打开时保留上次选择。</li>
-                <li><strong>自适应工具栏</strong>窗口变窄时，批注工具自动收进「更多工具」；白板收起后，可在工具栏查看进度并返回讲解。</li>
-                <li><strong>AI 稳定性</strong>改进回答中断的识别与提示，保留已收到的内容，并增加不记录对话正文和密钥的本地诊断日志。</li>
+                <li><strong>按自己的习惯使用 AI</strong>勾选常用模型，自定义精读笔记提示词；源码 AI 修改可保存和切换历史对话。</li>
+                <li><strong>更细致地找论文</strong>增加 PubMed，支持按学科、论文库、期刊或会议查找，也可以填写自己的 OpenAlex Key。</li>
+                <li><strong>调整界面字体与大小</strong>使用本机字体，放大或缩小界面，正文保持原有字号与排版。</li>
+                <li><strong>管理项目存储</strong>查看批注、笔记、对话、白板和备份的占用，清理不再需要的数据。</li>
+                <li><strong>更方便地管理文档</strong>标签太多时可从全部标签列表切换，新建同名文档自动编号。</li>
               </ul>
             </div>
           </div>

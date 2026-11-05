@@ -5,9 +5,11 @@ import {
   Check,
   CircleX,
   ExternalLink,
+  GraduationCap,
   KeyRound,
   Megaphone,
   LoaderCircle,
+  NotebookPen,
   Plus,
   PlugZap,
   RefreshCw,
@@ -31,9 +33,17 @@ import type {
   ModelOption,
   SpeechService,
 } from '../ai/types';
-import { effortLabel, forgetModelOptions, levelFor, modelLevels } from '../ai/levels';
+import {
+  effortLabel,
+  forgetModelOptions,
+  levelFor,
+  modelLevels,
+  loadedModelOptions,
+  rememberModelOptions,
+} from '../ai/levels';
 import { cloudPrefix, tryCloudVoice, useVoiceSettings } from '../ai/voice';
 import { ModelMenu } from './ModelMenu';
+import { useDismiss } from '../hooks/useDismiss';
 import { Announcements } from './Announcements';
 import { BalanceLine, PlanUsage } from './BalanceLine';
 import { forgetBalance } from '../ai/balance';
@@ -73,9 +83,10 @@ type Form = {
   key: string;
   keyHint: string;
   hasKey: boolean;
+  picks: string[];
 };
 function fromProvider(p: AiProvider): Form {
-  return { ...p, key: '' };
+  return { ...p, picks: p.picks || [], key: '' };
 }
 function fromPreset(p: AiPreset): Form {
   return {
@@ -89,8 +100,10 @@ function fromPreset(p: AiPreset): Form {
     key: '',
     keyHint: '',
     hasKey: false,
+    picks: [],
   };
 }
+const byName = (a: string, b: string) => a.localeCompare(b);
 const contextOptions = [8_192, 32_768, 65_536, 131_072, 262_144, 400_000, 1_000_000];
 const contextLabel = (n: number) =>
   n >= 1_000_000 ? `${n / 1_000_000}M` : `${Math.round(n / 1024)}K`;
@@ -128,11 +141,22 @@ export function AiSettings({
   const [modelInfo, setModelInfo] = useState<ModelOption[] | null>(null);
   const models = modelInfo && modelInfo.map((m) => m.id);
   const [modelsOpen, setModelsOpen] = useState(false);
+  const [modelQuery, setModelQuery] = useState('');
+  const modelRequest = useRef(0);
+  // Whether the list above is the service's whole list, not just the picked models.
+  const [fetchedAll, setFetchedAll] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [pickQuery, setPickQuery] = useState('');
+  const picksButton = useRef<HTMLButtonElement>(null);
+  const picksPanel = useRef<HTMLDivElement>(null);
+  useDismiss(picking, () => setPicking(false), picksButton, picksPanel);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [advanced, setAdvanced] = useState(false);
   // A page besides the services: the reader profile, each part's model, the voices the
   // whiteboard teacher can read in, or the model vendors' offers.
-  const [side, setSide] = useState<'' | 'profile' | 'uses' | 'voices' | 'announcements'>(page);
+  const [side, setSide] = useState<
+    '' | 'profile' | 'companion' | 'uses' | 'voices' | 'papers' | 'announcements'
+  >(page);
   const unseen = useUnreadAnnouncements();
   const panel = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -141,6 +165,7 @@ export function AiSettings({
     if (first) {
       setSelected(first.id);
       setForm(fromProvider(first));
+      setModelInfo(loadedModelOptions(first.id) ?? null);
     } else setAdding(true);
   }, [config]);
   useEffect(() => {
@@ -158,25 +183,38 @@ export function AiSettings({
       !!form.key ||
       (['name', 'baseUrl', 'model', 'context', 'maxOutput', 'effort'] as const).some(
         (k) => form[k] !== stored[k],
-      )
+      ) ||
+      form.picks.join('\n') !== (stored.picks || []).join('\n')
     );
   }, [form, stored]);
   function pick(p: AiProvider) {
+    modelRequest.current++;
+    if (busy === 'models') setBusy('');
     setAdding(false);
     setSide('');
     setSelected(p.id);
     setForm(fromProvider(p));
     setStatus(null);
-    setModelInfo(null);
+    setModelInfo(loadedModelOptions(p.id) ?? null);
+    setFetchedAll(false);
+    setPicking(false);
+    setModelQuery('');
+    setModelsOpen(false);
     setConfirmRemove(false);
   }
   function choosePreset(p: AiPreset) {
+    modelRequest.current++;
+    if (busy === 'models') setBusy('');
     setAdding(false);
     setSide('');
     setSelected('new');
     setForm(fromPreset(p));
     setStatus(null);
     setModelInfo(null);
+    setFetchedAll(false);
+    setPicking(false);
+    setModelQuery('');
+    setModelsOpen(false);
     setAdvanced(p.id === 'custom');
   }
   // 公告 → 去配置: the service if it is already added, otherwise its preset, filled in.
@@ -188,7 +226,17 @@ export function AiSettings({
       if (found) choosePreset(found);
     }
   }
-  const patch = (fields: Partial<Form>) => setForm((f) => (f ? { ...f, ...fields } : f));
+  const patch = (fields: Partial<Form>) => {
+    if ('key' in fields || 'baseUrl' in fields) {
+      modelRequest.current++;
+      if (busy === 'models') setBusy('');
+      setModelInfo(null);
+      setFetchedAll(false);
+      setModelQuery('');
+      setModelsOpen(false);
+    }
+    setForm((f) => (f ? { ...f, ...fields } : f));
+  };
   const draft = () =>
     form && {
       preset: form.preset,
@@ -198,7 +246,10 @@ export function AiSettings({
       context: form.context,
       maxOutput: form.maxOutput,
       effort: form.effort,
+      picks: form.picks,
     };
+  // A list remembered for the model menu is the whole list only while nothing is picked.
+  const fullList = fetchedAll || (!!modelInfo && !stored?.picks?.length);
   async function save() {
     if (!form) return null;
     setBusy('save');
@@ -209,8 +260,12 @@ export function AiSettings({
         ...draft(),
         ...(form.key ? { key: form.key } : {}),
       });
-      setAiConfig(r.config);
+      // Before the new settings reach the model menus, which then ask for their lists again.
       forgetModelOptions(r.provider.id);
+      // With models picked, the menu asks again: the picked list comes without calls.
+      if (modelInfo && fullList && !r.provider.picks?.length)
+        rememberModelOptions(r.provider.id, modelInfo);
+      setAiConfig(r.config);
       forgetBalance(r.provider.id);
       setSelected(r.provider.id);
       setForm(fromProvider(r.provider));
@@ -246,24 +301,38 @@ export function AiSettings({
   // `quiet` fills the list in the background (e.g. once Codex reports a login).
   async function fetchModels(quiet = false) {
     if (!form) return;
+    const request = ++modelRequest.current;
     setBusy('models');
     if (!quiet) setStatus(null);
     try {
+      // Everything the service has, to choose and pick from.
       const info = await invoke<ModelOption[]>('ai-models', {
         id: form.id,
         draft: draft(),
+        all: true,
         ...(form.key ? { key: form.key } : {}),
       });
+      if (request !== modelRequest.current) return;
       const list = info.map((m) => m.id);
       setModelInfo(info);
+      setFetchedAll(true);
+      setModelQuery('');
+      if (form.id && !form.key && form.baseUrl === stored?.baseUrl && !stored?.picks?.length)
+        rememberModelOptions(form.id, info);
       if (!quiet) setModelsOpen(true);
       // A new service starts with the service's own default model.
       if (list.length) setForm((f) => (f && !f.model ? { ...f, model: list[0] } : f));
-      if (!list.length) setStatus({ ok: false, text: '服务没有返回模型，请手动填写模型名称' });
+      if (!quiet || !list.length)
+        setStatus(
+          list.length
+            ? { ok: true, text: `已获取 ${list.length} 个模型，请从列表中选择` }
+            : { ok: false, text: '未获取到可用模型，可以重试或手动填写模型名称' },
+        );
     } catch (e) {
+      if (request !== modelRequest.current) return;
       setStatus({ ok: false, text: errorText(e) });
     } finally {
-      setBusy('');
+      if (request === modelRequest.current) setBusy('');
     }
   }
   async function remove() {
@@ -284,18 +353,36 @@ export function AiSettings({
     setAiConfig(await invoke<AiConfig>('ai-set-active', { id: form.id }));
   }
   const disabled = !!root && !!config?.prefs.disabledRoots?.includes(root);
-  const allModels = [...new Set([...(models || []), ...(preset?.models || [])])];
+  const allModels = [...new Set(models ?? (!form?.id ? preset?.models : []) ?? [])];
   // The model's levels, and the one chat uses.
   const listed = modelInfo?.find((m) => m.id === form?.model);
   const { efforts: levels, effort: fallback } = listed
     ? { efforts: listed.efforts.filter(Boolean), effort: listed.defaultEffort }
     : modelLevels(preset, form?.model);
   const effort = levelFor(levels, fallback, form?.effort || '', 'chat');
-  // Typing narrows the list; an exact choice shows everything again.
-  const typed = form?.model.toLowerCase() || '';
-  const modelChoices = allModels.includes(form?.model || '')
-    ? allModels
-    : allModels.filter((m) => m.toLowerCase().includes(typed));
+  // Only an explicit search filters the list. The saved model may no longer be usable.
+  const modelChoices = allModels.filter((m) => m.toLowerCase().includes(modelQuery));
+  // The models the menu shows once some are picked: those, and always the one in use.
+  const picks = form?.picks || [];
+  const inUse = (m: string) => picks.length > 0 && m === form?.model;
+  const shownPicks = picks.length
+    ? [...new Set([...picks, ...(form?.model ? [form.model] : [])])].sort(byName)
+    : [];
+  const pickChoices = [
+    ...new Set([...(fullList ? allModels : []), ...picks, ...(form?.model ? [form.model] : [])]),
+  ]
+    .sort(byName)
+    .filter((m) => m.toLowerCase().includes(pickQuery));
+  const togglePick = (m: string) =>
+    patch({
+      picks: picks.includes(m) ? picks.filter((x) => x !== m) : [...picks, m].sort(byName),
+    });
+  function openPicks() {
+    if (picking) return setPicking(false);
+    setPicking(true);
+    setPickQuery('');
+    if (!fullList) void fetchModels(true);
+  }
   const needsKey = !preset?.noKey;
   return (
     <div
@@ -316,6 +403,9 @@ export function AiSettings({
             if (modelsOpen) {
               e.stopPropagation();
               setModelsOpen(false);
+            } else if (picking) {
+              e.stopPropagation();
+              setPicking(false);
             } else if (!embedded) {
               e.stopPropagation();
               onClose();
@@ -340,6 +430,8 @@ export function AiSettings({
                 ['', '服务与账号'],
                 ['uses', '各功能的模型'],
                 ['profile', '读者画像'],
+                ['companion', '精读笔记提示词'],
+                ['papers', '论文检索'],
               ] as const
             ).map(([id, title]) => (
               <button
@@ -409,11 +501,25 @@ export function AiSettings({
                   语音服务
                 </button>
                 <button
+                  className={`ai-profile-link ${side === 'papers' ? 'active' : ''}`}
+                  onClick={() => setSide('papers')}
+                >
+                  <GraduationCap size={14} />
+                  论文检索
+                </button>
+                <button
                   className={`ai-profile-link ${side === 'profile' ? 'active' : ''}`}
                   onClick={() => setSide('profile')}
                 >
                   <UserRound size={14} />
                   读者画像
+                </button>
+                <button
+                  className={`ai-profile-link ${side === 'companion' ? 'active' : ''}`}
+                  onClick={() => setSide('companion')}
+                >
+                  <NotebookPen size={14} />
+                  精读笔记提示词
                 </button>
                 <button
                   className={`ai-profile-link ${side === 'announcements' ? 'active' : ''}`}
@@ -429,10 +535,14 @@ export function AiSettings({
           <section className="ai-settings-main">
             {side === 'profile' ? (
               <ReaderProfile saved={config?.prefs.profile || ''} />
+            ) : side === 'companion' ? (
+              <CompanionPrompt saved={config?.prefs.companionPrompt || ''} />
             ) : side === 'uses' ? (
               <UseModels />
             ) : side === 'voices' ? (
               <SpeechVoices services={config?.speech || []} />
+            ) : side === 'papers' ? (
+              <PaperLibraries openalex={config?.papers?.openalex} />
             ) : side === 'announcements' ? (
               <Announcements presets={config?.presets || []} onConfigure={configure} />
             ) : adding || !form ? (
@@ -551,10 +661,14 @@ export function AiSettings({
                         placeholder="填写模型名称，或点击右侧获取列表"
                         spellCheck={false}
                         aria-label="模型"
-                        onFocus={() => models && setModelsOpen(true)}
+                        onFocus={() => {
+                          setModelQuery('');
+                          if (models) setModelsOpen(true);
+                        }}
                         onBlur={() => setTimeout(() => setModelsOpen(false), 150)}
                         onChange={(e) => {
                           patch({ model: e.target.value.trim() });
+                          setModelQuery(e.target.value.trim().toLowerCase());
                           if (models) setModelsOpen(true);
                         }}
                       />
@@ -582,6 +696,7 @@ export function AiSettings({
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => {
                                 patch({ model: m });
+                                setModelQuery('');
                                 setModelsOpen(false);
                               }}
                             >
@@ -591,7 +706,7 @@ export function AiSettings({
                         </div>
                       ) : null}
                     </div>
-                    {!models && preset?.models.length ? (
+                    {!form.id && !models && preset?.models.length ? (
                       <div className="ai-model-suggestions">
                         {preset.models.map((m) => (
                           <button
@@ -605,7 +720,120 @@ export function AiSettings({
                         ))}
                       </div>
                     ) : null}
+                    {models === null && form.id ? (
+                      <em className="ai-field-hint">
+                        上方是已保存的模型，点击“获取列表”查看其他模型。
+                      </em>
+                    ) : models && form.model && !models.includes(form.model) ? (
+                      <em className="ai-field-hint">
+                        当前填写的模型不在本次获取的列表中，请重新选择或测试连接。
+                      </em>
+                    ) : null}
                   </label>
+                  {preset?.kind !== 'codex' && preset?.kind !== 'kimi' ? (
+                    // Not a <label>: it holds buttons and a list of checkboxes.
+                    <div className="ai-field ai-picks">
+                      <span>
+                        模型菜单里显示
+                        <button
+                          ref={picksButton}
+                          type="button"
+                          className="ai-link"
+                          disabled={!!busy && !picking}
+                          aria-expanded={picking}
+                          onClick={openPicks}
+                        >
+                          {picking ? '收起' : picks.length ? '修改' : '只显示部分模型'}
+                        </button>
+                      </span>
+                      {shownPicks.length ? (
+                        <div className="ai-picks-chips">
+                          {shownPicks.map((m) => (
+                            <span key={m} className={m === form.model ? 'active' : ''}>
+                              {m}
+                              {m === form.model ? (
+                                <em>使用中</em>
+                              ) : (
+                                <button
+                                  type="button"
+                                  aria-label={`不再显示 ${m}`}
+                                  title="不再显示"
+                                  onClick={() => togglePick(m)}
+                                >
+                                  <X size={11} />
+                                </button>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <em className="ai-field-hint">全部（获取到的所有模型）</em>
+                      )}
+                      {picking ? (
+                        <div className="ai-picks-panel" ref={picksPanel}>
+                          <input
+                            value={pickQuery}
+                            placeholder="搜索模型"
+                            aria-label="搜索要显示的模型"
+                            spellCheck={false}
+                            onChange={(e) => setPickQuery(e.target.value.trim().toLowerCase())}
+                          />
+                          <div className="ai-picks-list" role="group" aria-label="要显示的模型">
+                            {pickChoices.map((m) => (
+                              <label key={m} className="ai-pick">
+                                <input
+                                  type="checkbox"
+                                  checked={picks.includes(m) || inUse(m)}
+                                  disabled={inUse(m)}
+                                  onChange={() => togglePick(m)}
+                                />
+                                <span>{m}</span>
+                                {m === form.model ? <em>使用中</em> : null}
+                              </label>
+                            ))}
+                            {busy === 'models' ? (
+                              <p className="ai-picks-note">
+                                <LoaderCircle className="spin" size={12} />
+                                正在获取全部模型…
+                              </p>
+                            ) : !pickChoices.length ? (
+                              <p className="ai-picks-note">
+                                {pickQuery ? '没有匹配的模型' : '没有获取到模型'}
+                              </p>
+                            ) : null}
+                          </div>
+                          <div className="ai-picks-actions">
+                            <span>
+                              {picks.length
+                                ? `已勾选 ${picks.length} 个，保存后生效`
+                                : '一个都不勾选时，显示全部模型'}
+                            </span>
+                            {picks.length ? (
+                              <button
+                                type="button"
+                                className="ai-link"
+                                onClick={() => patch({ picks: [] })}
+                              >
+                                全部取消
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              className="ai-link"
+                              onClick={() => setPicking(false)}
+                            >
+                              完成
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                      {form.preset === 'qwen' ? (
+                        <em className="ai-field-hint">
+                          获取列表会逐个试调用模型，产生少量费用；能调用也不代表有免费额度。请对照百炼控制台的「免费额度」页面，只勾选还有额度的模型，之后模型菜单不再试调用。
+                        </em>
+                      ) : null}
+                    </div>
+                  ) : null}
                   {levels.length ? (
                     <label>
                       <span>推理强度</span>
@@ -839,6 +1067,90 @@ function ReaderProfile({ saved }: { saved: string }) {
   );
 }
 
+// The writing for 精读笔记 in the reader's own words, in place of Folio's, which is not shown.
+// Folio's format goes after it whatever it says, so the notes still show and link to pages.
+function CompanionPrompt({ saved }: { saved: string }) {
+  const [text, setText] = useState(saved);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  async function save(value: string, done = '已保存') {
+    setBusy(true);
+    setStatus(null);
+    try {
+      await savePrefs({ companionPrompt: value.trim() });
+      setStatus({ ok: true, text: done });
+    } catch (e) {
+      setStatus({ ok: false, text: errorText(e) });
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <form
+      className="ai-provider-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void save(text);
+      }}
+    >
+      <div className="ai-form-fields">
+        <p className="ai-settings-lead">
+          制作精读笔记时，AI
+          默认按页间自带的写作要求来写。想按自己的方式来，就在下面写：给谁讲、怎么讲、分哪几部分。留空就用页间默认的。读者画像会一起发给
+          AI；页面格式由页间固定加上，保证笔记能正常显示、点页码能跳到原文。
+        </p>
+        <label>
+          <span>
+            写作要求
+            <em className="ai-field-hint">
+              {saved ? '正在使用你的版本' : '留空使用页间默认提示词'}
+            </em>
+          </span>
+          <textarea
+            className="ai-companion-prompt"
+            aria-label="精读笔记的写作要求"
+            rows={14}
+            maxLength={20000}
+            placeholder={
+              '例如：\n你是我的论文导读助手。先用三句话说清这篇论文解决什么问题、怎么解决、效果如何；再按原文顺序讲每一节，术语第一次出现时解释；最后列出 3 个值得思考的问题。'
+            }
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              setStatus(null);
+            }}
+          />
+        </label>
+        {status ? (
+          <p className={`ai-status ${status.ok ? 'ok' : 'error'}`} role="status">
+            {status.ok ? <Check size={14} /> : <CircleX size={14} />}
+            {status.text}
+          </p>
+        ) : null}
+      </div>
+      <div className="ai-form-actions">
+        {saved ? (
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={busy}
+            onClick={() => {
+              setText('');
+              void save('', '已恢复默认');
+            }}
+          >
+            恢复默认
+          </button>
+        ) : null}
+        <span className="toolbar-flex" />
+        <button className="primary-button" disabled={busy || text.trim() === saved.trim()}>
+          {busy ? '保存中…' : '保存'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 // Which service, model and reasoning level each part of the app uses.
 function UseModels() {
   return (
@@ -1031,6 +1343,147 @@ function SpeechServiceKey({ service }: { service: SpeechService }) {
         ) : null}
       </div>
     </form>
+  );
+}
+
+// The libraries the project assistant finds papers in. None needs a key; OpenAlex without one
+// shares a small daily allowance with everyone on the same network, so it can take the user's.
+function PaperLibraries({ openalex }: { openalex?: { hasKey: boolean; keyHint: string } }) {
+  const [key, setKey] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  async function save(next: string) {
+    setBusy(true);
+    setStatus(null);
+    try {
+      const { config, checked } = await invoke<{ config: AiConfig; checked: boolean }>(
+        'ai-paper-key',
+        { key: next },
+      );
+      setAiConfig(config);
+      setKey('');
+      setStatus({
+        ok: true,
+        text: !next
+          ? '已删除，之后使用共享的免费额度'
+          : checked
+            ? '已保存，OpenAlex 确认这个 Key 可以用'
+            : '已保存。暂时连不上 OpenAlex，没能确认这个 Key 是否可用',
+      });
+    } catch (e) {
+      setStatus({ ok: false, text: errorText(e) });
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="ai-provider-form">
+      <div className="ai-form-fields">
+        <p className="ai-settings-lead">
+          在助手的「整个项目」里可以让 AI 找论文、下载
+          PDF。它会按学科去下面这些论文库里查，也可以指定只查某个库或某本期刊。这些库都不需要
+          Key，查找时只把关键词发给它们。
+        </p>
+        <form
+          className="ai-voice-service"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (key) void save(key);
+          }}
+        >
+          <div className="ai-voice-name">
+            <strong>
+              OpenAlex
+              {openalex?.hasKey ? (
+                <em className="ai-voice-state on">
+                  <Check size={11} />
+                  已填 Key
+                </em>
+              ) : (
+                <em className="ai-voice-state">共享额度</em>
+              )}
+            </strong>
+            <span>
+              覆盖所有学科，每次找论文都会查。不填 Key
+              也能用，但同一网络（同一个校园网、公司网络或代理）的人共用每天的免费额度，用完后会提示“暂时繁忙”。在
+              OpenAlex 注册后可以免费申请一个 Key，有自己的每日额度。Key 只保存在这台电脑上，只发给
+              OpenAlex。
+            </span>
+          </div>
+          <div className="ai-field">
+            <span>
+              API Key（可选）
+              <button
+                type="button"
+                className="ai-link"
+                onClick={() =>
+                  void invoke('external', { url: 'https://openalex.org/settings/api' })
+                }
+              >
+                去 OpenAlex 获取
+                <ExternalLink size={11} />
+              </button>
+            </span>
+            <div className="ai-key-field">
+              <KeyRound size={14} />
+              <input
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                aria-label="OpenAlex 的 API Key"
+                placeholder={
+                  openalex?.keyHint ? `已保存 ${openalex.keyHint}，留空则不修改` : '粘贴 API Key'
+                }
+                value={key}
+                onChange={(e) => {
+                  setKey(e.target.value.trim());
+                  setStatus(null);
+                }}
+              />
+            </div>
+          </div>
+          {status ? (
+            <p className={`ai-status ${status.ok ? 'ok' : 'error'}`} role="status">
+              {status.ok ? <Check size={14} /> : <CircleX size={14} />}
+              {status.text}
+            </p>
+          ) : null}
+          <div className="ai-form-actions">
+            {openalex?.keyHint ? (
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={busy}
+                onClick={() => void save('')}
+              >
+                删除 Key
+              </button>
+            ) : null}
+            <span className="toolbar-flex" />
+            <button className="primary-button" disabled={busy || !key}>
+              {busy ? '检查中…' : '保存'}
+            </button>
+          </div>
+        </form>
+        {[
+          ['PubMed', '医学、生命科学和心理学方向会加查，经 Europe PMC。'],
+          ['arXiv', '理工科和经济学的预印本，这些方向会加查。'],
+        ].map(([name, about]) => (
+          <div className="ai-voice-service" key={name}>
+            <div className="ai-voice-name">
+              <strong>
+                {name}
+                <em className="ai-voice-state on">
+                  <Check size={11} />
+                  无需 Key
+                </em>
+              </strong>
+              <span>{about}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

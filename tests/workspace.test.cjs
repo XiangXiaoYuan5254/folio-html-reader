@@ -347,3 +347,144 @@ test(
     assert.deepEqual(await fs.readdir(path.join(root, '论文')), ['BERT - Pre-training.pdf']);
   },
 );
+
+test('新建同名文件或文件夹时自动加编号；不加 unique 时给出清楚的提示', async (t) => {
+  const { w, root } = await setup(t);
+  assert.equal(
+    (await w.create({ path: '未命名.html', kind: 'file', unique: true })).created,
+    '未命名.html',
+  );
+  assert.equal(
+    (await w.create({ path: '未命名.html', kind: 'file', unique: true })).created,
+    '未命名2.html',
+  );
+  assert.equal(
+    (await w.create({ path: '未命名.html', kind: 'file', unique: true })).created,
+    '未命名3.html',
+  );
+  // A name ending in a number goes on from it, in as many digits; one that is only a
+  // number gets a dash.
+  assert.equal(
+    (await w.create({ path: '未命名2.html', kind: 'file', unique: true })).created,
+    '未命名4.html',
+  );
+  await w.create({ path: '文档09.html', kind: 'file' });
+  assert.equal(
+    (await w.create({ path: '文档09.html', kind: 'file', unique: true })).created,
+    '文档10.html',
+  );
+  await w.create({ path: '2024.html', kind: 'file' });
+  assert.equal(
+    (await w.create({ path: '2024.html', kind: 'file', unique: true })).created,
+    '2024-2.html',
+  );
+  await w.create({ path: '资料', kind: 'folder' });
+  const folder = await w.create({ path: '资料', kind: 'folder', unique: true });
+  assert.equal(folder.created, '资料2');
+  assert.ok(folder.tree.some((n) => n.name === '资料2'));
+  await w.create({ path: '资料/笔记.html', kind: 'file' });
+  assert.equal(
+    (await w.create({ path: '资料/笔记.html', kind: 'file', unique: true })).created,
+    '资料/笔记2.html',
+  );
+  // The first file keeps its content; the numbered one is new.
+  assert.ok((await fs.readFile(path.join(root, '未命名2.html'), 'utf8')).includes('新文档'));
+  await assert.rejects(
+    w.create({ path: '未命名.html', kind: 'file' }),
+    /已有同名文件「未命名.html」/,
+  );
+});
+
+test('项目存储：按类别统计页间数据，按时间清理旧备份，每篇文档最新一份始终保留', async (t) => {
+  const { w, root } = await setup(t);
+  const meta = path.join(root, '.html-reader');
+  // A board with a sentence of sound, and a note beside a document in a subfolder.
+  const entry = {
+    id: 'board-aaaaaaaa',
+    title: '注意力白板',
+    source: '示例.html',
+    kind: 'explain',
+    createdAt: 1,
+    updatedAt: 2,
+    questions: 0,
+  };
+  await w.saveBoard({ entry, data: { version: 1, id: entry.id, big: 'x'.repeat(5000) } });
+  await w.saveBoardSound({ id: entry.id, key: 'a'.repeat(16), data: new Uint8Array(3000) });
+  await w.create({ path: '论文', kind: 'folder' });
+  await w.create({ path: '论文/一篇.html', kind: 'file' });
+  const inner = await w.document('论文/一篇.html');
+  await w.saveData({ id: inner.id, data: { ...inner.data, note: '子文件夹里的笔记'.repeat(50) } });
+  // One document's backups: now, 2 days and 10 days ago.
+  const dir = path.join(meta, 'backups', 'doc-1');
+  await fs.mkdir(dir, { recursive: true });
+  const now = Date.now();
+  const day = 86_400_000;
+  for (const [age, size] of [
+    [0, 100],
+    [2 * day, 200],
+    [10 * day, 400],
+  ])
+    await fs.writeFile(path.join(dir, `${now - age}-abcdef12.html`), 'x'.repeat(size));
+
+  const s = await w.storage(now);
+  assert.ok(s.kinds.boards >= 8000, 'board and its sound');
+  assert.ok(s.kinds.backups >= 700);
+  assert.ok(s.kinds.documents > 0, 'notes beside documents in subfolders count');
+  assert.equal(
+    s.total,
+    Object.values(s.kinds).reduce((a, b) => a + b, 0),
+  );
+  assert.deepEqual(
+    s.boards.map((b) => [b.id, b.title, b.source]),
+    [[entry.id, '注意力白板', '示例.html']],
+  );
+  assert.ok(s.boards[0].size >= 8000);
+  assert.deepEqual(s.backups, { count: 2, free: { 0: 600, 1: 600, 7: 400 } });
+
+  assert.equal((await w.clearBackups({ days: 7 }, now)).freed, 400);
+  assert.equal((await w.clearBackups({ days: 0 }, now)).freed, 200);
+  assert.deepEqual(await fs.readdir(dir), [`${now}-abcdef12.html`]);
+  await assert.rejects(w.clearBackups({ days: 3 }), /无效的清理范围/);
+});
+
+test('无用数据：删掉的文件留下的批注、对话、备份和没人用的图片可清理；外部改名的文件保留', async (t) => {
+  const { w, root } = await setup(t);
+  const meta = path.join(root, '.html-reader');
+  const kept = await w.document('示例.html');
+  await w.saveData({ id: kept.id, data: { ...kept.data, note: '![图片](note-image:ask-1.png)' } });
+  // A file whose notes, conversations and backups stay after it is deleted.
+  await w.create({ path: '删掉的.html', kind: 'file' });
+  const gone = await w.document('删掉的.html');
+  await w.saveData({ id: gone.id, data: { ...gone.data, note: '![图片](note-image:old-1.png)' } });
+  await w.saveAiHistory({ key: gone.id, data: { version: 1, threads: [] } });
+  await w.saveAiHistory({ key: `edit:${gone.id}`, data: { version: 1, threads: [] } });
+  await fs.mkdir(path.join(meta, 'backups', gone.id), { recursive: true });
+  await fs.writeFile(path.join(meta, 'backups', gone.id, `${Date.now()}-abcdef12.html`), 'x');
+  await w.trash({ path: '删掉的.html' }, (full) => fs.rm(full));
+  // A file renamed outside Folio, its content unchanged.
+  await fs.writeFile(path.join(root, '改名前.html'), '<h1>改名</h1>');
+  const renamed = await w.document('改名前.html');
+  await w.saveData({ id: renamed.id, data: { ...renamed.data, note: '改名也要留着' } });
+  await fs.rename(path.join(root, '改名前.html'), path.join(root, '改名后.html'));
+  await fs.mkdir(path.join(meta, 'note-images'), { recursive: true });
+  for (const name of ['ask-1.png', 'old-1.png', 'stray-1.png'])
+    await fs.writeFile(path.join(meta, 'note-images', name), 'png');
+
+  const found = await w.unused();
+  const names = (files) => files.map((f) => path.basename(f)).sort();
+  assert.deepEqual(names(found.documents), [`${gone.id}.json`]);
+  assert.deepEqual(names(found.ai), [`${gone.id}.json`, `edit-${gone.id}.json`].sort());
+  assert.deepEqual(names(found.backups), [gone.id]);
+  assert.deepEqual(names(found.noteImages), ['old-1.png', 'stray-1.png']);
+  const { unused } = await w.storage();
+  assert.equal(unused.documents.count, 1);
+  assert.equal(unused.noteImages.count, 2);
+  assert.ok(unused.noteImages.size >= 6);
+
+  assert.ok((await w.clearUnused()).freed > 0);
+  const after = await w.unused();
+  assert.deepEqual(Object.values(after).flat(), []);
+  assert.deepEqual(await fs.readdir(path.join(meta, 'note-images')), ['ask-1.png']);
+  assert.equal((await w.document('示例.html')).data.note, '![图片](note-image:ask-1.png)');
+  assert.equal((await w.document('改名后.html')).data.note, '改名也要留着');
+});

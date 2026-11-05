@@ -193,6 +193,19 @@ jobs:
         run: node tests/board-papers.e2e.mjs
         env:
           FOLIO_QA_DIR: ${{ env.EVIDENCE }}\board-papers
+      - name: 'Settings, model picks, notes prompts, storage and new files'
+        if: ${{ !cancelled() && env.FOLIO_EXE }}
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          node tests/settings.e2e.mjs
+          node tests/model-picks.e2e.mjs
+          node tests/companion-prompt.e2e.mjs
+          node tests/storage.e2e.mjs
+          node tests/new-file.e2e.mjs
+          node tests/ui-type.e2e.mjs
+        env:
+          FOLIO_QA_DIR: ${{ env.EVIDENCE }}\settings-features
       - name: 'Voice conversation (development build)'
         if: ${{ !cancelled() && env.FOLIO_EXE }}
         timeout-minutes: 15
