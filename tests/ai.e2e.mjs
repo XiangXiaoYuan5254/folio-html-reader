@@ -979,7 +979,8 @@ try {
   const aiDir = path.join(project, '.html-reader/ai');
   await waitFor(async () => {
     for (const name of await fs.readdir(aiDir)) {
-      if (!name.endsWith('.json')) continue;
+      // Source-edit conversations share this directory but store turns, not chat messages.
+      if (!name.endsWith('.json') || name.startsWith('edit-')) continue;
       const saved = JSON.parse(await fs.readFile(path.join(aiDir, name), 'utf8'));
       if (
         saved.threads?.some((thread) =>
