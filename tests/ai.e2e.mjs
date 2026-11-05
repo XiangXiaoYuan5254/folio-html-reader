@@ -246,8 +246,10 @@ async function dataFor(relative) {
     ),
   };
 }
+// CSS positions the columns; their DOM order is sorted by random document ids to keep
+// iframes mounted during swaps. Select the physical left pane, never the first iframe.
 async function frame() {
-  const src = await page.locator('.document-frame').first().getAttribute('src');
+  const src = await page.locator('.reader-pane[data-pane=left] .document-frame').getAttribute('src');
   let f;
   await waitFor(async () => (f = page.frames().find((x) => x.url() === src)), 'frame');
   await f.locator('[data-folio-ui=overlay]').waitFor({ state: 'attached' });
@@ -255,10 +257,9 @@ async function frame() {
 }
 async function screenBox(f, selector) {
   const local = await f.locator(selector).evaluate((e) => e.getBoundingClientRect().toJSON());
-  const parent = await page.locator('.document-frame').first().boundingBox();
+  const parent = await page.locator('.reader-pane[data-pane=left] .document-frame').boundingBox();
   const scale = await page
-    .locator('.document-frame')
-    .first()
+    .locator('.reader-pane[data-pane=left] .document-frame')
     .evaluate((e) => e.getBoundingClientRect().width / e.clientWidth);
   return {
     x: parent.x + local.x * scale,
@@ -724,13 +725,11 @@ try {
   assert.ok(note.includes('<nav class="toc"'), 'contents added');
   assert.ok(note.includes('由页间 AI 根据《03_paper.pdf》生成'));
   await page
-    .locator('.reading-column')
-    .nth(1)
+    .locator('.reading-column[data-pane=right]')
     .locator('.pane-document-title', { hasText: '03_paper-精读笔记.html' })
     .waitFor();
   await page
-    .locator('.reading-column')
-    .nth(0)
+    .locator('.reading-column[data-pane=left]')
     .locator('.pane-document-title', { hasText: '03_paper.pdf' })
     .waitFor();
   // The paper stays active, so the result stays in the assistant.
@@ -740,9 +739,7 @@ try {
   const noteFrame = await waitForFrame('03_paper-%E7%B2%BE%E8%AF%BB%E7%AC%94%E8%AE%B0.html');
   assert.equal(await noteFrame.evaluate(() => window.hacked), undefined);
   await page.screenshot({ path: path.join(evidence, 'ai-companion.png') });
-  // Start on the note so the following assertion observes a real switch. The PDF was
-  // already active; checking it immediately after clicking could pass before the frame's
-  // pointer/link messages arrived, leaving the next file to open in the wrong column.
+  // Start on the note so the page-link assertion observes an actual change of active pane.
   await page.getByRole('button', { name: '激活右栏', exact: true }).click();
   await waitFor(
     async () =>
@@ -801,7 +798,7 @@ try {
     .getByRole('button', { name: '01_注意力.html', exact: true })
     .click();
   await waitFor(
-    async () => (await page.locator('.document-frame').first().getAttribute('src')).includes('01_'),
+    async () => (await page.locator('.reader-pane[data-pane=left] .document-frame').getAttribute('src')).includes('01_'),
     'document opened',
   );
   if (!(await panel().isVisible())) await showAssistant(page);
