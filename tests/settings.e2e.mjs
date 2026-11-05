@@ -284,8 +284,12 @@ try {
   await legacyAi().locator('.announcement-dot').waitFor({ state: 'detached' });
   await gearDot().waitFor({ state: 'detached' });
   await closeLegacyAi();
-  // Legacy membership menu still opens its familiar dialog.
-  await menu('会员与激活…');
+  // macOS has a membership menu; Windows uses the workspace's membership button.
+  if (process.platform === 'darwin') await menu('会员与激活…');
+  else {
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1536, 1024));
+    await page.locator('.member-chip').click();
+  }
   const member = page.getByRole('dialog', { name: '页间会员' });
   await member.waitFor();
   await member.getByRole('button', { name: '关闭', exact: true }).click();

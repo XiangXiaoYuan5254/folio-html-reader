@@ -740,6 +740,16 @@ try {
   const noteFrame = await waitForFrame('03_paper-%E7%B2%BE%E8%AF%BB%E7%AC%94%E8%AE%B0.html');
   assert.equal(await noteFrame.evaluate(() => window.hacked), undefined);
   await page.screenshot({ path: path.join(evidence, 'ai-companion.png') });
+  // Start on the note so the following assertion observes a real switch. The PDF was
+  // already active; checking it immediately after clicking could pass before the frame's
+  // pointer/link messages arrived, leaving the next file to open in the wrong column.
+  await page.getByRole('button', { name: '激活右栏', exact: true }).click();
+  await waitFor(
+    async () =>
+      (await page.locator('.reading-column.active-column .pane-document-title').innerText()) ===
+      '03_paper-精读笔记.html',
+    'note active before following its page link',
+  );
   await noteFrame.locator('a.page').first().click();
   await waitFor(
     async () =>

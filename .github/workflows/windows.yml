@@ -3,6 +3,11 @@ name: Windows
 # Builds the Windows installer on a Windows machine, installs it, and tests the installed app.
 on:
   workflow_dispatch:
+    inputs:
+      focused:
+        description: 'Run only AI and settings regressions (skip installer and updater tests)'
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths:
@@ -70,14 +75,21 @@ jobs:
           Write-Host "ChangeDisplaySettings: $result, screen: $([System.Windows.Forms.Screen]::PrimaryScreen.Bounds)"
 
       - name: Unit tests
+        if: ${{ !inputs.focused }}
         run: npm test
 
+      - name: Build application for focused regressions
+        if: ${{ inputs.focused }}
+        run: npm run build
+
       - name: Build installer
+        if: ${{ !inputs.focused }}
         run: |
           npm run build
           npx electron-builder --win nsis --x64 --publish never
 
       - name: Install silently
+        if: ${{ !inputs.focused }}
         shell: pwsh
         run: |
           $setup = Get-ChildItem release -Filter 'Folio-*-win-x64-setup.exe' | Select-Object -First 1
@@ -182,7 +194,7 @@ jobs:
         env:
           FOLIO_QA_DIR: ${{ env.EVIDENCE }}\open-file
       - name: 'AI assistant (development build)'
-        if: ${{ !cancelled() && env.FOLIO_EXE }}
+        if: ${{ !cancelled() && (env.FOLIO_EXE || inputs.focused) }}
         timeout-minutes: 10
         run: node tests/ai.e2e.mjs
         env:
@@ -194,16 +206,15 @@ jobs:
         env:
           FOLIO_QA_DIR: ${{ env.EVIDENCE }}\board-papers
       - name: 'Settings, model picks, notes prompts, storage and new files'
-        if: ${{ !cancelled() && env.FOLIO_EXE }}
+        if: ${{ !cancelled() && (env.FOLIO_EXE || inputs.focused) }}
         timeout-minutes: 10
         shell: bash
         run: |
-          node tests/settings.e2e.mjs
-          node tests/model-picks.e2e.mjs
-          node tests/companion-prompt.e2e.mjs
-          node tests/storage.e2e.mjs
-          node tests/new-file.e2e.mjs
-          node tests/ui-type.e2e.mjs
+          failed=0
+          for suite in settings model-picks companion-prompt storage new-file ui-type; do
+            node "tests/$suite.e2e.mjs" || failed=1
+          done
+          exit "$failed"
         env:
           FOLIO_QA_DIR: ${{ env.EVIDENCE }}\settings-features
       - name: 'Voice conversation (development build)'
@@ -215,7 +226,7 @@ jobs:
 
       # Codex (the ChatGPT provider) installed the usual Windows way, with npm as codex.cmd.
       - name: Find Codex installed with npm
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && !inputs.focused }}
         run: |
           npm install -g @openai/codex
           node tests/codex-found.mjs
@@ -235,7 +246,7 @@ jobs:
 
       # Installs its own 0.0.1 and lets it update itself to 0.0.2, so it runs after the uninstall.
       - name: Test automatic update
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && !inputs.focused }}
         run: node tests/update.e2e.mjs
         env:
           FOLIO_EVIDENCE: ${{ env.EVIDENCE }}
