@@ -539,6 +539,7 @@ try {
       (await folderField.inputValue()).endsWith(path.sep + '新的日报'),
     'folder shown',
   );
+  const shownNew = await folderField.inputValue();
   // Its own time, and the schedule off.
   const timeField = daily1.getByLabel('每天几点运行');
   assert.equal(await timeField.inputValue(), hhmm);
@@ -597,7 +598,10 @@ try {
     .slice(asked)
     .find((r) => r.messages?.[0]?.content?.includes('插件「AI 前沿日报」'));
   assert.equal(fromCard.model, 'mock-plugin-model');
-  assert.ok(fromCard.messages[0].content.includes(`你的文件夹是 ${realNew}`));
+  assert.ok(
+    fromCard.messages[0].content.includes(`你的文件夹是 ${shownNew}`),
+    'the model is told the same folder displayed on the plugin card',
+  );
   // 查看进度 while it's still thinking: its folder's project opens, with no documents yet,
   // and 整个项目 shows the run from the start, not "项目里还没有文档".
   await daily1.getByRole('button', { name: '正在运行 · 查看进度' }).click();
