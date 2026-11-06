@@ -17,6 +17,7 @@ const files = [
   `Folio-${version}-win-x64-setup.exe.blockmap`,
   'latest-mac.yml',
   'latest.yml',
+  'SHA256SUMS.txt',
 ];
 for (const file of files) {
   const text = await fs
