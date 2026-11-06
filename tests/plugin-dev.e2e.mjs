@@ -51,12 +51,15 @@ await fs.writeFile(path.join(devDir, 'folio-plugin.json'), JSON.stringify(devMan
 await fs.writeFile(path.join(devDir, 'prompt.md'), '写一页，用 {{typo}}。');
 await fs.writeFile(
   path.join(devDir, 'tools.js'),
-  `folio.registerTool({ name: 'early_tool', description: '顶层注册' }, () => 'early');
+  `folio.registerTool({ name: 'early_tool', description: '顶层注册' }, () => {
+  // A tool call only arrives after setup has finished, regardless of timer throttling.
+  folio.registerTool({ name: 'too_late', description: '太晚' }, () => 'x');
+  return 'early';
+});
 (async () => {
   const r = await folio.fetch('https://api.example.com/config');
   folio.registerTool({ name: 'after_fetch', description: '联网后注册' }, () => 'config:' + r.text);
 })();
-setTimeout(() => folio.registerTool({ name: 'too_late', description: '太晚' }, () => 'x'), 300);
 folio.log('hello from script', { n: 1 });
 folio.warn('careful');`,
 );
@@ -91,7 +94,6 @@ const listedManifest = {
 const sha = 'b'.repeat(40);
 
 const requests = [];
-let holdFirst = true;
 function stream(res, { text = '', toolCalls = [] }) {
   res.writeHead(200, { 'Content-Type': 'text/event-stream' });
   const chunks = [];
@@ -150,11 +152,6 @@ const server = http.createServer(async (req, res) => {
   const system = body.messages.find((m) => m.role === 'system')?.content || '';
   const tools = body.messages.filter((m) => m.role === 'tool');
   if (system.includes('插件「开发插件」')) {
-    // Long enough for the script's late registration to come in while it runs.
-    if (holdFirst) {
-      holdFirst = false;
-      await new Promise((r) => setTimeout(r, 800));
-    }
     const turns = [
       { toolCalls: [{ name: 'early_tool', input: {} }] },
       { toolCalls: [{ name: 'after_fetch', input: {} }] },
