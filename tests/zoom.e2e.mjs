@@ -51,9 +51,13 @@ async function start() {
   await ready();
 }
 async function frame(side = 'left') {
-  const url = await page.locator(`[data-pane=${side}] iframe`).getAttribute('src');
-  const f = page.frames().find((f) => f.url() === url);
-  assert.ok(f);
+  let f;
+  // The iframe element appears before Chromium attaches and navigates its frame.
+  await wait(async () => {
+    const url = await page.locator(`[data-pane=${side}] iframe`).getAttribute('src');
+    f = page.frames().find((candidate) => candidate.url() === url);
+    return !!f;
+  }, `${side} document frame attached`);
   await f.locator('[data-folio-ui=overlay]').waitFor({ state: 'attached' });
   return f;
 }

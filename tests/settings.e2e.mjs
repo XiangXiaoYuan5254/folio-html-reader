@@ -238,6 +238,8 @@ try {
   assert.equal(await dialog().locator('.settings-subnav .announcement-dot').count(), 0);
   // A refresh finishing after leaving the announcements page must not mark new items read.
   await nav().getByRole('button', { name: '公告', exact: true }).click();
+  // Finish the page's initial load before publishing the new fixture and forcing a refresh.
+  await dialog().getByRole('button', { name: '刷新', exact: true }).click({ trial: true });
   published += 1000;
   let releaseAnnouncements;
   announcementGate = new Promise((resolve) => {
@@ -245,6 +247,7 @@ try {
   });
   await dialog().getByRole('button', { name: '刷新', exact: true }).click();
   await nav().getByRole('button', { name: '关于', exact: true }).click();
+  await dialog().getByText('常用快捷键', { exact: true }).waitFor();
   releaseAnnouncements();
   announcementGate = null;
   await announcementDot().waitFor();

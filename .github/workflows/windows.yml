@@ -12,7 +12,7 @@ on:
         description: 'Regression group when focused is enabled'
         type: choice
         default: all
-        options: [all, plugins, whiteboard, voice]
+        options: [all, plugins, whiteboard, voice, interface]
   push:
     branches: [main]
     paths:
@@ -134,7 +134,7 @@ jobs:
         env:
           FOLIO_QA_DIR: ${{ env.EVIDENCE }}\reading-interactions
       - name: 'Zoom (development build)'
-        if: ${{ !cancelled() && env.FOLIO_EXE }}
+        if: ${{ !cancelled() && (env.FOLIO_EXE || (inputs.focused && (inputs.suite == 'all' || inputs.suite == 'interface'))) }}
         timeout-minutes: 10
         run: node tests/zoom.e2e.mjs
         env:
@@ -191,7 +191,7 @@ jobs:
         env:
           FOLIO_QA_DIR: ${{ env.EVIDENCE }}\plugins
       - name: 'Settings, model picks, notes prompts, storage and new files'
-        if: ${{ !cancelled() && (env.FOLIO_EXE || (inputs.focused && inputs.suite == 'all')) }}
+        if: ${{ !cancelled() && (env.FOLIO_EXE || (inputs.focused && (inputs.suite == 'all' || inputs.suite == 'interface'))) }}
         timeout-minutes: 10
         shell: bash
         run: |
