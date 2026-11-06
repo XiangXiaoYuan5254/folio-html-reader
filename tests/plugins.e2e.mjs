@@ -525,7 +525,13 @@ try {
     async () => (await pluginState())['ai-daily'].settings.output === realNew,
     'picked folder saved',
   );
-  await waitFor(async () => (await folderField.inputValue()) === realNew, 'folder shown');
+  // Windows' temp folder is under the user's home, so the visible value may start with ~.
+  await waitFor(
+    async () =>
+      (await folderField.getAttribute('title')) === realNew &&
+      (await folderField.inputValue()).endsWith(path.sep + '新的日报'),
+    'folder shown',
+  );
   // Its own time, and the schedule off.
   const timeField = daily1.getByLabel('每天几点运行');
   assert.equal(await timeField.inputValue(), hhmm);

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   AudioLines,
   BookOpen,
+  ExternalLink,
   HardDrive,
   Info,
   LoaderCircle,
@@ -12,7 +13,7 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
-import { isDesktop } from '../api';
+import { invoke, isDesktop } from '../api';
 import { useUnreadAnnouncements } from '../announcements';
 import { useAiConfig } from '../ai/client';
 import { useSpeechSupport, useVoiceSettings } from '../ai/voice';
@@ -58,7 +59,7 @@ const pages = [
     icon: Megaphone,
     detail: '查看 AI 服务的免费额度与优惠活动。',
   },
-  { id: 'about', name: '关于', icon: Info, detail: '版本信息、更新与常用快捷键。' },
+  { id: 'about', name: '关于', icon: Info, detail: '版本信息、更新、用户交流与常用快捷键。' },
 ] as const;
 
 export function SettingsDialog(p: {
@@ -428,6 +429,23 @@ function AboutSettings(p: {
           查看 {p.update.version} 更新
         </button>
       ) : null}
+      <div className="settings-row">
+        <span>
+          <strong>用户交流群</strong>
+          <small>交流用法、反馈问题，分享你的阅读体验。</small>
+        </span>
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() =>
+            void invoke('external', { url: 'https://helloxxy.com/works/folio/community/' }).catch(
+              (error) => setResult(error instanceof Error ? error.message : '暂时无法打开交流群页面'),
+            )
+          }
+        >
+          加入交流群 <ExternalLink size={13} />
+        </button>
+      </div>
       <section className="settings-group">
         <h4>常用快捷键</h4>
         <dl className="settings-shortcuts">

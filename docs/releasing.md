@@ -111,6 +111,12 @@ npm run website:plugins
 
 `npm run website:downloads` 也会生成插件文件。仅发布插件时，单独上传 `website/plugins/` 即可，不更新应用的 `.yml`、安装包或发布说明。插件功能从页间 0.30.0 开始提供。
 
+## 交流群二维码
+
+应用的「设置 → 关于 → 加入交流群」和 GitHub README 均链接到 `https://helloxxy.com/works/folio/community/`。页面源码是 `website/community/index.html`，二维码使用同目录下的固定文件名 `qr.jpg`，图片不进入 Git 或安装包。
+
+更换群码时，把新图片复制到本机 `website/community/qr.jpg` 并替换服务器上同一路径的文件即可，不必重新构建或发布页间。部署时让 `/works/folio/community/` 下的页面和图片每次重新验证缓存，避免继承网站其他图片的一天缓存规则。README 同时保留「查看最新二维码」链接，以便绕过 GitHub 的图片代理缓存。微信二维码的有效期以图片中显示的日期为准。
+
 ## GitHub Release
 
 更新 `package.json` 与锁文件的版本，提交后创建同版本标签。通过 GitHub CLI 创建草稿 Release，上传 arm64 的 DMG、Windows 的安装程序和校验文件；检查附件后再发布。发布说明应注明最低系统版本、Apple 芯片要求、两个平台的签名状态及本次变更。

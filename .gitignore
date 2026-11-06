@@ -39,3 +39,4 @@ output/
 
 # Generated standalone plugin downloads (npm run website:plugins)
 website/plugins/
+website/community/qr.jpg

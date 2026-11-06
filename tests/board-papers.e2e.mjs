@@ -171,6 +171,7 @@ async function screenBox(f, selector) {
 const board = () => page.getByRole('dialog', { name: '白板讲解' });
 const panel = () => page.locator('.assistant-panel');
 const consent = () => page.getByRole('dialog', { name: /发送给 本地模拟/ });
+let consented = false;
 // Asks for the lesson on the selected sentence and waits until the teacher has finished it.
 async function lesson() {
   const f = await frame();
@@ -186,13 +187,13 @@ async function lesson() {
     .getByRole('radio', { name: /^静音讲解/ })
     .click();
   await page.keyboard.press('Escape');
-  await board().getByRole('button', { name: '直接讲' }).click();
-  if (
-    await consent()
-      .isVisible()
-      .catch(() => false)
-  )
+  // Submit from the keyboard after dismissing the voice menu, also covering keyboard access.
+  await board().getByRole('button', { name: '直接讲' }).press('Enter');
+  if (!consented) {
+    await consent().waitFor();
     await consent().getByRole('button', { name: '同意并继续' }).click();
+    consented = true;
+  }
   await board().locator('.wb-speed').click();
   await board().locator('.wb-speed').click();
   await board()

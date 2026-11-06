@@ -42,6 +42,14 @@ Get the latest version from [Releases](https://github.com/XiangXiaoYuan5254/foli
 
 ![A whiteboard lesson explaining a passage](website/assets/board.webp)
 
+## Community
+
+Join the Chinese-language WeChat group to discuss Folio, share plugins and report issues.
+
+<a href="https://helloxxy.com/works/folio/community/"><img src="https://helloxxy.com/works/folio/community/qr.jpg" width="300" alt="Folio WeChat community QR code" /></a>
+
+QR codes expire. [Open the community page for the latest code](https://helloxxy.com/works/folio/community/), also available from **Settings → About → Join community** in the app.
+
 ## Privacy
 
 Folio does not upload your documents and needs no account. Text is sent only to the AI provider you configure, when you use an AI feature, and you are asked before a provider is used for the first time. API keys stay in the app's data folder on your computer. Folio contacts helloxxy.com only to check for updates and read AI service announcements.

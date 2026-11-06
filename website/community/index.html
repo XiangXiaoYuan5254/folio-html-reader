@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>用户交流群 · 页间 Folio</title>
+    <meta name="description" content="加入页间用户交流群，交流阅读与 AI 用法，反馈问题，分享你的阅读体验。" />
+    <link rel="icon" href="../assets/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../styles.css" />
+    <style>
+      .community-header, .community-main, .community-footer { width: min(900px, calc(100% - 40px)); margin: auto; }
+      .community-header { padding: 28px 0; }
+      .community-brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 600; }
+      .community-main { padding: 36px 0 20px; }
+      .community-main h1 { margin: 8px 0 18px; font-size: clamp(32px, 6vw, 46px); }
+      .community-intro { max-width: 620px; color: var(--ink-2); }
+      .community-card { display: grid; grid-template-columns: minmax(0, 360px) 1fr; align-items: center; gap: 38px; padding: 28px; margin-top: 32px; border: 1px solid var(--line); border-radius: 22px; background: var(--card); }
+      .community-card img { display: block; width: 100%; border-radius: 12px; }
+      .community-card h2 { margin: 0 0 14px; font-size: 24px; }
+      .community-card p { color: var(--ink-2); }
+      .community-note { font-size: 14px; }
+      .community-card a:not(.community-code) { text-decoration: underline; text-underline-offset: 4px; }
+      .community-footer { padding: 28px 0 40px; color: var(--ink-3); font-size: 14px; }
+      @media (max-width: 640px) {
+        .community-main { padding-top: 12px; }
+        .community-card { grid-template-columns: 1fr; padding: 20px; gap: 24px; }
+        .community-code { width: min(100%, 360px); margin: auto; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="community-header">
+      <a class="community-brand" href="../"><img src="../assets/icon.svg" width="28" height="28" alt="" />页间 Folio</a>
+    </header>
+    <main class="community-main">
+      <p class="eyebrow">一起读，一起交流</p>
+      <h1>加入页间用户交流群</h1>
+      <p class="community-intro">交流阅读与 AI 用法，反馈遇到的问题，也欢迎分享你的笔记、插件和使用心得。</p>
+      <section class="community-card" aria-labelledby="join-title">
+        <a class="community-code" href="qr.jpg" target="_blank" rel="noopener" aria-label="查看完整的交流群二维码">
+          <img src="qr.jpg" width="1166" height="1643" alt="页间用户交流群微信二维码，有效期请查看图片底部" />
+        </a>
+        <div>
+          <h2 id="join-title">用微信扫一扫</h2>
+          <p>扫描左侧二维码加入交流群。手机上可以点开图片，保存后在微信中识别。</p>
+          <p class="community-note">群二维码有有效期。如果提示过期，请稍后刷新本页获取更新；无需更新页间应用。</p>
+          <p><a href="qr.jpg" target="_blank" rel="noopener">打开完整二维码</a></p>
+          <p class="community-note">也可以在 <a href="https://github.com/XiangXiaoYuan5254/folio-html-reader/issues" target="_blank" rel="noopener">GitHub Issues</a> 报告问题或提出建议。</p>
+        </div>
+      </section>
+    </main>
+    <footer class="community-footer">页间 · 免费开源的 HTML / PDF 阅读器 · <a href="../">返回官网</a></footer>
+  </body>
+</html>

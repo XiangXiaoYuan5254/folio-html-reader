@@ -251,14 +251,20 @@ try {
   const voicePanel = board().getByRole('dialog', { name: '讲解方式' });
   const talk = voicePanel.getByRole('radio', { name: /语音对话/ });
   assert.ok(!(await talk.isDisabled()), 'voice conversation offered');
+  // Capture before starting the microphone: on a busy runner, screenshots can finish
+  // after the first recognized question has already been submitted.
+  const before = asked.length;
   await talk.click();
   await voicePanel.getByText(/SenseVoice/).waitFor();
   await page.screenshot({ path: path.join(evidence, 'voice-panel.png') });
   await page.keyboard.press('Escape');
   const bar = board().locator('.wb-listen');
   await waitFor(async () => (await bar.getAttribute('data-status')) === 'on', 'listening', 30000);
-  const before = asked.length;
-  await waitFor(async () => (await bar.locator('.wb-heard b').count()) > 0, 'heard', 30000);
+  await waitFor(
+    async () => asked.length > before || (await bar.locator('.wb-heard b').count()) > 0,
+    'heard',
+    30000,
+  );
   await page.screenshot({ path: path.join(evidence, 'voice-heard.png') });
   await waitFor(async () => asked.length > before, 'question sent', 30000);
   assert.match(asked.at(-1), /我说（语音）：页老师.*根号/);
