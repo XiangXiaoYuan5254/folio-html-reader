@@ -485,7 +485,7 @@ test('a plugin with its own folder sees and writes only that folder', async () =
     await plugins.set({ id: 'ai-daily', settings: { output: '~/某个日报' } });
     listed = (await plugins.list()).plugins.find((p) => p.id === 'ai-daily');
     assert.equal(listed.folder.path, path.join(os.homedir(), '某个日报'));
-    assert.equal(listed.folder.shown, '~/某个日报');
+    assert.equal(listed.folder.shown, path.join('~', '某个日报'));
     await plugins.set({ id: 'ai-daily', settings: { output: picked } });
     // Switched off: no more work in its folder.
     await plugins.set({ id: 'ai-daily', enabled: false });
