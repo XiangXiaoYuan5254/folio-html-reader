@@ -5,9 +5,14 @@ on:
   workflow_dispatch:
     inputs:
       focused:
-        description: 'Run only AI and settings regressions (skip installer and updater tests)'
+        description: 'Run selected desktop regressions without installer and updater tests'
         type: boolean
         default: false
+      suite:
+        description: 'Regression group when focused is enabled'
+        type: choice
+        default: all
+        options: [all, plugins, whiteboard, voice]
   push:
     branches: [main]
     paths:
@@ -194,19 +199,19 @@ jobs:
         env:
           FOLIO_QA_DIR: ${{ env.EVIDENCE }}\open-file
       - name: 'AI assistant (development build)'
-        if: ${{ !cancelled() && (env.FOLIO_EXE || inputs.focused) }}
+        if: ${{ !cancelled() && (env.FOLIO_EXE || (inputs.focused && inputs.suite == 'all')) }}
         timeout-minutes: 10
         run: node tests/ai.e2e.mjs
         env:
           FOLIO_QA_DIR: ${{ env.EVIDENCE }}\ai
       - name: 'Whiteboard, papers and themes (development build)'
-        if: ${{ !cancelled() && env.FOLIO_EXE }}
+        if: ${{ !cancelled() && (env.FOLIO_EXE || (inputs.focused && (inputs.suite == 'all' || inputs.suite == 'whiteboard'))) }}
         timeout-minutes: 10
         run: node tests/board-papers.e2e.mjs
         env:
           FOLIO_QA_DIR: ${{ env.EVIDENCE }}\board-papers
       - name: 'Optional plugins and installation (development build)'
-        if: ${{ !cancelled() && env.FOLIO_EXE }}
+        if: ${{ !cancelled() && (env.FOLIO_EXE || (inputs.focused && (inputs.suite == 'all' || inputs.suite == 'plugins'))) }}
         timeout-minutes: 10
         run: |
           node tests/plugins.e2e.mjs
@@ -215,7 +220,7 @@ jobs:
         env:
           FOLIO_QA_DIR: ${{ env.EVIDENCE }}\plugins
       - name: 'Settings, model picks, notes prompts, storage and new files'
-        if: ${{ !cancelled() && (env.FOLIO_EXE || inputs.focused) }}
+        if: ${{ !cancelled() && (env.FOLIO_EXE || (inputs.focused && inputs.suite == 'all')) }}
         timeout-minutes: 10
         shell: bash
         run: |
@@ -227,7 +232,7 @@ jobs:
         env:
           FOLIO_QA_DIR: ${{ env.EVIDENCE }}\settings-features
       - name: 'Voice conversation (development build)'
-        if: ${{ !cancelled() && env.FOLIO_EXE }}
+        if: ${{ !cancelled() && (env.FOLIO_EXE || (inputs.focused && (inputs.suite == 'all' || inputs.suite == 'voice'))) }}
         timeout-minutes: 15
         run: node tests/voice.e2e.mjs
         env:
