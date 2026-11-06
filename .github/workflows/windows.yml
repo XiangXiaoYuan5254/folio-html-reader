@@ -128,7 +128,7 @@ jobs:
         env:
           FOLIO_QA_DIR: ${{ env.EVIDENCE }}\annotations
       - name: 'Reading interactions (development build)'
-        if: ${{ !cancelled() && env.FOLIO_EXE }}
+        if: ${{ !cancelled() && (env.FOLIO_EXE || (inputs.focused && (inputs.suite == 'all' || inputs.suite == 'interface'))) }}
         timeout-minutes: 10
         run: node tests/reading-interactions.e2e.mjs
         env:

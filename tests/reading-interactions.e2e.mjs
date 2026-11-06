@@ -326,6 +326,8 @@ try {
       );
     }
     await activeTool(label);
+    // Reader cards are rebuilt from the annotation state after edits and color changes.
+    await wait(async () => (await cards.count()) === 3, 'consecutive note cards rendered');
     assert.equal(await cards.count(), 3, 'pinned tool creates consecutive notes');
     await button.dispatchEvent('mouseover');
     await page.getByRole('tooltip').waitFor();
