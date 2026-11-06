@@ -188,7 +188,9 @@ async function lesson() {
     .click();
   await page.keyboard.press('Escape');
   // Submit from the keyboard after dismissing the voice menu, also covering keyboard access.
+  console.log('Starting lesson; completed mock requests:', requests.length);
   await board().getByRole('button', { name: '直接讲' }).press('Enter');
+  console.log('Lesson submitted; completed mock requests:', requests.length);
   if (!consented) {
     await consent().waitFor();
     await consent().getByRole('button', { name: '同意并继续' }).click();
@@ -339,6 +341,9 @@ try {
 } catch (error) {
   console.error('BOARD AND PAPERS E2E FAILED:', error);
   console.error('ERRORS:', errors);
+  console.error('MOCK REQUESTS:', requests.length);
+  if (app)
+    console.error('APP METRICS:', await app.evaluate(({ app }) => app.getAppMetrics()).catch(() => []));
   if (page) await page.screenshot({ path: path.join(evidence, 'failure.png') }).catch(() => {});
   process.exitCode = 1;
 } finally {

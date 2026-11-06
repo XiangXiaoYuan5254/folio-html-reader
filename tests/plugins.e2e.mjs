@@ -514,7 +514,10 @@ try {
     async () => (await pluginState())['ai-daily'].settings.output === '~/folio-测试-日报',
     'typed folder saved',
   );
-  assert.equal(await folderField.inputValue(), path.join('~', 'folio-测试-日报'));
+  await waitFor(
+    async () => (await folderField.inputValue()) === path.join('~', 'folio-测试-日报'),
+    'typed folder display updated',
+  );
   const newFolder = path.join(temp, '新的日报');
   await fs.mkdir(newFolder);
   const realNew = await fs.realpath(newFolder);
