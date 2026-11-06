@@ -482,8 +482,12 @@ try {
     'third-party off',
   );
   const demo = dialog.locator('.plugin-card').filter({ hasText: '脚本演示' });
-  assert.ok(await demo.getByRole('switch').isDisabled());
-  assert.ok(!(await demo.getByRole('switch').isChecked()));
+  await waitFor(
+    async () =>
+      (await demo.getByRole('switch').isDisabled()) &&
+      !(await demo.getByRole('switch').isChecked()),
+    'script switch is off and locked',
+  );
   await assert.rejects(
     page.evaluate(() => window.folio.invoke('plugin-load', { id: 'script-demo' })),
     /已关闭/,
