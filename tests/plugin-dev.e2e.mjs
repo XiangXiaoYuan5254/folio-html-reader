@@ -400,7 +400,7 @@ try {
   // 6. The directory: searched, and installed from (its repository must hold that plugin).
   await dialog.locator('.plugin-directory summary').click();
   const directory = dialog.locator('.plugin-directory');
-  await directory.getByText('目录里的插件').waitFor();
+  await directory.getByText('目录里的插件', { exact: true }).waitFor();
   await directory.getByLabel('搜索插件目录').fill('没有这种插件');
   await directory.getByText('没有找到符合的插件。').waitFor();
   await directory.getByLabel('搜索插件目录').fill('目录');
