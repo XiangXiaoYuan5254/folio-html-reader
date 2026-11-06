@@ -49,8 +49,10 @@ export type AiPrefs = {
   companionPrompt?: string;
 };
 // The parts of the app that ask the AI. Chat uses the active service; the others can each
-// have their own service, model and reasoning level, and follow chat when they don't.
-export type AiUse = 'chat' | 'explain' | 'translate' | 'board' | 'edit';
+// have their own service, model and reasoning level, and follow chat when they don't. Each
+// plugin is one too, as plugin:<its id>.
+export type AiUse = 'chat' | 'explain' | 'translate' | 'board' | 'edit' | PluginUse;
+export type PluginUse = `plugin:${string}`;
 export type AiUseChoice = { provider: string; model: string; effort: string };
 export type AiConfig = {
   providers: AiProvider[];

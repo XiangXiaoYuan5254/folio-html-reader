@@ -29,3 +29,13 @@ build/native/
 
 # 宣传视频的渲染结果（scripts/promo-video/render.mjs）
 scripts/promo-video/out/
+
+# 本地产物：QA 截图、部署脚本、激活服务器的部署副本，不进开源仓库
+output/
+
+# IDE 的个人配置
+.idea/
+.claude/
+
+# Generated standalone plugin downloads (npm run website:plugins)
+website/plugins/

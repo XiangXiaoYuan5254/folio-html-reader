@@ -63,7 +63,6 @@ const app = await electron.launch({
   env: {
     ...process.env,
     ELECTRON_RUN_AS_NODE: undefined,
-    FOLIO_MEMBER: '1',
     FOLIO_USER_DATA: userData,
     FOLIO_NO_SPEECH_HELPER: '1',
     FOLIO_WORKSPACE: project,
@@ -125,7 +124,7 @@ try {
   );
   console.log('PASS: merged titlebar, bilingual brand, one panel toggle, remembered panel tab');
 
-  assert.equal(await page.locator('.sidebar-account .member-chip').count(), 1);
+  assert.equal(await page.locator('.member-chip').count(), 0, 'no membership button');
   assert.equal(await page.locator('.status-summary, .status-format, .save-state').count(), 0);
   const footerBox = await page.locator('.statusbar').boundingBox();
   assert.ok(footerBox.height < 55, 'bottom controls share one compact row');
@@ -142,7 +141,7 @@ try {
   await page.getByLabel('设置', { exact: true }).click();
   await page.getByRole('dialog', { name: '设置', exact: true }).waitFor();
   await page.getByRole('button', { name: '关闭设置', exact: true }).click();
-  console.log('PASS: membership, theme picker and settings in the bottom-left');
+  console.log('PASS: theme picker and settings in the bottom-left');
   await page.screenshot({ path: path.join(evidence, 'mac-reader.png') });
 
   await resize(1800);

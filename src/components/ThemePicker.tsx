@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { Check, SunMoon } from 'lucide-react';
-import { freeTheme, setFollowSystem, setTheme, themes, useTheme } from '../theme';
-import { askMembership } from '../license';
+import { setFollowSystem, setTheme, themes, useTheme } from '../theme';
 import type { ThemeId } from '../theme';
 
 // A small window drawn with the theme's own tokens.
@@ -46,21 +45,12 @@ function ThemePreview({ id }: { id: ThemeId }) {
 export function ThemePicker({
   onClose,
   embedded = false,
-  onRequireMembership,
 }: {
   onClose: () => void;
   embedded?: boolean;
-  onRequireMembership?: () => void;
 }) {
-  const { prefs, active, unlocked } = useTheme();
-  // Without a membership the other themes and following the system open the membership dialog.
-  const locked = (id?: ThemeId) => !unlocked && id !== freeTheme;
-  const askPro = () => {
-    if (onRequireMembership) return onRequireMembership();
-    onClose();
-    askMembership('十套界面主题');
-  };
-  const following = unlocked && prefs.followSystem;
+  const { prefs, active } = useTheme();
+  const following = prefs.followSystem;
   const panel = useRef<HTMLElement>(null);
   useEffect(() => {
     if (embedded) return;
@@ -102,7 +92,7 @@ export function ThemePicker({
           role="switch"
           aria-checked={following}
           className={`theme-follow${following ? ' on' : ''}`}
-          onClick={() => (unlocked ? setFollowSystem(!prefs.followSystem) : askPro())}
+          onClick={() => setFollowSystem(!prefs.followSystem)}
         >
           <SunMoon size={14} />
           跟随系统
@@ -110,11 +100,7 @@ export function ThemePicker({
         </button>
       </header>
       <p className="theme-picker-hint">
-        {!unlocked
-          ? '青岚免费使用。其余九套主题和「跟随系统」是 Pro 会员功能。'
-          : following
-            ? '白天和夜间各选一套，随系统外观自动切换。'
-            : '只改变界面，文档页面保持原样。'}
+        {following ? '白天和夜间各选一套，随系统外观自动切换。' : '只改变界面，文档页面保持原样。'}
       </p>
       {groups.map((group) => {
         const chosen = following ? (group.dark ? prefs.dark : prefs.light) : active;
@@ -130,8 +116,8 @@ export function ThemePicker({
                     type="button"
                     className={`theme-card${chosen === t.id ? ' selected' : ''}`}
                     aria-pressed={chosen === t.id}
-                    aria-label={`${t.name}：${t.tagline}${locked(t.id) ? '（Pro 会员）' : ''}`}
-                    onClick={() => (locked(t.id) ? askPro() : setTheme(t.id))}
+                    aria-label={`${t.name}：${t.tagline}`}
+                    onClick={() => setTheme(t.id)}
                   >
                     <ThemePreview id={t.id} />
                     <span className="theme-card-label">
@@ -142,8 +128,6 @@ export function ThemePicker({
                       <span className="theme-card-check">
                         <Check size={12} strokeWidth={3} />
                       </span>
-                    ) : locked(t.id) ? (
-                      <span className="theme-card-pro">Pro</span>
                     ) : null}
                   </button>
                 ))}

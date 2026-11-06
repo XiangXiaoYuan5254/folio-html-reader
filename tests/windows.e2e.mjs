@@ -273,28 +273,18 @@ try {
   console.log('PASS: Ctrl+Shift+F focus mode enters and leaves full screen');
   await desktopShot('03-reading.png');
 
-  // Themes other than the default need a membership, which the installed app here doesn't
-  // have: picking one opens the membership dialog. The native caption buttons take the
-  // colors the page gives them (as a member's dark theme does).
+  // Every theme is free to pick. The native caption buttons take the colors the page gives
+  // them, so the night theme's dark title bar recolors them.
   assert.equal(await captionColor(), '#ffffff', 'light caption buttons');
   await win.getByLabel('界面主题', { exact: true }).click();
   await win
     .getByRole('dialog', { name: '界面主题' })
     .getByLabel(/^夜读：/)
     .click();
-  await win.getByRole('dialog', { name: '页间会员' }).waitFor();
-  await win.keyboard.press('Escape');
-  console.log('PASS: a theme other than the default asks for a membership');
-  await win.evaluate(() =>
-    window.folio.invoke('appearance', {
-      window: '#14181e',
-      titlebar: '#15191f',
-      symbol: '#a6afbd',
-    }),
-  );
   await waitFor(async () => (await captionColor()) === '#15191f', 'dark caption buttons');
+  await win.keyboard.press('Escape');
   await desktopShot('04-dark-theme.png');
-  console.log('PASS: dark theme colors recolor the caption buttons');
+  console.log('PASS: picking a dark theme recolors the caption buttons');
   await quit();
 
   // Double-clicking a file when the app is closed starts it in that file's folder.
@@ -310,8 +300,8 @@ try {
     'relative stylesheet in a subfolder loads',
   );
   console.log('PASS: opening a file starts the app in its folder, relative CSS loads');
-  assert.equal(await captionColor(), '#ffffff', 'the default theme without a membership');
-  console.log('PASS: without a membership the default theme comes back after a restart');
+  assert.equal(await captionColor(), '#15191f', 'the night theme after a restart');
+  console.log('PASS: the chosen theme comes back after a restart');
 
   assert.deepEqual(errors, []);
   console.log('WINDOWS E2E PASS');

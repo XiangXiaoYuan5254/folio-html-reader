@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>{{today}} AI 前沿日报</title>
+<style>
+  body { max-width: 780px; margin: 56px auto; padding: 0 28px; font: 17px/1.8 -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; color: #24303c; background: #fbfcfd; }
+  header { border-bottom: 1px solid #e3e8ee; padding-bottom: 20px; margin-bottom: 28px; }
+  header .kicker { margin: 0; color: #2864d7; font-size: 14px; letter-spacing: .08em; }
+  h1 { font-size: 32px; line-height: 1.3; margin: 6px 0 4px; }
+  header .meta { color: #6b7785; font-size: 14px; margin: 0; }
+  h2 { font-size: 21px; margin: 40px 0 14px; padding-left: 10px; border-left: 4px solid #2864d7; }
+  .highlights { background: #eef4ff; border-radius: 12px; padding: 16px 22px; }
+  .highlights h2 { margin-top: 0; border: 0; padding: 0; }
+  .highlights ol { margin: 0; padding-left: 22px; }
+  .deep { background: #fff8e6; border: 1px solid #f3e2b5; border-radius: 12px; padding: 16px 22px; margin-top: 20px; }
+  .deep h2 { margin-top: 0; border: 0; padding: 0; color: #8a5a00; }
+  .deep h3 { font-size: 18px; margin: 0 0 4px; line-height: 1.5; }
+  .deep h3 a { color: #1d2a38; }
+  .deep .source { color: #7a8693; font-size: 13px; margin: 0 0 8px; }
+  .deep p { margin: 6px 0 0; }
+  .deep strong { color: #8a5a00; font-weight: 600; }
+  .item { background: #fff; border: 1px solid #e6ebf0; border-radius: 12px; padding: 16px 20px; margin: 12px 0; }
+  .item h3 { font-size: 18px; margin: 0 0 4px; line-height: 1.5; }
+  .item h3 a { color: #1d2a38; text-decoration: none; }
+  .item h3 a:hover { color: #2864d7; text-decoration: underline; }
+  .item .source { color: #7a8693; font-size: 13px; margin: 0 0 8px; }
+  .item p { margin: 0; }
+  .tag { display: inline-block; font-size: 12px; color: #087f72; background: #e6f6f3; border-radius: 6px; padding: 0 7px; margin-right: 6px; }
+  .sources { color: #6b7785; font-size: 14px; }
+  .sources li.failed { color: #b24a4a; }
+  footer { margin-top: 48px; color: #98a2ad; font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <p class="kicker">AI 前沿日报</p>
+  <h1>{{today}} · {{weekday}}</h1>
+  <p class="meta">关注：{{topics}}</p>
+</header>
+
+<section class="highlights">
+  <h2>今日要点</h2>
+  <ol>
+    <li>一句话说今天最重要的一件事。</li>
+    <li>第二件。</li>
+    <li>第三件。</li>
+  </ol>
+</section>
+
+<section class="deep">
+  <h2>值得深读</h2>
+  <h3><a href="https://arxiv.org/abs/0000.00000">英文标题｜中文译名</a></h3>
+  <p class="source">机构或团队 · arXiv / 博客 · 大约 20 分钟</p>
+  <p><strong>为什么值得读：</strong>它解决了什么问题，为什么现在重要。</p>
+  <p><strong>读完能弄懂：</strong>读完以后你能讲清楚的东西。</p>
+  <p><strong>先了解什么更好读：</strong>需要的背景知识（没有就不写这一句）。</p>
+</section>
+
+<h2>模型与产品</h2>
+<article class="item">
+  <h3><a href="https://example.com">标题（链接到原文）</a></h3>
+  <p class="source"><span class="tag">新模型</span>来源 · 日期</p>
+  <p>两三句话：是什么，为什么值得关注。</p>
+</article>
+
+<h2>论文</h2>
+<article class="item">
+  <h3><a href="https://arxiv.org/abs/0000.00000">英文标题｜中文译名</a></h3>
+  <p class="source"><span class="tag">论文</span>机构或团队 · arXiv · 日期</p>
+  <p>核心做法和结果，以及它为什么重要。</p>
+</article>
+
+<h2>开源项目</h2>
+<article class="item">
+  <h3><a href="https://github.com/owner/repo">owner/repo</a></h3>
+  <p class="source"><span class="tag">开源</span>GitHub · ★ 星标数 · 创建日期</p>
+  <p>它能做什么，适合谁用。</p>
+</article>
+
+<h2>行业动态</h2>
+<article class="item">
+  <h3><a href="https://example.com">标题</a></h3>
+  <p class="source"><span class="tag">动态</span>来源 · 日期</p>
+  <p>两三句话说明。</p>
+</article>
+
+<h2>今天读取的来源</h2>
+<ul class="sources">
+  <li>arXiv：读到 50 条，选用 3 条</li>
+  <li class="failed">某某博客：读取失败</li>
+</ul>
+
+<footer>由页间插件「AI 前沿日报」整理 · {{now}}</footer>
+</body>
+</html>

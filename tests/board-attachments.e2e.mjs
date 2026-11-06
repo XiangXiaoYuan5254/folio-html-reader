@@ -155,7 +155,6 @@ try {
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: undefined,
-      FOLIO_MEMBER: '1',
       FOLIO_USER_DATA: userData,
       FOLIO_WORKSPACE: project,
       FOLIO_NO_SPEECH_HELPER: '1',

@@ -445,30 +445,7 @@
 .settings-voice-services .ai-form-fields > * {
   max-width: none;
 }
-.settings-membership {
-  padding: 0;
-}
-.membership-embedded > .membership-dialog {
-  width: 100%;
-  max-width: none;
-  max-height: none;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-}
-.membership-embedded .membership-cover {
-  width: 260px;
-  padding: 28px 22px;
-}
-.membership-embedded .membership-cover h2 {
-  font-size: 26px;
-}
-.membership-embedded .membership-main {
-  overflow: visible;
-}
-.membership-embedded .membership-dialog.is-shop {
-  overflow: visible;
-}
+
 .settings-about-brand {
   display: flex;
   align-items: center;
@@ -579,18 +556,6 @@
   }
   .ai-settings-embedded .ai-provider-list {
     width: 145px;
-  }
-  .membership-embedded .membership-dialog.is-shop {
-    flex-direction: column;
-  }
-  .membership-embedded .membership-cover {
-    width: 100%;
-  }
-  .membership-embedded .membership-compare {
-    display: none;
-  }
-  .settings-membership {
-    padding: 0;
   }
 }
 @media (max-width: 620px) {
@@ -812,4 +777,617 @@
   font-size: 12.5px;
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
+}
+/* 设置 › 插件 (src/components/PluginSettings.tsx). */
+.plugin-settings .settings-group:first-child {
+  margin-top: 0;
+}
+.plugin-warning {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--danger-line);
+  border-radius: 8px;
+  background: var(--danger-soft);
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-2);
+}
+.plugin-warning > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--danger);
+}
+.plugin-warning strong {
+  color: var(--text-strong);
+}
+.plugin-warning ul {
+  margin: 6px 0 12px;
+  padding-left: 18px;
+}
+.plugin-install {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.plugin-install input,
+.plugin-field input[type='text'],
+.plugin-field textarea {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.plugin-install input:focus,
+.plugin-field input[type='text']:focus,
+.plugin-field textarea:focus {
+  outline: 2px solid var(--accent-focus);
+  outline-offset: -1px;
+}
+.plugin-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--danger);
+}
+.plugin-error svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+.plugin-list {
+  display: grid;
+  gap: 12px;
+}
+.plugin-card,
+.plugin-confirm {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.plugin-card.on {
+  border-color: var(--accent-line);
+}
+.plugin-confirm {
+  margin-top: 14px;
+  border-color: var(--accent-line-strong);
+}
+.plugin-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.plugin-head > div {
+  flex: 1;
+  min-width: 0;
+}
+.plugin-card input[role='switch'] {
+  appearance: none;
+  position: relative;
+  width: 30px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--track);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.plugin-card input[role='switch']::after {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  left: 2px;
+  top: 2px;
+  border-radius: 50%;
+  background: var(--knob);
+}
+.plugin-card input[role='switch']:checked {
+  background: var(--accent-fill);
+}
+.plugin-card input[role='switch']:checked::after {
+  transform: translateX(12px);
+}
+.plugin-card input[role='switch']:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.plugin-icon {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 9px;
+}
+.plugin-icon-blank {
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.plugin-card h5,
+.plugin-confirm h5 {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.plugin-version {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.plugin-badge {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 18px;
+}
+.plugin-badge.third {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.plugin-meta {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.plugin-description {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-3);
+}
+.plugin-permissions {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.plugin-permissions summary {
+  cursor: pointer;
+  color: var(--muted);
+  width: fit-content;
+}
+.plugin-permissions ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  line-height: 1.8;
+}
+.plugin-permissions svg {
+  vertical-align: -1px;
+}
+.plugin-permissions .new {
+  color: var(--danger);
+  font-weight: 600;
+}
+.plugin-body {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-soft);
+}
+.plugin-field {
+  display: grid;
+  gap: 5px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.plugin-field > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.plugin-field small {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.plugin-field textarea {
+  resize: vertical;
+}
+.plugin-field > label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.plugin-folder {
+  display: flex;
+  gap: 8px;
+}
+.plugin-folder input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.plugin-folder input:focus {
+  outline: 2px solid var(--accent-focus);
+  outline-offset: -1px;
+}
+.plugin-folder .secondary-button {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  font-size: 12.5px;
+}
+.plugin-field .plugin-error {
+  margin: 0;
+  font-size: 12px;
+}
+.plugin-model {
+  display: flex;
+}
+.plugin-time {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.plugin-time input[type='time'] {
+  padding: 5px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.plugin-time input[type='time']:disabled {
+  opacity: 0.5;
+}
+small.plugin-schedule {
+  display: block;
+  line-height: 1.7;
+}
+.plugin-destination {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.plugin-schedule,
+.plugin-last {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.plugin-last svg {
+  flex-shrink: 0;
+  color: var(--success);
+}
+.plugin-last.failed,
+.plugin-last.failed svg {
+  color: var(--danger);
+}
+.plugin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.plugin-actions .primary-button,
+.plugin-actions .secondary-button {
+  padding: 6px 12px;
+  font-size: 12.5px;
+}
+.plugin-summary {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.plugin-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 6px 8px;
+  border-radius: 5px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.plugin-more:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text-2);
+}
+.plugin-more svg {
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.plugin-more[aria-expanded='true'] svg {
+  transform: rotate(180deg);
+}
+/* Installing from this computer: a folder being written, or a .zip, picked or dropped. */
+.plugin-third-party {
+  border-radius: 10px;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.plugin-third-party.dragging {
+  outline: 2px dashed var(--accent-line-strong);
+  outline-offset: 4px;
+  background: var(--accent-soft);
+}
+.plugin-local {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.plugin-local .secondary-button {
+  padding: 6px 12px;
+  font-size: 12.5px;
+}
+.plugin-local small {
+  flex-basis: 100%;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.plugin-badge.dev {
+  background: var(--accent-soft-2);
+  color: var(--accent-text);
+}
+.plugin-hint {
+  display: block;
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-3);
+}
+.plugin-warnings {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--warn-soft);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-2);
+}
+.plugin-warnings > svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--warn);
+}
+.plugin-warnings strong {
+  color: var(--warn);
+  font-weight: 600;
+}
+.plugin-warnings ul {
+  margin: 2px 0 0;
+  padding-left: 18px;
+}
+/* A plugin's run log. */
+.plugin-log {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.plugin-log summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  color: var(--muted);
+}
+.plugin-log-count {
+  margin-left: 2px;
+  font-size: 11.5px;
+}
+.plugin-log-count.failed {
+  color: var(--danger);
+}
+.plugin-log ol {
+  max-height: 240px;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--surface-2);
+  list-style: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.65;
+}
+.plugin-log li {
+  display: flex;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+.plugin-log time {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.plugin-log .log-kind {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.plugin-log .log-text {
+  min-width: 0;
+  color: var(--text-2);
+}
+.plugin-log .log-run .log-text {
+  color: var(--text-strong);
+}
+.plugin-log .log-warn .log-kind,
+.plugin-log .log-warn .log-text {
+  color: var(--warn);
+}
+.plugin-log .log-error .log-kind,
+.plugin-log .log-error .log-text {
+  color: var(--danger);
+}
+.plugin-log .plugin-actions {
+  margin-top: 8px;
+}
+.plugin-log .plugin-actions .secondary-button {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+/* The directory of third-party plugins. */
+.plugin-directory {
+  margin-top: 14px;
+  font-size: 12.5px;
+}
+.plugin-directory > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--text-2);
+  font-weight: 500;
+}
+.plugin-directory-bar {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.plugin-directory-bar .secondary-button {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  font-size: 12.5px;
+}
+.plugin-search {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+}
+.plugin-search:focus-within {
+  outline: 2px solid var(--accent-focus);
+  outline-offset: -1px;
+}
+.plugin-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+/* The ring is on the whole field (:focus-within above), not the input inside it. */
+.plugin-search input:focus,
+.plugin-search input:focus-visible {
+  outline: none;
+  box-shadow: none;
+  border: 0;
+}
+.plugin-directory-list {
+  display: grid;
+  gap: 8px;
+  max-height: 360px;
+  overflow: auto;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.plugin-directory-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.plugin-directory-list li > div:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.plugin-directory-list strong {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+.plugin-directory-list .plugin-meta {
+  display: inline;
+}
+.plugin-directory-list p {
+  margin: 4px 0 0;
+  line-height: 1.6;
+  color: var(--text-3);
+}
+.plugin-directory-list .plugin-actions {
+  flex-shrink: 0;
+  margin-top: 0;
+  flex-wrap: nowrap;
+}
+.plugin-directory-list .plugin-actions .secondary-button {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+.plugin-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.plugin-tags span {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--muted);
+}
+.plugin-actions .danger-text {
+  color: var(--danger);
+}
+.plugin-confirm dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 14px;
+  margin: 12px 0 0;
+  font-size: 12.5px;
+}
+.plugin-confirm dt {
+  color: var(--muted);
+}
+.plugin-confirm dd {
+  margin: 0;
+  color: var(--text-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.plugin-commit {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--muted);
 }

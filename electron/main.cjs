@@ -12,7 +12,6 @@ const {
   safeStorage,
   systemPreferences,
   utilityProcess,
-  powerMonitor,
 } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
@@ -23,7 +22,6 @@ const { renderPDFDocument, pdfAssetPath } = require('./pdf.cjs');
 const { projectFor, filesFromArgv } = require('./open-file.cjs');
 const { createUpdates } = require('./updater.cjs');
 const { createAi } = require('./ai.cjs');
-const { createLicense } = require('./license.cjs');
 const { createAnnouncements } = require('./announcements.cjs');
 const { createSpeech } = require('./speech.cjs');
 const { createSpeechLog } = require('./speech-log.cjs');
@@ -31,6 +29,7 @@ const { createAiLog } = require('./ai-log.cjs');
 const { createHearing } = require('./hearing.cjs');
 const { limiter } = require('./cloud-voice.cjs');
 const papers = require('./papers.cjs');
+const { createPlugins } = require('./plugins.cjs');
 const isMac = process.platform === 'darwin';
 const workspace = new Workspace();
 let win;
@@ -45,16 +44,8 @@ const uiZooms = [0.8, 0.9, 1, 1.1, 1.25, 1.5];
 let uiZoom = 1;
 const previews = new Map();
 let ai;
-let license;
 let announcements;
-// PDF and AI need a membership; the window opens the membership dialog on seeing this.
-const memberOnly = '需要会员：PDF 阅读和 AI 功能是会员功能，开通会员或免费试用后就能用';
-const needMember = async () => {
-  await license.ready;
-  if (!license.member()) throw Error(memberOnly);
-  // Now and then also asks the server whether the code is still on this computer.
-  license.check();
-};
+let plugins;
 // The teacher's sentences said by a speech service, two at a time.
 const voiceQueue = limiter(2);
 let speechLog;
@@ -256,10 +247,6 @@ function menu() {
                   accelerator: 'Cmd+,',
                   click: () => win?.webContents.send('folio:event', { type: 'ai-settings' }),
                 },
-                {
-                  label: '会员与激活…',
-                  click: () => win?.webContents.send('folio:event', { type: 'membership' }),
-                },
                 { type: 'separator' },
                 { role: 'hide' },
                 { role: 'hideOthers' },
@@ -375,13 +362,6 @@ app
     const saved = await readSettings();
     appearance = appearanceColors(saved.appearance);
     if (uiZooms.includes(saved.uiZoom)) uiZoom = saved.uiZoom;
-    license = createLicense({
-      file: path.join(app.getPath('userData'), 'license.json'),
-      fetch: (url, init) => net.fetch(url, init),
-      version: app.getVersion(),
-      packaged: app.isPackaged,
-      onChange: (status) => toWindow({ type: 'license', status }),
-    });
     announcements = createAnnouncements({
       file: path.join(app.getPath('userData'), 'announcements.json'),
       fetch: (url, init) => net.fetch(url, init),
@@ -398,8 +378,37 @@ app
       diagnosticLog: createAiLog(path.join(app.getPath('userData'), 'logs', 'ai.jsonl')),
       ...keyProtection(),
     });
+    plugins = createPlugins({
+      // Plugins are optional downloads, including in development. Only load user installs.
+      userDir: app.getPath('userData'),
+      fetch: (url, init) => net.fetch(url, init),
+      atomicWrite,
+      appVersion: app.getVersion(),
+      // FOLIO_DOCUMENTS: tests run from source keep plugin folders out of the real Documents.
+      documentsDir: (!app.isPackaged && process.env.FOLIO_DOCUMENTS) || app.getPath('documents'),
+      // A plugin loaded from a folder changed: the window reads the list again.
+      onChange: () => toWindow({ type: 'plugins-changed' }),
+      // FOLIO_PLUGIN_DIRECTORY: tests run from source read the directory from a stand-in.
+      ...(!app.isPackaged && process.env.FOLIO_PLUGIN_DIRECTORY
+        ? { directoryUrls: [process.env.FOLIO_PLUGIN_DIRECTORY] }
+        : {}),
+    });
+    void plugins.cleanup();
     protocol.handle('app', async (request) => {
       const url = new URL(request.url);
+      // A plugin's script, alone in a sandboxed page that can't reach the network itself
+      // (electron/plugins.cjs).
+      if (url.host === 'plugin') {
+        try {
+          const id = decodeURIComponent(url.pathname.split('/').filter(Boolean)[0] || '');
+          const { html, csp } = await plugins.sandbox(id);
+          return new Response(html, {
+            headers: { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': csp },
+          });
+        } catch (e) {
+          return new Response(String(e.message), { status: 403 });
+        }
+      }
       if (url.host !== 'ui') return new Response('', { status: 404 });
       const rel =
         decodeURIComponent(url.pathname) === '/'
@@ -442,7 +451,6 @@ app
         } else if (url.host === 'document') {
           relative = parts.join('/');
           if (/\.pdf$/i.test(relative)) {
-            await needMember();
             await workspace.asset(relative);
             const encoded = relative.split('/').map(encodeURIComponent).join('/');
             return new Response(
@@ -547,15 +555,22 @@ app
           'cloud-voice',
           'cloud-voice-hush',
           'speech-diagnostic',
-          'license',
-          'license-activate',
-          'license-trial',
-          'license-renew',
-          'license-recover',
-          'license-offer',
-          'license-invite',
-          'license-order',
-          'license-order-status',
+          'plugins',
+          'plugin-set',
+          'plugin-third-party',
+          'plugin-ran',
+          'plugin-load',
+          'plugin-icon',
+          'plugin-inspect',
+          'plugin-install',
+          'plugin-remove',
+          'plugin-fetch',
+          'choose-plugin-folder',
+          'plugin-folder',
+          'plugin-run-save',
+          'plugin-pick-local',
+          'plugin-log',
+          'plugin-directory',
         ].includes(action) &&
         token !== workspace.token
       )
@@ -619,7 +634,6 @@ app
           return workspace.create(payload);
         // The AI assistant finding papers and saving one into the project.
         case 'papers-search':
-          await needMember();
           return papers.search(net.fetch, payload, await ai.paperKeys());
         // Saved only once OpenAlex takes it; kept as well when OpenAlex can't be asked now.
         case 'ai-paper-key': {
@@ -632,7 +646,6 @@ app
           return { config: await ai.savePaperKey({ key }), checked: checked === true };
         }
         case 'save-pdf': {
-          await needMember();
           const data = await papers.download(net.fetch, payload?.url);
           return {
             workspace: await workspace.savePdf({ path: payload?.path, data }),
@@ -732,27 +745,92 @@ app
         case 'update-page':
           await shell.openExternal(updates.downloadPage);
           return true;
-        case 'license':
-          await license.ready;
-          return license.status();
         case 'announcements':
           return announcements.load(payload || {});
-        case 'license-activate':
-          return license.activate(payload || {});
-        case 'license-trial':
-          return license.trial();
-        case 'license-renew':
-          return license.renew();
-        case 'license-recover':
-          return license.recover();
-        case 'license-offer':
-          return license.offer();
-        case 'license-invite':
-          return license.setInvite(payload || {});
-        case 'license-order':
-          return license.order(payload || {});
-        case 'license-order-status':
-          return license.checkOrder();
+        // Plugins (electron/plugins.cjs): what's there, switching them on, installing from a
+        // GitHub or Gitee link, and the network a run may reach.
+        case 'plugins':
+          return plugins.list();
+        case 'plugin-set':
+          return plugins.set(payload || {});
+        case 'plugin-third-party':
+          return plugins.setThirdParty(payload || {});
+        case 'plugin-ran':
+          return plugins.ran(payload || {});
+        case 'plugin-load':
+          return plugins.load(payload || {});
+        case 'plugin-icon':
+          return plugins.icon(payload || {});
+        case 'plugin-inspect':
+          return plugins.inspect(payload || {});
+        case 'plugin-install':
+          return plugins.install(payload || {});
+        case 'plugin-remove':
+          return plugins.remove(payload || {});
+        case 'plugin-fetch':
+          return plugins.fetch(payload || {});
+        case 'plugin-folder':
+          return plugins.folder(payload || {});
+        case 'plugin-run-save':
+          return plugins.saveRun(payload || {});
+        // A plugin on this computer: a folder being written (loaded where it is) or a .zip.
+        case 'plugin-pick-local': {
+          const folder = payload?.kind === 'folder';
+          const r = await dialog.showOpenDialog(win, {
+            title: folder ? '选择插件文件夹（里面有 folio-plugin.json）' : '选择插件压缩包',
+            buttonLabel: folder ? '加载' : '安装',
+            defaultPath: app.getPath('documents'),
+            properties: folder ? ['openDirectory'] : ['openFile'],
+            ...(folder ? {} : { filters: [{ name: '插件压缩包', extensions: ['zip'] }] }),
+          });
+          if (r.canceled || !r.filePaths[0]) return null;
+          return plugins.inspect({ local: r.filePaths[0] });
+        }
+        case 'plugin-log':
+          return plugins.log(payload || {});
+        case 'plugin-directory':
+          return plugins.directory(payload || {});
+        // A folder a plugin writes into, picked (or made) in Finder / Explorer: the open
+        // project or a folder in it, given relative to it ('.' for the project itself).
+        case 'choose-plugin-folder': {
+          // A folder plugin's own folder: anywhere on this computer, given as it is.
+          if (payload?.anywhere) {
+            const current = typeof payload.current === 'string' ? payload.current : '';
+            const r = await dialog.showOpenDialog(win, {
+              title: typeof payload.title === 'string' ? payload.title.slice(0, 80) : '选择文件夹',
+              buttonLabel: '选择',
+              defaultPath:
+                current && path.isAbsolute(current) && (await fs.stat(current).catch(() => null))
+                  ? current
+                  : app.getPath('documents'),
+              properties: ['openDirectory', 'createDirectory'],
+            });
+            if (r.canceled || !r.filePaths[0]) return null;
+            return fs.realpath(r.filePaths[0]);
+          }
+          if (typeof payload?.root !== 'string' || !payload.root) throw Error('先打开一个项目');
+          const root = await fs.realpath(payload.root).catch(() => {
+            throw Error('找不到当前项目的文件夹');
+          });
+          const current = typeof payload.current === 'string' ? payload.current : '';
+          const start = path.resolve(root, current || '.');
+          const r = await dialog.showOpenDialog(win, {
+            title: typeof payload.title === 'string' ? payload.title.slice(0, 80) : '选择文件夹',
+            buttonLabel: '选择',
+            defaultPath:
+              start.startsWith(root) && (await fs.stat(start).catch(() => null)) ? start : root,
+            properties: ['openDirectory', 'createDirectory'],
+          });
+          if (r.canceled || !r.filePaths[0]) return null;
+          const chosen = await fs.realpath(r.filePaths[0]);
+          const relative = path.relative(root, chosen);
+          if (!relative) return '.';
+          if (relative.startsWith('..') || path.isAbsolute(relative))
+            throw Error(
+              `「${path.basename(chosen)}」不在当前打开的项目「${path.basename(root)}」里。插件只能把文件写进打开的项目；想放到别处，先用「选择项目」把那个文件夹打开。`,
+            );
+          return relative.split(path.sep).join('/');
+        }
         case 'ai-config':
           return ai.config();
         case 'ai-save-provider':
@@ -772,7 +850,6 @@ app
         case 'ai-test':
           return ai.test(payload);
         case 'ai-chat': {
-          await needMember();
           const sender = event.sender;
           return ai.chat(payload, (delta) => {
             if (!sender.isDestroyed()) sender.send('folio:event', delta);
@@ -793,7 +870,6 @@ app
         case 'microphone':
           return microphoneAccess();
         case 'codex-voice': {
-          if (payload?.type === 'start') await needMember();
           const sender = event.sender;
           return ai.codexVoice(payload, (e) => {
             if (!sender.isDestroyed()) sender.send('folio:event', e);
@@ -934,8 +1010,6 @@ app
         },
       });
       win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-      // Coming back to the window may be coming back from the other computer the code moved to.
-      win.on('focus', () => license.check());
       win.on('enter-full-screen', () => {
         if (focusWindowState) win.setWindowButtonVisibility?.(false);
       });
@@ -975,9 +1049,6 @@ app
     createMainWindow = createWindow;
     createWindow();
     updates.start();
-    license.start();
-    // The code may have moved to another computer while this one slept.
-    powerMonitor.on('resume', () => license.check());
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });

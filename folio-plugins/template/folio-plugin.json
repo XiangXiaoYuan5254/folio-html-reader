@@ -1,0 +1,51 @@
+{
+  "$schema": "https://raw.githubusercontent.com/XiangXiaoYuan5254/folio-plugins/main/schema/folio-plugin.schema.json",
+  "folio": 1,
+  "id": "my-plugin",
+  "name": "我的插件",
+  "version": "0.1.0",
+  "author": "你的名字",
+  "description": "一句话说明它会做什么、结果放在哪里。",
+  "engines": {
+    "folio": ">=0.30.0"
+  },
+  "files": [
+    "prompt.md",
+    "template.html",
+    "tools.js"
+  ],
+  "run": {
+    "prompt": "prompt.md",
+    "template": "template.html",
+    "script": "tools.js",
+    "tools": [
+      "list_files",
+      "read_document",
+      "fetch_url",
+      "create_html"
+    ],
+    "where": "folder"
+  },
+  "triggers": [
+    {
+      "type": "button",
+      "label": "立即运行"
+    }
+  ],
+  "permissions": {
+    "network": [
+      "example.com"
+    ],
+    "write": [
+      "{{output}}"
+    ]
+  },
+  "settings": [
+    {
+      "key": "output",
+      "type": "folder",
+      "label": "结果放在哪个文件夹",
+      "default": "我的插件"
+    }
+  ]
+}

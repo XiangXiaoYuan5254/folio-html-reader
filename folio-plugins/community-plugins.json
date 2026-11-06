@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "plugins": [
+    {
+      "id": "ai-daily",
+      "name": "AI 前沿日报",
+      "author": "页间",
+      "description": "每天收集 AI 领域的新论文、新模型、开源项目和行业动态，整理成一篇 HTML 日报。",
+      "repo": "https://github.com/XiangXiaoYuan5254/folio-plugins/tree/main/examples/ai-daily",
+      "tags": [
+        "日报",
+        "AI",
+        "示例"
+      ]
+    },
+    {
+      "id": "hn-digest",
+      "name": "Hacker News 摘要",
+      "author": "页间",
+      "description": "每天读一遍 Hacker News 首页上讨论最热的帖子，按主题整理成一篇中文摘要。",
+      "repo": "https://github.com/XiangXiaoYuan5254/folio-plugins/tree/main/examples/hn-digest",
+      "tags": [
+        "日报",
+        "科技新闻",
+        "示例"
+      ]
+    },
+    {
+      "id": "reading-highlights",
+      "name": "待读划重点",
+      "author": "页间",
+      "description": "给项目里「待读」文件夹中的文档划出最关键的几句，并写一段三句话的导读。",
+      "repo": "https://github.com/XiangXiaoYuan5254/folio-plugins/tree/main/examples/reading-highlights",
+      "tags": [
+        "阅读",
+        "批注",
+        "示例"
+      ]
+    }
+  ]
+}

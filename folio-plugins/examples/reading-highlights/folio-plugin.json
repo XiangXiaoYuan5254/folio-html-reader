@@ -1,0 +1,44 @@
+{
+  "$schema": "https://raw.githubusercontent.com/XiangXiaoYuan5254/folio-plugins/main/schema/folio-plugin.schema.json",
+  "folio": 1,
+  "id": "reading-highlights",
+  "name": "待读划重点",
+  "version": "1.0.0",
+  "author": "页间",
+  "description": "读一遍项目里「待读」文件夹中还没划过重点的文档，划出最关键的几句，并在文档笔记里写一段三句话的导读。演示在打开的项目里工作的插件。",
+  "homepage": "https://github.com/XiangXiaoYuan5254/folio-plugins/tree/main/examples/reading-highlights",
+  "engines": { "folio": ">=0.29.0" },
+  "icon": "icon.svg",
+  "files": ["prompt.md", "icon.svg"],
+  "run": {
+    "prompt": "prompt.md",
+    "tools": ["list_files", "read_document", "read_annotations", "add_highlights", "write_note"],
+    "where": "project"
+  },
+  "triggers": [{ "type": "button", "label": "给待读文档划重点" }],
+  "permissions": {
+    "write": ["{{inbox}}"]
+  },
+  "settings": [
+    {
+      "key": "inbox",
+      "type": "folder",
+      "label": "待读文档放在哪个文件夹",
+      "hint": "项目里的一个文件夹。插件只读、只改这个文件夹里的文档。",
+      "default": "待读"
+    },
+    {
+      "key": "per_doc",
+      "type": "text",
+      "label": "每篇划几处",
+      "default": "5"
+    },
+    {
+      "key": "focus",
+      "type": "textarea",
+      "label": "你关心什么",
+      "hint": "可以不填。写了的话，划重点时优先和这些相关的句子。",
+      "default": ""
+    }
+  ]
+}

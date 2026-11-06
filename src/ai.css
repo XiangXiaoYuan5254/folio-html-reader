@@ -372,6 +372,29 @@
   background: var(--ai-soft);
   color: var(--ai-text);
 }
+.assistant-plugins button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.assistant-chips.assistant-plugins button.running {
+  background: var(--ai-soft);
+  color: var(--ai-text);
+}
+.assistant-plugins-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.assistant-plugins-link:hover {
+  background: var(--ai-tint);
+  color: var(--ai-text);
+}
 .assistant-composer {
   margin: 8px 12px 12px;
   border: 1px solid var(--line-soft);

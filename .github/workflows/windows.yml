@@ -205,6 +205,15 @@ jobs:
         run: node tests/board-papers.e2e.mjs
         env:
           FOLIO_QA_DIR: ${{ env.EVIDENCE }}\board-papers
+      - name: 'Optional plugins and installation (development build)'
+        if: ${{ !cancelled() && env.FOLIO_EXE }}
+        timeout-minutes: 10
+        run: |
+          node tests/plugins.e2e.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/plugin-dev.e2e.mjs
+        env:
+          FOLIO_QA_DIR: ${{ env.EVIDENCE }}\plugins
       - name: 'Settings, model picks, notes prompts, storage and new files'
         if: ${{ !cancelled() && (env.FOLIO_EXE || inputs.focused) }}
         timeout-minutes: 10

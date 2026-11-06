@@ -246,10 +246,11 @@ async function dataFor(relative) {
     ),
   };
 }
-// CSS positions the columns; their DOM order is sorted by random document ids to keep
-// iframes mounted during swaps. Select the physical left pane, never the first iframe.
+// The active document's frame. Side by side, columns are in the page in document order, not
+// left to right, so the first frame isn't necessarily the one being read.
+const activeFrame = () => page.locator('.reader-pane.active-column .document-frame').first();
 async function frame() {
-  const src = await page.locator('.reader-pane[data-pane=left] .document-frame').getAttribute('src');
+  const src = await activeFrame().getAttribute('src');
   let f;
   await waitFor(async () => (f = page.frames().find((x) => x.url() === src)), 'frame');
   await f.locator('[data-folio-ui=overlay]').waitFor({ state: 'attached' });
@@ -257,10 +258,10 @@ async function frame() {
 }
 async function screenBox(f, selector) {
   const local = await f.locator(selector).evaluate((e) => e.getBoundingClientRect().toJSON());
-  const parent = await page.locator('.reader-pane[data-pane=left] .document-frame').boundingBox();
-  const scale = await page
-    .locator('.reader-pane[data-pane=left] .document-frame')
-    .evaluate((e) => e.getBoundingClientRect().width / e.clientWidth);
+  const parent = await activeFrame().boundingBox();
+  const scale = await activeFrame().evaluate(
+    (e) => e.getBoundingClientRect().width / e.clientWidth,
+  );
   return {
     x: parent.x + local.x * scale,
     y: parent.y + local.y * scale,
@@ -281,7 +282,6 @@ try {
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: undefined,
-      FOLIO_MEMBER: '1',
       FOLIO_USER_DATA: userData,
       FOLIO_WORKSPACE: project,
     },
@@ -724,6 +724,8 @@ try {
   assert.ok(note.includes('href="03_paper.pdf#page=1"'), 'page references link to the PDF');
   assert.ok(note.includes('<nav class="toc"'), 'contents added');
   assert.ok(note.includes('由页间 AI 根据《03_paper.pdf》生成'));
+  // Columns are in the page in document order (so swapping sides keeps their frames); the
+  // side each one shows on is its data-pane.
   await page
     .locator('.reading-column[data-pane=right]')
     .locator('.pane-document-title', { hasText: '03_paper-精读笔记.html' })
@@ -798,7 +800,7 @@ try {
     .getByRole('button', { name: '01_注意力.html', exact: true })
     .click();
   await waitFor(
-    async () => (await page.locator('.reader-pane[data-pane=left] .document-frame').getAttribute('src')).includes('01_'),
+    async () => (await activeFrame().getAttribute('src')).includes('01_'),
     'document opened',
   );
   if (!(await panel().isVisible())) await showAssistant(page);
@@ -991,7 +993,7 @@ try {
       const saved = JSON.parse(await fs.readFile(path.join(aiDir, name), 'utf8'));
       if (
         saved.threads?.some((thread) =>
-          thread.messages.some(
+          thread.messages?.some(
             (m) =>
               m.text === '这是保留下来的半截回答' &&
               m.status === 'error' &&

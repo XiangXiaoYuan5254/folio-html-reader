@@ -2,12 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import {
   AudioLines,
   BookOpen,
-  Crown,
   HardDrive,
   Info,
   LoaderCircle,
   Megaphone,
   Palette,
+  Puzzle,
   Settings,
   Sparkles,
   X,
@@ -16,14 +16,13 @@ import { isDesktop } from '../api';
 import { useUnreadAnnouncements } from '../announcements';
 import { useAiConfig } from '../ai/client';
 import { useSpeechSupport, useVoiceSettings } from '../ai/voice';
-import { renewLicense } from '../license';
 import { shortcut } from '../platform';
 import type { UpdateState } from '../types';
 import type { ToolbarSide } from './SelectionToolbar';
 import { AiSettings, SpeechVoices } from './AiSettings';
 import { Announcements } from './Announcements';
 import { VoiceButton } from './BoardVoice';
-import { MembershipDialog } from './MembershipDialog';
+import { PluginSettings } from './PluginSettings';
 import { ThemePicker } from './ThemePicker';
 import { StorageSettings } from './StorageSettings';
 import { UiTypeSettings } from './UiTypeSettings';
@@ -31,10 +30,16 @@ import '../whiteboard.css';
 import '../settings.css';
 
 export type SettingsPage =
-  'appearance' | 'ai' | 'voices' | 'storage' | 'membership' | 'announcements' | 'about';
+  'appearance' | 'ai' | 'plugins' | 'voices' | 'storage' | 'announcements' | 'about';
 const pages = [
   { id: 'appearance', name: '外观与阅读', icon: Palette, detail: '让页间更适合你的阅读习惯。' },
   { id: 'ai', name: 'AI', icon: Sparkles, detail: '连接自己的服务，为不同功能选择合适的模型。' },
+  {
+    id: 'plugins',
+    name: '插件',
+    icon: Puzzle,
+    detail: '让 AI 按插件的说明定时或一键干活，比如每天整理一份 AI 前沿日报。',
+  },
   {
     id: 'voices',
     name: '语音',
@@ -47,7 +52,6 @@ const pages = [
     icon: HardDrive,
     detail: '看看页间在当前项目里存了多少数据，清理用不到的数据、白板和旧备份。',
   },
-  { id: 'membership', name: '会员', icon: Crown, detail: '查看会员状态、管理激活与邀请。' },
   {
     id: 'announcements',
     name: '公告',
@@ -74,16 +78,17 @@ export function SettingsDialog(p: {
   onShowUpdate: () => void;
   onNotify: (message: string) => void;
   onBoardDeleted: (id: string) => void;
+  onRunPlugin: (id: string) => void;
+  onOpenPluginFolder: (id: string) => void;
 }) {
   const [page, setPage] = useState<SettingsPage>(p.request.page);
   const [visited, setVisited] = useState(() => new Set<SettingsPage>([p.request.page]));
   const [presetRequest, setPresetRequest] = useState<{ id: string }>();
   const unseen = useUnreadAnnouncements();
   const [aiBusy, setAiBusy] = useState(false);
-  const [memberBusy, setMemberBusy] = useState(false);
   const panel = useRef<HTMLDivElement>(null);
   const config = useAiConfig();
-  const busy = aiBusy || memberBusy;
+  const busy = aiBusy;
   const current = pages.find((entry) => entry.id === page)!;
   function navigate(next: SettingsPage) {
     setVisited((before) => new Set([...before, next]));
@@ -197,11 +202,7 @@ export function SettingsDialog(p: {
             hidden={page !== 'appearance'}
             aria-label="外观与阅读设置"
           >
-            <ThemePicker
-              embedded
-              onClose={() => {}}
-              onRequireMembership={() => navigate('membership')}
-            />
+            <ThemePicker embedded onClose={() => {}} />
             <UiTypeSettings />
             <section className="settings-group">
               <h4>阅读偏好</h4>
@@ -267,6 +268,20 @@ export function SettingsDialog(p: {
             ) : null}
           </section>
           <section
+            className="settings-page settings-scroll"
+            hidden={page !== 'plugins'}
+            aria-label="插件"
+          >
+            {visited.has('plugins') ? (
+              <PluginSettings
+                root={p.root}
+                projectName={p.projectName}
+                onRun={p.onRunPlugin}
+                onOpenFolder={p.onOpenPluginFolder}
+              />
+            ) : null}
+          </section>
+          <section
             className="settings-page settings-scroll settings-announcements"
             hidden={page !== 'announcements'}
             aria-label="公告"
@@ -301,23 +316,6 @@ export function SettingsDialog(p: {
                 onBoardDeleted={p.onBoardDeleted}
                 onNotify={p.onNotify}
               />
-            ) : null}
-          </section>
-          <section
-            className="settings-page settings-scroll settings-membership"
-            hidden={page !== 'membership'}
-            aria-label="会员设置"
-          >
-            {visited.has('membership') ? (
-              isDesktop ? (
-                <MemberSettings
-                  onClose={p.onClose}
-                  onNotify={p.onNotify}
-                  onBusyChange={setMemberBusy}
-                />
-              ) : (
-                <p className="settings-footnote">请在桌面版页间中管理会员。</p>
-              )
             ) : null}
           </section>
           <section
@@ -370,17 +368,6 @@ function VoiceSettings() {
       </section>
     </>
   );
-}
-
-function MemberSettings(p: {
-  onClose: () => void;
-  onNotify: (message: string) => void;
-  onBusyChange: (busy: boolean) => void;
-}) {
-  useEffect(() => {
-    void renewLicense().catch(() => {});
-  }, []);
-  return <MembershipDialog {...p} reason="" embedded />;
 }
 
 function AboutSettings(p: {

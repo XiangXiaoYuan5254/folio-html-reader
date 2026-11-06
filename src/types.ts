@@ -98,6 +98,7 @@ export interface FolioBridge {
     token: string,
   ) => Promise<{ workspace: WorkspaceInfo; imported: string[] }>;
   invoke: (action: string, payload?: unknown, token?: string) => Promise<any>;
+  pathForFile?: (file: File) => string;
   subscribe: (cb: (e: FrameEvent) => void) => () => void;
 }
 declare global {

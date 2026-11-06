@@ -507,11 +507,21 @@ class Workspace {
   }
   // `unique`: a name already taken gets a number instead (未命名.html → 未命名2.html,
   // 未命名2.html → 未命名3.html), and the name used comes back as `created`.
-  async create({ path: relative, kind, content, unique = false }) {
+  // `parents`: folders on the way are created too (an AI writing into 日报/…).
+  async create({ path: relative, kind, content, unique = false, parents = false }) {
     return this.serial(async () => {
       if (kind !== 'folder') {
         if (!isHtml(relative)) throw Error('文件名须以 .html 或 .htm 结尾');
         if (typeof content === 'string' && content.length > 20_000_000) throw Error('文件过大');
+      }
+      if (parents && typeof relative === 'string') {
+        const parts = relative.split('/');
+        for (let i = 1; i < parts.length; i++) {
+          const dir = await this.resolve(parts.slice(0, i).join('/'), { create: true });
+          await fs.mkdir(dir).catch((e) => {
+            if (e.code !== 'EEXIST') throw e;
+          });
+        }
       }
       for (let n = 1; ; n++) {
         const candidate = n === 1 ? relative : numbered(relative, n - 1, kind === 'folder');

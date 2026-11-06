@@ -1,4 +1,4 @@
-// 宣传片（纸页版）的素材：用 website-shots 的示范项目和模拟 AI，以会员身份启动源码里的页间，
+// 宣传片（纸页版）的素材：用 website-shots 的示范项目和模拟 AI，启动源码里的页间，
 // 照着脚本一步步操作，同时连续截图并记下鼠标轨迹。截图里没有系统光标，film.html 按记下的轨迹自己画。
 //
 // 竖屏视频里要看得清界面，所以窗口录成 960×1120（截图 1920×2240），收起文件树；
@@ -53,7 +53,6 @@ const app = await electron.launch({
     ELECTRON_RUN_AS_NODE: undefined,
     FOLIO_USER_DATA: path.join(tmp, 'user-data'),
     FOLIO_WORKSPACE: ws,
-    FOLIO_MEMBER: '1',
   },
 });
 console.log('页间进程', app.process().pid);

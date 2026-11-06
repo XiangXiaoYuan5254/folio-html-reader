@@ -22,6 +22,7 @@ import {
   Plus,
   MinusCircle,
   NotebookPen,
+  Puzzle,
   Quote,
   RotateCcw,
   Scale,
@@ -46,6 +47,8 @@ import { RegionCapture } from './RegionCapture';
 import { ImageViewer } from './ImageViewer';
 import { isImageFile, maxImages, prepareImage, refusesImages } from '../ai/images';
 import { loadedModelOptions } from '../ai/levels';
+import { usePlugins } from '../plugins/store';
+import { usePluginRuns } from '../plugins/runner';
 
 export type AssistantMode = 'doc' | 'project';
 const taskIcons: Record<Task, typeof FileText> = {
@@ -74,13 +77,38 @@ export function AssistantPanel(p: {
   // Opens `other` beside the document and shows a conversation the two had.
   onOpenPair: (other: string, scope: string, threadId: string) => void;
   hasFiles: boolean;
+  onRunPlugin: (id: string) => void;
+  onOpenPlugins: () => void;
+  // The open project's folder.
+  root?: string;
 }) {
   const config = useAiConfig();
+  const runs = usePluginRuns();
+  // Plugins switched on, each with its button in 整个项目: those working in the project, and
+  // one with a folder of its own when that folder (its project) is the one open.
+  const enabled = (usePlugins()?.plugins || []).flatMap((plugin) => {
+    const button = plugin.manifest?.triggers.find((t) => t.type === 'button');
+    return plugin.enabled && plugin.manifest && button?.type === 'button'
+      ? [
+          {
+            id: plugin.id,
+            name: plugin.manifest.name,
+            label: button.label,
+            about: plugin.manifest.description,
+            here:
+              plugin.manifest.run.where !== 'folder' ||
+              (!!p.root && plugin.folder?.real === p.root),
+          },
+        ]
+      : [];
+  });
+  const plugins = enabled.filter((plugin) => plugin.here);
   const state = useAssistantState(p.store);
   const scope = p.mode === 'project' ? 'project' : p.reading?.scope || '';
+  // Loaded again when another project opens: 整个项目 is the same scope in every project.
   useEffect(() => {
     if (scope) void p.store.load(scope);
-  }, [scope]);
+  }, [scope, p.root]);
   const history = scope ? state.histories[scope] : undefined;
   const thread =
     history?.threads.find((t) => t.id === history.active) || history?.threads[0] || undefined;
@@ -268,7 +296,7 @@ export function AssistantPanel(p: {
             <h3>打开一篇文档后提问</h3>
             <p>也可以切换到“整个项目”，让 AI 在所有文档里搜索和整理。</p>
           </div>
-        ) : p.mode === 'project' && !p.hasFiles ? (
+        ) : p.mode === 'project' && !p.hasFiles && !thread?.messages.length ? (
           <div className="assistant-empty">
             <h3>项目里还没有文档</h3>
             <p>把 HTML 或 PDF 放进项目文件夹后再试。</p>
@@ -297,13 +325,25 @@ export function AssistantPanel(p: {
                 })}
               </div>
             ) : (
-              <div className="assistant-examples">
-                {agentExamples.map((e) => (
-                  <button key={e} onClick={() => p.store.setDraft(scope, e)}>
-                    {e}
+              <>
+                <div className="assistant-examples">
+                  {agentExamples.map((e) => (
+                    <button key={e} onClick={() => p.store.setDraft(scope, e)}>
+                      {e}
+                    </button>
+                  ))}
+                </div>
+                {!enabled.length ? (
+                  <button
+                    type="button"
+                    className="assistant-plugins-link"
+                    onClick={p.onOpenPlugins}
+                  >
+                    <Puzzle size={13} />
+                    用插件让 AI 定时帮你做事，比如每天整理 AI 前沿日报
                   </button>
-                ))}
-              </div>
+                ) : null}
+              </>
             )}
           </div>
         ) : (
@@ -324,6 +364,41 @@ export function AssistantPanel(p: {
           )
         )}
       </div>
+      {p.mode === 'project' && plugins.length ? (
+        <div className="assistant-chips assistant-plugins" aria-label="插件">
+          {plugins.map((plugin) =>
+            runs.has(plugin.id) ? (
+              // Running: the way to its conversation, where each step comes in.
+              <button
+                key={plugin.id}
+                className="running"
+                aria-busy="true"
+                onClick={() => {
+                  stick.current = true;
+                  p.onRunPlugin(plugin.id);
+                }}
+                title={`${plugin.name}正在运行，点这里看它的每一步`}
+              >
+                <LoaderCircle size={13} className="spin" />
+                {plugin.name}正在运行 · 查看进度
+              </button>
+            ) : (
+              <button
+                key={plugin.id}
+                onClick={() => {
+                  stick.current = true;
+                  p.onRunPlugin(plugin.id);
+                }}
+                disabled={!ready}
+                title={`${plugin.name}：${plugin.about}`}
+              >
+                <Puzzle size={13} />
+                {plugin.label}
+              </button>
+            ),
+          )}
+        </div>
+      ) : null}
       {p.mode === 'doc' && thread?.messages.length && p.reading ? (
         <div className="assistant-chips">
           {tasks.map((t) => (

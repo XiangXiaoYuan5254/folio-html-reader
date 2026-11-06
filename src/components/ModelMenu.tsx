@@ -28,14 +28,16 @@ export function ModelMenu({
   use = 'chat',
   onOpenSettings,
   className = '',
+  label = useInfo[use]?.label || '这个插件',
 }: {
   use?: AiUse;
   onOpenSettings?: () => void;
   className?: string;
+  // What the part is called in the menu; a plugin passes its name.
+  label?: string;
 }) {
   const config = useAiConfig();
   const chat = use === 'chat';
-  const { label } = useInfo[use];
   const choice = useChoice(config, use);
   const following = !chat && !choice;
   const provider = providerFor(config, use);

@@ -9,7 +9,6 @@ export function ReadingStatus(p: {
   format: string;
   hint: string;
   onOpenSettings: () => void;
-  membership: ReactNode;
   updateNotice: ReactNode;
   themeOpen: boolean;
   onTheme: () => void;
@@ -36,7 +35,6 @@ export function ReadingStatus(p: {
     <footer ref={host} className="statusbar" aria-label="阅读状态">
       {p.updateNotice ? <div className="sidebar-update">{p.updateNotice}</div> : null}
       <div className="sidebar-account">
-        {p.membership}
         <div className="sidebar-preferences">
           <IconButton
             label="界面主题"

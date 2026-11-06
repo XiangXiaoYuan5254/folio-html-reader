@@ -1,0 +1,24 @@
+{
+  "name": "folio-plugin",
+  "version": "1.0.0",
+  "description": "页间（Folio）插件的命令行工具：新建、检查、打包插件",
+  "license": "MIT",
+  "author": "XiangXiaoYuan5254",
+  "homepage": "https://github.com/XiangXiaoYuan5254/folio-plugins",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/XiangXiaoYuan5254/folio-plugins.git",
+    "directory": "cli"
+  },
+  "bugs": "https://github.com/XiangXiaoYuan5254/folio-plugins/issues",
+  "keywords": ["folio", "页间", "plugin", "ai", "agent"],
+  "bin": {
+    "folio-plugin": "bin/folio-plugin.cjs"
+  },
+  "main": "lib/manifest.cjs",
+  "types": "types/folio.d.ts",
+  "files": ["bin", "lib", "types", "README.md"],
+  "engines": {
+    "node": ">=18"
+  }
+}

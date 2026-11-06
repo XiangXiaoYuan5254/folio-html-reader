@@ -1,0 +1,51 @@
+{
+  "$schema": "https://raw.githubusercontent.com/XiangXiaoYuan5254/folio-plugins/main/schema/folio-plugin.schema.json",
+  "folio": 1,
+  "id": "hn-digest",
+  "name": "Hacker News 摘要",
+  "version": "1.0.0",
+  "author": "页间",
+  "description": "每天读一遍 Hacker News 首页上讨论最热的帖子，按主题整理成一篇中文摘要，放进它自己的文件夹。演示怎样用脚本给 AI 增加工具。",
+  "homepage": "https://github.com/XiangXiaoYuan5254/folio-plugins/tree/main/examples/hn-digest",
+  "engines": { "folio": ">=0.29.0" },
+  "icon": "icon.svg",
+  "files": ["prompt.md", "template.html", "tools.js", "icon.svg"],
+  "run": {
+    "prompt": "prompt.md",
+    "template": "template.html",
+    "script": "tools.js",
+    "tools": ["list_files", "read_document", "create_html"],
+    "where": "folder"
+  },
+  "triggers": [
+    { "type": "daily", "time": "09:00" },
+    { "type": "button", "label": "生成今天的摘要" }
+  ],
+  "permissions": {
+    "network": ["hacker-news.firebaseio.com"],
+    "write": ["{{output}}"]
+  },
+  "settings": [
+    {
+      "key": "output",
+      "type": "folder",
+      "label": "摘要放在哪个文件夹",
+      "hint": "默认是「文稿」里的「HN 摘要」。",
+      "default": "HN 摘要"
+    },
+    {
+      "key": "count",
+      "type": "text",
+      "label": "看前多少条",
+      "hint": "从 Hacker News 首页按顺序取，最多 30。",
+      "default": "20"
+    },
+    {
+      "key": "min_points",
+      "type": "text",
+      "label": "至少多少分",
+      "hint": "分数低于这个的帖子不看。",
+      "default": "100"
+    }
+  ]
+}

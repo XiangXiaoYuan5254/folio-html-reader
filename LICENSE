@@ -1,15 +1,23 @@
-页间 · Folio
-Copyright (c) 2026 XiangXiaoYuan5254. All rights reserved.
+MIT License
 
-本软件（包括源代码、编译后的程序、文档、示例文档、图标、图片及其他随附资源）为
-版权所有者的专有软件，保留所有权利。未经版权所有者事先书面许可，任何人不得复制、
-修改、分发、再许可、出售、出租、反向工程或以其他方式使用本软件的全部或任何部分。
+Copyright (c) 2026 XiangXiaoYuan5254
 
-This software, including its source code, compiled programs, documentation,
-sample documents, icons, images and other accompanying materials, is proprietary
-to the copyright holder. All rights reserved. No part of it may be copied,
-modified, distributed, sublicensed, sold, rented, reverse engineered or otherwise
-used without the prior written permission of the copyright holder.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-本软件使用的第三方组件遵循其各自的许可证，不受本声明限制。
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
 Third-party components used by this software remain under their own licenses.

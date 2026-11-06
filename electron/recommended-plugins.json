@@ -1,0 +1,12 @@
+[
+  {
+    "id": "ai-daily",
+    "name": "AI 前沿日报",
+    "version": "1.1.0",
+    "author": "页间",
+    "description": "每天收集 AI 领域的新论文、新模型、开源项目和行业动态，挑出最值得看的，整理成一篇 HTML 日报，放进它自己的文件夹。",
+    "requires": ">=0.30.0",
+    "url": "https://helloxxy.com/works/folio/plugins/ai-daily-1.1.0.zip",
+    "sha256": "5b21c67f22581a13cdbeaeaf55ad3e093c8a808c068545e5ef034ea713f783de"
+  }
+]

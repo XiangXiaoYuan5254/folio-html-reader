@@ -1,0 +1,55 @@
+name: validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Examples and template
+        run: |
+          for dir in examples/*/ template/; do
+            node cli/bin/folio-plugin.cjs validate "$dir"
+          done
+
+      - name: Plugin directory (format)
+        run: node scripts/check-directory.cjs
+
+      # On a pull request, read the manifests of the entries it adds or changes from their
+      # repositories and check them with Folio's own rules.
+      - name: Plugin directory (submitted plugins)
+        if: github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          changed=$(node -e '
+            const { execSync } = require("node:child_process");
+            const before = JSON.parse(execSync(`git show ${process.env.BASE_SHA}:community-plugins.json`).toString()).plugins;
+            const after = require("./community-plugins.json").plugins;
+            const old = new Map(before.map((p) => [p.id, JSON.stringify(p)]));
+            console.log(after.filter((p) => old.get(p.id) !== JSON.stringify(p)).map((p) => p.id).join(","));
+          ')
+          if [ -n "$changed" ]; then
+            node scripts/check-directory.cjs --remote --only "$changed"
+          else
+            echo "No directory entries added or changed."
+          fi
+
+      - name: CLI pack round trip
+        run: |
+          node cli/bin/folio-plugin.cjs pack examples/hn-digest -o /tmp/hn-digest.zip
+          unzip -l /tmp/hn-digest.zip

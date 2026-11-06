@@ -150,23 +150,12 @@ function load(): ThemePrefs {
   };
 }
 
-// Without a membership only the default theme shows (src/license.ts); the chosen ones are kept
-// for when it comes back. The last answer is remembered, so a member's theme shows from the
-// first frame instead of after the membership has been checked.
-export const freeTheme: ThemeId = 'default';
-const unlockedKey = 'folio.themes-unlocked';
-let unlocked = false;
-try {
-  unlocked = localStorage.getItem(unlockedKey) === '1';
-} catch {}
-
 const media = window.matchMedia('(prefers-color-scheme: dark)');
 let prefs = load();
-let state = { prefs, active: resolve(prefs), unlocked };
+let state = { prefs, active: resolve(prefs) };
 const listeners = new Set<() => void>();
 
 function resolve(p: ThemePrefs): ThemeId {
-  if (!unlocked) return freeTheme;
   if (!p.followSystem) return p.theme;
   return media.matches ? p.dark : p.light;
 }
@@ -182,7 +171,7 @@ function update(next: ThemePrefs) {
 function refresh() {
   const active = resolve(prefs);
   const changed = active !== state.active;
-  state = { prefs, active, unlocked };
+  state = { prefs, active };
   const show = () => {
     applyTheme();
     for (const listener of listeners) listener();
@@ -220,15 +209,6 @@ export function setTheme(id: ThemeId) {
 export function setFollowSystem(followSystem: boolean) {
   // Turning it off keeps the theme that is showing now.
   update({ ...prefs, followSystem, theme: followSystem ? prefs.theme : state.active });
-}
-
-export function setThemesUnlocked(next: boolean) {
-  if (next === unlocked) return;
-  unlocked = next;
-  try {
-    localStorage.setItem(unlockedKey, next ? '1' : '0');
-  } catch {}
-  refresh();
 }
 
 media.addEventListener('change', () => {

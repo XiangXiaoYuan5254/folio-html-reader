@@ -1,0 +1,67 @@
+{
+  "folio": 1,
+  "id": "ai-daily",
+  "name": "AI 前沿日报",
+  "version": "1.1.0",
+  "author": "页间",
+  "description": "每天收集 AI 领域的新论文、新模型、开源项目和行业动态，挑出最值得看的，整理成一篇 HTML 日报，放进它自己的文件夹。",
+  "engines": {
+    "folio": ">=0.30.0"
+  },
+  "icon": "icon.svg",
+  "files": ["prompt.md", "template.html", "icon.svg"],
+  "run": {
+    "prompt": "prompt.md",
+    "template": "template.html",
+    "tools": ["list_files", "read_document", "fetch_url", "read_feed", "create_html"],
+    "web": true,
+    "where": "folder"
+  },
+  "triggers": [
+    {
+      "type": "daily",
+      "time": "08:30"
+    },
+    {
+      "type": "button",
+      "label": "生成今天的日报"
+    }
+  ],
+  "permissions": {
+    "network": [
+      "export.arxiv.org",
+      "arxiv.org",
+      "huggingface.co",
+      "api.github.com",
+      "hn.algolia.com",
+      "openai.com",
+      "deepmind.google",
+      "research.google",
+      "www.qbitai.com"
+    ],
+    "write": ["{{output}}"]
+  },
+  "settings": [
+    {
+      "key": "output",
+      "type": "folder",
+      "label": "日报放在哪个文件夹",
+      "hint": "默认是「文稿」里的「AI日报」。点「选择…」可以换成电脑上任何一个文件夹，也可以在访达里新建一个。",
+      "default": "AI日报"
+    },
+    {
+      "key": "topics",
+      "type": "text",
+      "label": "关注方向",
+      "hint": "用顿号或逗号分开，日报会优先挑这些方向的内容。",
+      "default": "大模型、智能体（Agent）、多模态、推理、开源模型"
+    },
+    {
+      "key": "count",
+      "type": "text",
+      "label": "每期大约几条",
+      "hint": "",
+      "default": "12"
+    }
+  ]
+}

@@ -99,6 +99,18 @@ npm run test:update
 
 Windows 的同一测试在 GitHub Actions 的 `Windows` 工作流里运行（「Test automatic update」一步）。
 
+## 官网独立插件
+
+插件不放进安装包。`electron/recommended-plugins.json` 只保存推荐卡片的文字、下载地址和 SHA-256；启动与打开插件页都不下载。用户点击推荐卡片的「下载」并同意使用外部插件后，才从官网下载 ZIP，校验后显示安装权限，确认安装后仍需手动开启。
+
+```sh
+npm run website:plugins
+```
+
+这会校验 `plugins/ai-daily/`，按清单打包，生成 `website/plugins/` 的独立下载页、带版本号的 ZIP、校验文件，以及应用使用的推荐信息。网页模板在 `scripts/website-plugins.html`。修改插件时先更新插件版本、运行 `node scripts/sync-plugin-kit.mjs`，再生成下载文件；**在构建页间之前生成推荐信息，在发布页间之前上传 ZIP**，不要替换已经发布版本的 ZIP 内容，也不要删除旧版页间推荐的 ZIP。
+
+`npm run website:downloads` 也会生成插件文件。仅发布插件时，单独上传 `website/plugins/` 即可，不更新应用的 `.yml`、安装包或发布说明。插件功能从页间 0.30.0 开始提供。
+
 ## GitHub Release
 
 更新 `package.json` 与锁文件的版本，提交后创建同版本标签。通过 GitHub CLI 创建草稿 Release，上传 arm64 的 DMG、Windows 的安装程序和校验文件；检查附件后再发布。发布说明应注明最低系统版本、Apple 芯片要求、两个平台的签名状态及本次变更。

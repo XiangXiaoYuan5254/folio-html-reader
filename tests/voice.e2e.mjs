@@ -2,8 +2,7 @@
 // turned off): the listening process downloads SenseVoice the first time and writes down a
 // recorded question, and on the whiteboard the question is heard through the page's
 // microphone and goes to the teacher, a local OpenAI-compatible mock. FOLIO_APP runs an
-// installed app instead of the development build, up to the listening process: the whiteboard
-// needs a membership, and an installed app ignores FOLIO_MEMBER.
+// installed app instead of the development build.
 import { _electron as electron } from 'playwright';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -136,7 +135,6 @@ try {
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: undefined,
-      FOLIO_MEMBER: '1',
       FOLIO_USER_DATA: userData,
       FOLIO_WORKSPACE: project,
       FOLIO_NO_SPEECH_HELPER: '1',
@@ -200,13 +198,6 @@ try {
     await fs.mkdir(cache, { recursive: true });
     for (const f of modelFiles) await fs.copyFile(path.join(models, f), path.join(cache, f));
   }
-  if (process.env.FOLIO_APP) {
-    console.log('SKIP: the whiteboard part needs a membership the installed app has none of');
-    await app.close();
-    server.close();
-    process.exit(0);
-  }
-
   // A lesson, silently.
   const src = await page.locator('.document-frame').first().getAttribute('src');
   let f;

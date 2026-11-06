@@ -6,6 +6,14 @@ contextBridge.exposeInMainWorld('folio', {
     const paths = files.map((file) => webUtils.getPathForFile(file)).filter(Boolean);
     return ipcRenderer.invoke('folio:invoke', 'import-files', { paths, destination }, token);
   },
+  // A file or folder dropped on the window, where it is on this computer ('' for none).
+  pathForFile: (file) => {
+    try {
+      return webUtils.getPathForFile(file) || '';
+    } catch {
+      return '';
+    }
+  },
   subscribe: (callback) => {
     const listener = (_, event) => callback(event);
     ipcRenderer.on('folio:event', listener);

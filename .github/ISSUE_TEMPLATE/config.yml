@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 写插件 / Plugins
+    url: https://github.com/XiangXiaoYuan5254/folio-plugins
+    about: 插件的文档、模板和收录申请在 folio-plugins 仓库。

@@ -6,6 +6,7 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { buildWebsitePlugins } from './website-plugins.mjs';
 
 const { version } = JSON.parse(await fs.readFile('package.json', 'utf8'));
 const files = [
@@ -63,3 +64,4 @@ await fs.writeFile(
 console.log(`Copied ${version} to website/downloads/:\n  ${files.join('\n  ')}`);
 console.log(`Wrote release-notes.json with ${Math.min(releases.length, 30)} releases.`);
 console.log('Upload the installers first and the two .yml files last.');
+await buildWebsitePlugins();

@@ -220,6 +220,51 @@ const sum = (a: Usage | null | undefined, b: Usage | null | undefined): Usage | 
     : a || b || null;
 // “继续” on its own, after a 精读笔记 that was stopped or broke off, goes on writing it.
 const continuing = /^(继续|继续写|接着写|接着|接着来|go on|continue|keep going)[\s。.!！~～…]*$/i;
+// What a plugin run (src/plugins/runner.ts) gives the assistant: its instructions, the tools
+// it may use, its own tools (fetch_url, read_feed, a script's), and where it may write.
+export type PluginRun = {
+  title: string;
+  // Shown in place of the request, e.g. “AI 前沿日报 · 定时运行”.
+  label: string;
+  system: string;
+  request: string;
+  tools: ToolDef[];
+  web: boolean;
+  quiet: boolean;
+  // The service and model it asks with: its own choice, or chat's.
+  use: AiUse;
+  // Its conversation, as soon as there is one.
+  onThread?: (threadId: string) => void;
+  // A plugin with a folder of its own: that folder, which is also its project (as Folio's
+  // project path). Its run is a conversation in that project's 整个项目, whichever project is
+  // open, and goes on when another one opens. Without it, the run works in the open project.
+  home?: string;
+  pluginId: string;
+  extra?: ToolPolicy['extra'];
+  writable: ToolPolicy['writable'];
+  // Each tool call as it finishes, for the plugin's run log.
+  onTool?: ToolPolicy['onTool'];
+};
+export type PluginOutcome = { ok: boolean; message: string; written: string[]; threadId: string };
+type ToolPolicy = {
+  allowed: Set<string>;
+  // A tool of the plugin's own, or undefined for the app's.
+  extra?: (
+    name: string,
+    input: unknown,
+    progress: (detail: string) => void,
+  ) => PreparedTool | undefined;
+  // true when a write to `path` may go ahead (without asking), or why not.
+  writable: (path: string) => true | string;
+  written: string[];
+  onTool?: (call: {
+    name: string;
+    input: unknown;
+    ok: boolean;
+    detail: string;
+    ms: number;
+  }) => void;
+};
 // A reply's request: what build() in stream() gives.
 type Built = {
   system: string;
@@ -248,6 +293,19 @@ export class Assistant {
   // Likewise for a 全文翻译, so 接着翻 goes on with the parts left.
   private translationWork = new Map<string, TranslationWork>();
   private approvals = new Map<string, (ok: boolean) => void>();
+  // Runs that go on when another project opens: plugins working in a folder of their own.
+  private survivors = new Set<string>();
+  // Those runs' conversations, which belong to their folder's project (see runPlugin).
+  private homeRuns = new Map<
+    string,
+    {
+      home: string;
+      pluginId: string;
+      thread: ChatThread;
+      show: boolean;
+      timer?: ReturnType<typeof setTimeout>;
+    }
+  >();
   private saveTimers = new Map<Scope, ReturnType<typeof setTimeout>>();
   private loading = new Map<Scope, Promise<void>>();
   private texts = new Map<string, Promise<DocText>>();
@@ -278,7 +336,7 @@ export class Assistant {
 
   // Switching projects starts from a clean slate.
   reset() {
-    for (const c of this.controllers.values()) c.abort();
+    for (const [id, c] of this.controllers) if (!this.survivors.has(id)) c.abort();
     this.companionWork.clear();
     this.translationWork.clear();
     for (const resolve of this.approvals.values()) resolve(false);
@@ -288,7 +346,12 @@ export class Assistant {
     this.state = {
       card: null,
       histories: {},
-      running: {},
+      // A plugin working in a folder of its own goes on.
+      running: Object.fromEntries(
+        Object.keys(this.state.running)
+          .filter((id) => this.survivors.has(id))
+          .map((id) => [id, true as const]),
+      ),
       drafts: {},
       attachments: {},
       autoApply: {},
@@ -326,6 +389,8 @@ export class Assistant {
               : saved;
             return { ...s, histories: { ...s.histories, [scope]: history } };
           }, true);
+          // This may be a folder plugin's project, with its run going on.
+          if (scope === 'project') for (const id of this.homeRuns.keys()) this.mirror(id);
         })
         .catch(() =>
           this.set(
@@ -412,6 +477,7 @@ export class Assistant {
   }
   deleteThread(scope: Scope, id: string) {
     this.stop(id);
+    this.homeRuns.delete(id);
     const h = this.history(scope);
     const threads = h.threads.filter((t) => t.id !== id);
     this.putHistory(scope, { ...h, threads, active: threads[0]?.id }, true);
@@ -446,6 +512,9 @@ export class Assistant {
 
   private updateThread(scope: Scope, threadId: string, fn: (t: ChatThread) => ChatThread) {
     const h = this.history(scope);
+    // A conversation no longer here (another project opened since) is left alone, so the
+    // new project's own conversations are never written over.
+    if (!h.threads.some((t) => t.id === threadId)) return;
     const threads = h.threads.map((t) => (t.id === threadId ? fn(t) : t));
     this.set((s) => ({ ...s, histories: { ...s.histories, [scope]: { ...h, threads } } }));
     this.persist(scope);
@@ -478,6 +547,16 @@ export class Assistant {
       this.newThread(scope, mode);
       thread = this.thread(scope)!;
     }
+    return this.addTo(scope, thread.id, user, reply);
+  }
+  // Adds a question and its reply to a conversation of the scope.
+  private addTo(
+    scope: Scope,
+    threadId: string,
+    user: Partial<ChatMessage>,
+    reply: Partial<ChatMessage>,
+  ) {
+    const thread = this.history(scope).threads.find((t) => t.id === threadId)!;
     const question: ChatMessage = {
       id: newId(),
       role: 'user',
@@ -510,6 +589,14 @@ export class Assistant {
   }
   private finish(threadId: string) {
     this.controllers.delete(threadId);
+    this.survivors.delete(threadId);
+    // A folder plugin's run, last saved into its own project when that isn't the one open.
+    const home = this.homeRuns.get(threadId);
+    if (home) {
+      clearTimeout(home.timer);
+      if (this.host.root() !== home.home) void this.saveRun(home);
+      this.homeRuns.delete(threadId);
+    }
     // Finished while another conversation was open: marked until it's opened.
     for (const [scope, h] of Object.entries(this.state.histories))
       if (h?.threads.some((t) => t.id === threadId) && this.thread(scope)?.id !== threadId)
@@ -520,18 +607,24 @@ export class Assistant {
       return { ...s, running };
     }, true);
   }
-  // Settings, consent and per-project switch, checked before anything is sent.
-  async provider(use: AiUse = 'chat'): Promise<{ provider: AiProvider; config: AiConfig }> {
+  // Settings, consent and per-project switch, checked before anything is sent. `quiet` (a
+  // scheduled plugin run nobody is watching) asks nothing and fails instead.
+  async provider(
+    use: AiUse = 'chat',
+    quiet = false,
+    project = true,
+  ): Promise<{ provider: AiProvider; config: AiConfig }> {
     const config = await loadAiConfig();
     const provider = providerFor(config, use);
     if (!config || !providerReady(provider, config)) {
-      this.host.openSettings();
+      if (!quiet) this.host.openSettings();
       throw Error('请先在 AI 设置中添加服务、填写 API Key 并选择模型');
     }
     const root = this.host.root();
-    if (root && config.prefs.disabledRoots?.includes(root))
+    if (project && root && config.prefs.disabledRoots?.includes(root))
       throw Error('这个项目已停用 AI。可以在 AI 设置中重新开启');
     if (!config.prefs.consented?.includes(provider!.id)) {
+      if (quiet) throw Error(`还没同意把内容发送给 ${provider!.name}，请先手动运行一次`);
       const ok = await this.host.confirm({
         title: `把文档内容发送给 ${provider!.name}？`,
         message: `使用 AI 功能时，页间会把相关的文档文字、你的问题和批注发送给 ${provider!.name}（${provider!.model}）处理，由它按自己的隐私政策处理数据。页间不经过任何其他服务器。之后使用这个服务不再询问；可以在 AI 设置中为某个项目停用 AI。`,
@@ -2087,104 +2180,20 @@ export class Assistant {
         ...fitted.messages,
         userTurn(request || imageRequest, images, vision),
       ];
-      let usage = fitted.usage ?? { input: 0, output: 0, cached: 0 };
-      let model = '';
-      let quota: Quota | null = null;
-      for (let round = 0; round < 40; round++) {
-        if (signal.aborted) throw new DOMException('已停止', 'AbortError');
-        this.trimWire(wire, provider);
-        let partIndex = -1;
-        const result = await chat(
-          {
-            system: fitted.system,
-            messages: wire,
-            tools: agentTools,
-            web: true,
-            session: threadId,
-          },
-          {
-            signal,
-            // A search the model ran on its own: a step that is done when the search is.
-            onSearch: ({ id, title, done }) => {
-              const stepId = `${threadId}:web-${id}`;
-              const status = done ? 'done' : 'running';
-              // What it writes after the search goes below it.
-              if (!done) partIndex = -1;
-              setParts((parts) =>
-                parts.some((p) => p.type === 'step' && p.step.id === stepId)
-                  ? parts.map((p) =>
-                      p.type === 'step' && p.step.id === stepId
-                        ? { ...p, step: { ...p.step, title, status } }
-                        : p,
-                    )
-                  : [
-                      ...parts,
-                      { type: 'step', step: { id: stepId, tool: 'web_search', title, status } },
-                    ],
-              );
-            },
-            onText: (d) =>
-              setParts((parts) => {
-                if (partIndex === -1 || parts[partIndex]?.type !== 'text') {
-                  partIndex = parts.length;
-                  return [...parts, { type: 'text', text: d }];
-                }
-                return parts.map((p, i) =>
-                  i === partIndex && p.type === 'text' ? { ...p, text: p.text + d } : p,
-                );
-              }),
-            onReasoning: (d) => patch((m) => ({ ...m, reasoning: (m.reasoning || '') + d })),
-          },
-        );
-        model = `${result.provider} · ${result.model}`;
-        quota = result.quota ?? quota;
-        if (result.usage)
-          usage = {
-            input: usage.input + result.usage.input,
-            output: usage.output + result.usage.output,
-            cached: usage.cached + result.usage.cached,
-          };
-        wire.push({
-          role: 'assistant',
-          content: result.text,
-          toolCalls: result.toolCalls,
-          reasoning: result.reasoning,
-          raw: result.raw,
-        });
-        if (!result.toolCalls.length) {
-          if (result.stopReason === 'max_tokens')
-            patch((m) => ({ ...m, error: '回答达到长度上限，被截断了' }));
-          break;
-        }
-        if (result.stopReason === 'max_tokens') {
-          // A cut-off tool call has incomplete arguments; ask for a smaller step instead.
-          for (const call of result.toolCalls)
-            wire.push({
-              role: 'tool',
-              toolCallId: call.id,
-              content:
-                '输出达到长度上限，这次调用的参数不完整，没有执行。请把内容分成更小的几次调用。',
-              isError: true,
-            });
-          continue;
-        }
-        for (const call of result.toolCalls) {
-          if (signal.aborted) throw new DOMException('已停止', 'AbortError');
-          const outcome = await this.runTool(threadId, call.name, call.input, {
-            add: (step) => setParts((parts) => [...parts, { type: 'step', step }]),
-            patch: patchStep,
-          });
-          wire.push({
-            role: 'tool',
-            toolCallId: call.id,
-            content: outcome.content,
-            isError: outcome.isError,
-          });
-        }
-        if (round === 39)
-          patch((m) => ({ ...m, error: '步骤太多，已暂停。可以回复“继续”让它接着做。' }));
-      }
-      patch((m) => ({ ...m, status: 'done', model, usage, quota }));
+      const done = await this.loop({
+        threadId,
+        provider,
+        system: fitted.system,
+        wire,
+        tools: agentTools,
+        web: true,
+        signal,
+        usage: fitted.usage ?? { input: 0, output: 0, cached: 0 },
+        patch,
+        setParts,
+        patchStep,
+      });
+      patch((m) => ({ ...m, status: 'done', ...done }));
       void this.verify(scope, threadId, answerId);
     } catch (e) {
       if (isAbort(e)) patch((m) => ({ ...m, status: 'stopped' }));
@@ -2200,6 +2209,291 @@ export class Assistant {
       this.finish(threadId);
     }
   }
+
+  // A plugin run (src/plugins/runner.ts): a conversation of its own in 整个项目, so what it
+  // read and wrote can be looked at afterwards. It may only use the tools it was given, and
+  // writes only where `writable` allows, which it does without asking; everything else it
+  // tries to write is turned down.
+  async runPlugin(run: PluginRun): Promise<PluginOutcome> {
+    const threadId = newId();
+    const answerId = newId();
+    const thread: ChatThread = {
+      id: threadId,
+      mode: 'agent',
+      title: run.title.slice(0, 28),
+      createdAt: now(),
+      updatedAt: now(),
+      messages: [
+        { id: newId(), role: 'user', text: run.request, label: run.label, createdAt: now() },
+        {
+          id: answerId,
+          role: 'assistant',
+          text: '',
+          createdAt: now(),
+          status: 'streaming',
+          parts: [],
+        },
+      ],
+    };
+    let patch: (fn: (m: ChatMessage) => ChatMessage) => void;
+    if (run.home) {
+      // Its folder's project: shown there live while it's open, saved into it otherwise.
+      this.homeRuns.set(threadId, {
+        home: run.home,
+        pluginId: run.pluginId,
+        thread,
+        show: !run.quiet,
+      });
+      this.survivors.add(threadId);
+      patch = (fn) => {
+        const live = this.homeRuns.get(threadId);
+        if (!live) return;
+        live.thread = {
+          ...live.thread,
+          updatedAt: now(),
+          messages: live.thread.messages.map((m) => (m.id === answerId ? fn(m) : m)),
+        };
+        this.mirror(threadId);
+      };
+      if (this.host.root() === run.home) await this.load('project');
+      this.mirror(threadId);
+    } else {
+      // The open project's 整个项目: shown at once when asked for; a scheduled run waits in
+      // the list unless nothing's open.
+      const scope = 'project';
+      await this.load(scope);
+      const h = this.history(scope);
+      const current = this.thread(scope);
+      const show = !run.quiet || !current?.messages.length;
+      this.putHistory(
+        scope,
+        {
+          ...h,
+          active: show ? threadId : h.active,
+          threads: [thread, ...h.threads.filter((t) => t.messages.length || t.id !== current?.id)],
+        },
+        true,
+      );
+      patch = (fn) => this.patchMessage(scope, threadId, answerId, fn);
+    }
+    const signal = this.start(threadId);
+    run.onThread?.(threadId);
+    const answerOf = () =>
+      (
+        this.homeRuns.get(threadId)?.thread ||
+        this.history('project').threads.find((t) => t.id === threadId)
+      )?.messages.find((m) => m.id === answerId);
+    const setParts = (fn: (parts: MessagePart[]) => MessagePart[]) =>
+      patch((m) => ({ ...m, parts: fn(m.parts || []) }));
+    const patchStep = (id: string, fn: (s: AgentStep) => AgentStep) =>
+      setParts((parts) =>
+        parts.map((p) => (p.type === 'step' && p.step.id === id ? { ...p, step: fn(p.step) } : p)),
+      );
+    const written: string[] = [];
+    try {
+      const { provider } = await this.provider(run.use, run.quiet, !run.home);
+      const done = await this.loop({
+        threadId,
+        provider,
+        use: run.use,
+        system: run.system,
+        wire: [{ role: 'user', content: run.request }],
+        tools: run.tools,
+        web: run.web,
+        signal,
+        usage: { input: 0, output: 0, cached: 0 },
+        patch,
+        setParts,
+        patchStep,
+        policy: {
+          allowed: new Set(run.tools.map((t) => t.name)),
+          extra: run.extra,
+          writable: run.writable,
+          written,
+          onTool: run.onTool,
+        },
+      });
+      patch((m) => ({ ...m, status: 'done', ...done }));
+      const answer = answerOf();
+      const said = (answer?.parts || [])
+        .filter((p) => p.type === 'text')
+        .map((p) => (p as { text: string }).text)
+        .join('')
+        .trim();
+      return {
+        ok: !answer?.error,
+        message: answer?.error || said.slice(-200) || '已完成',
+        written,
+        threadId,
+      };
+    } catch (e) {
+      const message = isAbort(e) ? '已停止' : errorText(e);
+      if (isAbort(e)) patch((m) => ({ ...m, status: 'stopped' }));
+      else patch((m) => ({ ...m, status: 'error', error: message }));
+      setParts((parts) =>
+        parts.map((p) =>
+          p.type === 'step' && (p.step.status === 'running' || p.step.status === 'waiting')
+            ? { ...p, step: { ...p.step, status: 'skipped', detail: '已停止' } }
+            : p,
+        ),
+      );
+      return { ok: false, message, written, threadId };
+    } finally {
+      this.finish(threadId);
+    }
+  }
+  // A folder plugin's run in its project's 整个项目: there, as it goes, while that project is
+  // the one open; otherwise written into that project's conversations (electron/plugins.cjs),
+  // where it shows when the project is opened.
+  private mirror(threadId: string) {
+    const live = this.homeRuns.get(threadId);
+    if (!live) return;
+    clearTimeout(live.timer);
+    const h = this.state.histories.project;
+    if (this.host.root() !== live.home || !h) {
+      live.timer = setTimeout(() => void this.saveRun(live), 500);
+      return;
+    }
+    const there = h.threads.some((t) => t.id === threadId);
+    const current = h.threads.find((t) => t.id === h.active);
+    const threads = there
+      ? h.threads.map((t) => (t.id === threadId ? live.thread : t))
+      : [live.thread, ...h.threads.filter((t) => t.messages.length || t.id !== current?.id)];
+    const active = !there && (live.show || !current?.messages.length) ? threadId : h.active;
+    this.set((s) => ({ ...s, histories: { ...s.histories, project: { ...h, active, threads } } }));
+    this.persist('project');
+  }
+  private saveRun(live: { pluginId: string; thread: ChatThread }) {
+    const thread = {
+      ...live.thread,
+      messages: live.thread.messages.map(({ draft, ...m }) => m),
+    };
+    return invoke('plugin-run-save', { id: live.pluginId, thread }).catch(() => {});
+  }
+
+  // The model working through tools until it answers, for the project agent and plugins.
+  private async loop(o: {
+    threadId: string;
+    provider: AiProvider;
+    system: string;
+    wire: WireMessage[];
+    tools: ToolDef[];
+    web: boolean;
+    signal: AbortSignal;
+    usage: Usage;
+    patch: (fn: (m: ChatMessage) => ChatMessage) => void;
+    setParts: (fn: (parts: MessagePart[]) => MessagePart[]) => void;
+    patchStep: (id: string, fn: (s: AgentStep) => AgentStep) => void;
+    policy?: ToolPolicy;
+    use?: AiUse;
+  }) {
+    const { threadId, provider, wire, signal, patch, setParts, patchStep } = o;
+    let usage = o.usage;
+    let model = '';
+    let quota: Quota | null = null;
+    for (let round = 0; round < 40; round++) {
+      if (signal.aborted) throw new DOMException('已停止', 'AbortError');
+      this.trimWire(wire, provider);
+      let partIndex = -1;
+      const result = await chat(
+        {
+          system: o.system,
+          messages: wire,
+          tools: o.tools,
+          web: o.web,
+          session: threadId,
+          ...(o.use ? { use: o.use } : {}),
+        },
+        {
+          signal,
+          // A search the model ran on its own: a step that is done when the search is.
+          onSearch: ({ id, title, done }) => {
+            const stepId = `${threadId}:web-${id}`;
+            const status = done ? 'done' : 'running';
+            // What it writes after the search goes below it.
+            if (!done) partIndex = -1;
+            setParts((parts) =>
+              parts.some((p) => p.type === 'step' && p.step.id === stepId)
+                ? parts.map((p) =>
+                    p.type === 'step' && p.step.id === stepId
+                      ? { ...p, step: { ...p.step, title, status } }
+                      : p,
+                  )
+                : [
+                    ...parts,
+                    { type: 'step', step: { id: stepId, tool: 'web_search', title, status } },
+                  ],
+            );
+          },
+          onText: (d) =>
+            setParts((parts) => {
+              if (partIndex === -1 || parts[partIndex]?.type !== 'text') {
+                partIndex = parts.length;
+                return [...parts, { type: 'text', text: d }];
+              }
+              return parts.map((p, i) =>
+                i === partIndex && p.type === 'text' ? { ...p, text: p.text + d } : p,
+              );
+            }),
+          onReasoning: (d) => patch((m) => ({ ...m, reasoning: (m.reasoning || '') + d })),
+        },
+      );
+      model = `${result.provider} · ${result.model}`;
+      quota = result.quota ?? quota;
+      if (result.usage)
+        usage = {
+          input: usage.input + result.usage.input,
+          output: usage.output + result.usage.output,
+          cached: usage.cached + result.usage.cached,
+        };
+      wire.push({
+        role: 'assistant',
+        content: result.text,
+        toolCalls: result.toolCalls,
+        reasoning: result.reasoning,
+        raw: result.raw,
+      });
+      if (!result.toolCalls.length) {
+        if (result.stopReason === 'max_tokens')
+          patch((m) => ({ ...m, error: '回答达到长度上限，被截断了' }));
+        break;
+      }
+      if (result.stopReason === 'max_tokens') {
+        // A cut-off tool call has incomplete arguments; ask for a smaller step instead.
+        for (const call of result.toolCalls)
+          wire.push({
+            role: 'tool',
+            toolCallId: call.id,
+            content:
+              '输出达到长度上限，这次调用的参数不完整，没有执行。请把内容分成更小的几次调用。',
+            isError: true,
+          });
+        continue;
+      }
+      for (const call of result.toolCalls) {
+        if (signal.aborted) throw new DOMException('已停止', 'AbortError');
+        const outcome = await this.runTool(
+          threadId,
+          call.name,
+          call.input,
+          {
+            add: (step) => setParts((parts) => [...parts, { type: 'step', step }]),
+            patch: patchStep,
+          },
+          o.policy,
+        );
+        wire.push({
+          role: 'tool',
+          toolCallId: call.id,
+          content: outcome.content,
+          isError: outcome.isError,
+        });
+      }
+      if (round === 39)
+        patch((m) => ({ ...m, error: '步骤太多，已暂停。可以回复“继续”让它接着做。' }));
+    }
+    return { model, usage, quota };
+  }
   private async runTool(
     threadId: string,
     name: string,
@@ -2208,17 +2502,60 @@ export class Assistant {
       add: (step: AgentStep) => void;
       patch: (id: string, fn: (s: AgentStep) => AgentStep) => void;
     },
+    policy?: ToolPolicy,
+  ) {
+    const started = Date.now();
+    const outcome = await this.callTool(threadId, name, input, ui, policy);
+    policy?.onTool?.({
+      name,
+      input,
+      ok: !outcome.isError,
+      detail: ('detail' in outcome && outcome.detail) || outcome.content.slice(0, 200),
+      ms: Date.now() - started,
+    });
+    return outcome;
+  }
+  private async callTool(
+    threadId: string,
+    name: string,
+    input: unknown,
+    ui: {
+      add: (step: AgentStep) => void;
+      patch: (id: string, fn: (s: AgentStep) => AgentStep) => void;
+    },
+    policy?: ToolPolicy,
   ) {
     const stepId = `${threadId}:${newId()}`;
-    const tool: PreparedTool & { prepare?: () => Promise<void> } = prepareTool(name, input, {
-      host: this.host,
-      text: (path) => this.text(path),
-      progress: (detail) => ui.patch(stepId, (s) => ({ ...s, detail })),
-    });
+    const progress = (detail: string) => ui.patch(stepId, (s) => ({ ...s, detail }));
+    // A plugin may only call the tools it was given, even when the model names another.
+    if (policy && !policy.allowed.has(name)) {
+      ui.add({
+        id: stepId,
+        tool: name,
+        title: `调用 ${name}`,
+        status: 'error',
+        detail: '这个插件不能用这个工具',
+      });
+      return { content: `没有名为 ${name} 的工具。`, isError: true };
+    }
+    const tool: PreparedTool & { prepare?: () => Promise<void> } =
+      policy?.extra?.(name, input, progress) ||
+      prepareTool(name, input, {
+        host: this.host,
+        text: (path) => this.text(path),
+        progress,
+      });
     ui.add({ id: stepId, tool: name, title: tool.title, status: 'running' });
     try {
       await tool.prepare?.();
-      if (writeTools.has(name) && tool.preview) {
+      if (policy && writeTools.has(name) && tool.preview) {
+        const verdict = policy.writable(tool.preview.path);
+        if (verdict !== true) {
+          ui.patch(stepId, (s) => ({ ...s, status: 'skipped', detail: '不在插件能写的文件夹里' }));
+          return { content: verdict, isError: true };
+        }
+        ui.patch(stepId, (s) => ({ ...s, title: tool.title, preview: tool.preview }));
+      } else if (writeTools.has(name) && tool.preview) {
         ui.patch(stepId, (s) => ({
           ...s,
           title: tool.title,
@@ -2244,7 +2581,10 @@ export class Assistant {
         status: outcome.isError ? 'error' : 'done',
         detail: outcome.detail || (outcome.isError ? outcome.content.slice(0, 120) : s.detail),
       }));
-      if (writeTools.has(name) && !outcome.isError) this.forgetText();
+      if (writeTools.has(name) && !outcome.isError) {
+        this.forgetText();
+        if (tool.preview) policy?.written.push(tool.preview.path);
+      }
       return outcome;
     } catch (e) {
       const message = errorText(e);

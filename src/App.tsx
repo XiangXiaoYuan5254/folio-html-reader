@@ -20,7 +20,6 @@ import {
   Lightbulb,
   MessageCircleQuestion,
   Presentation,
-  Crown,
   ArrowUpToLine,
   ArrowLeftRight,
 } from 'lucide-react';
@@ -82,9 +81,9 @@ import { RegionCapture } from './components/RegionCapture';
 import { AiSourceEdit } from './components/AiSourceEdit';
 import { SelectionToolbar } from './components/SelectionToolbar';
 import { ThemePicker } from './components/ThemePicker';
-import { MembershipDialog, MemberLock } from './components/MembershipDialog';
-import { memberNow, renewLicense, useLicense } from './license';
-import { setThemesUnlocked } from './theme';
+import { checkSchedule, runningThread, runPluginNow } from './plugins/runner';
+import type { PluginHost } from './plugins/runner';
+import { currentPlugins } from './plugins/store';
 import { freeName } from './names';
 import { Exit, objectKey, prefersReducedMotion } from './motion';
 import type { ScreenBox, ToolbarSide } from './components/SelectionToolbar';
@@ -358,21 +357,6 @@ export default function App() {
     setAiSettingsOpen(true);
   }
   const [themePickerOpen, setThemePickerOpen] = useState(false);
-  // The membership dialog, with what was asked for when a member feature opened it.
-  const [membership, setMembership] = useState<{ reason: string } | null>(null);
-  const license = useLicense();
-  useEffect(() => {
-    const open = (e: Event) => setMembership({ reason: (e as CustomEvent<string>).detail || '' });
-    window.addEventListener('folio-membership', open);
-    return () => window.removeEventListener('folio-membership', open);
-  }, []);
-  useEffect(() => {
-    if (license) setThemesUnlocked(license.member);
-  }, [license?.member]);
-  // Opening the dialog is a good moment to hear about a refund or a move from the server.
-  useEffect(() => {
-    if (membership && license && license.state !== 'none') void renewLicense().catch(() => {});
-  }, [membership]);
   const [assistantMode, setAssistantMode] = useState<AssistantMode>(() => {
     try {
       return localStorage.getItem('folio.assistant-mode') === 'project' ? 'project' : 'doc';
@@ -403,6 +387,88 @@ export default function App() {
       ),
   );
   const aiCard = useAssistantCard(assistant);
+  // Plugins run through the assistant, in the open project (src/plugins/runner.ts).
+  const [pluginHost] = useState<PluginHost>(() => ({
+    assistant,
+    root: () => hostImpl.current?.root(),
+    projectName: () => hostImpl.current?.projectName() || '',
+    notify: (text, error, action) => notifyRef.current(text, error, action),
+    open: (path) => hostImpl.current.open(path),
+    show: (threadId, home) => pluginViews.current.show(threadId, home),
+    openIn: (home, file) => pluginViews.current.openIn(home, file),
+  }));
+  const notifyRef = useRef(notify);
+  notifyRef.current = notify;
+  // A plugin with a folder of its own: the folder is its project, holding its reports and
+  // the record of each run. Seeing either opens that project.
+  function openHome(home: string) {
+    return new Promise<void>((resolve) => {
+      if (hostImpl.current?.root() === home) return resolve();
+      guardDirty(model.docs, async () => {
+        await loadWorkspace(await invoke<WorkspaceInfo>('open-recent-workspace', { root: home }));
+        resolve();
+      });
+    });
+  }
+  // A plugin's conversation in 整个项目, where its steps come in as it runs.
+  const pluginViews = useRef({
+    show: (_threadId: string, _home?: string) => {},
+    openIn: (_home: string, _file: string) => {},
+  });
+  pluginViews.current = {
+    show: (threadId, home) =>
+      run(async () => {
+        setSettingsRequest(null);
+        if (home) await openHome(home);
+        setAssistantMode('project');
+        openAssistant();
+        await assistant.load('project');
+        assistant.selectThread('project', threadId);
+      }),
+    openIn: (home, file) =>
+      run(async () => {
+        setSettingsRequest(null);
+        await openHome(home);
+        const id = await model.open(file);
+        model.setActive(id);
+        setMode('read');
+      }),
+  };
+  // A plugin asked for now. One working in the open project shows its conversation there as
+  // it works; one with a folder of its own runs in its folder's project, shown here when
+  // that's the project open and otherwise on asking (查看进度). Asked for again while it
+  // runs, its conversation is shown.
+  function runPlugin(id: string) {
+    const working = runningThread(id);
+    if (working !== undefined) {
+      if (working.threadId) pluginViews.current.show(working.threadId, working.home);
+      return;
+    }
+    const plugin = currentPlugins()?.plugins.find((p) => p.id === id);
+    const button = plugin?.manifest?.triggers.find((t) => t.type === 'button');
+    const elsewhere =
+      plugin?.manifest?.run.where === 'folder' && plugin.folder?.real !== workspace?.root;
+    if (!elsewhere) {
+      setSettingsRequest(null);
+      setAssistantMode('project');
+      openAssistant();
+    }
+    void runPluginNow(pluginHost, id, {
+      quiet: false,
+      label: button?.type === 'button' ? button.label : '手动运行',
+    });
+  }
+  // Scheduled plugins: looked at every minute, and a little after a project opens.
+  useEffect(() => {
+    if (!isDesktop) return;
+    const timer = setInterval(() => void checkSchedule(pluginHost), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    if (!isDesktop || !workspace?.root) return;
+    const timer = setTimeout(() => void checkSchedule(pluginHost), 6_000);
+    return () => clearTimeout(timer);
+  }, [workspace?.root]);
   // The whiteboard teacher explaining a selection.
   const [lesson, setLesson] = useState<{ tutor: Tutor; selection: string } | null>(null);
   // The board put away for a while, to read on while the teacher thinks; the way back to it
@@ -620,7 +686,6 @@ export default function App() {
         if (e.type === 'ai-settings') openAiSettings();
         if (e.type === 'settings') openSettings();
         if (e.type === 'theme-picker') setThemePickerOpen(true);
-        if (e.type === 'membership') setMembership({ reason: '' });
         if (e.type === 'open-file' && sessionReady.current) liveActions.current.openFiles();
         if (e.type === 'toggle-focus') liveActions.current.focus();
         if (e.type === 'update') setUpdate(e.update);
@@ -895,6 +960,9 @@ export default function App() {
     setSplit(null);
     setReaderStates({});
     useWorkspace(w);
+    // Plugin progress can load while documents reopen. Its host must already point at
+    // this project, otherwise the live run is omitted and an older run is shown.
+    flushSync(() => setWorkspace(w));
     setMode('read');
     const paths = w.session
       ? restorablePaths(w.session)
@@ -1151,7 +1219,6 @@ export default function App() {
   }
   function openAiCard(cardMode: 'explain' | 'translate' | 'ask') {
     if (!doc || !selection) return;
-    if (!memberNow(cardMode === 'translate' ? 'AI 翻译' : 'AI 解释与提问')) return;
     assistant.openCard(cardMode, { docId: doc.id, path: doc.path, anchor: selection });
   }
   // The selected text, a picture of a framed region of the page, or a blank board for any
@@ -1162,7 +1229,6 @@ export default function App() {
     const path = from.blank ? undefined : from.path || doc?.path;
     const text = from.picture || from.blank ? '' : selection?.exact || '';
     if (!from.picture && !from.blank && !text) return;
-    if (!memberNow('白板讲解')) return;
     lessonRef.current?.tutor.dispose();
     const tutor = new Tutor({
       selection: text,
@@ -1679,7 +1745,9 @@ export default function App() {
       return { saved: true };
     },
     async createHtml(path, content) {
-      setWorkspace(await invoke<WorkspaceInfo>('create', { path, kind: 'file', content }));
+      setWorkspace(
+        await invoke<WorkspaceInfo>('create', { path, kind: 'file', content, parents: true }),
+      );
     },
     async writeHtml(path, content) {
       const open = model.docsRef.current.find((d) => d.path === path);
@@ -1812,36 +1880,6 @@ export default function App() {
           }
           status={
             <ReadingStatus
-              membership={
-                isDesktop && license ? (
-                  <button
-                    type="button"
-                    className={`member-chip is-${license.state}`}
-                    title={
-                      license.member && license.forever
-                        ? '永久会员'
-                        : license.member && license.expires
-                          ? `会员到 ${new Date(license.expires).toLocaleString('zh-CN', { hour12: false })}`
-                          : 'PDF 阅读、AI 功能和界面主题需要会员'
-                    }
-                    onClick={() => setMembership({ reason: '' })}
-                  >
-                    {license.state === 'paid' ? <Crown size={16} /> : null}
-                    <span>
-                      {
-                        {
-                          paid: license.forever ? '永久会员' : '会员',
-                          trial: '试用中',
-                          offline: '会员待验证',
-                          clock: '会员待验证',
-                          expired: '会员已到期',
-                          none: '开通会员',
-                        }[license.state]
-                      }
-                    </span>
-                  </button>
-                ) : null
-              }
               updateNotice={
                 updateHidden && (update.status === 'ready' || update.status === 'manual') ? (
                   <button
@@ -2138,13 +2176,7 @@ export default function App() {
                       </span>
                     </div>
                   ) : null}
-                  {paneDoc?.kind === 'pdf' && isDesktop && !license?.member ? (
-                    license ? (
-                      <MemberLock />
-                    ) : (
-                      <div className="reading-column-empty" />
-                    )
-                  ) : paneDoc ? (
+                  {paneDoc ? (
                     <DocumentReader
                       key={paneDoc.id}
                       live={mode === 'source'}
@@ -2431,6 +2463,9 @@ export default function App() {
                   })
                 }
                 hasFiles={files.length > 0}
+                onRunPlugin={runPlugin}
+                onOpenPlugins={() => openSettings('plugins')}
+                root={workspace?.root}
               />
             ) : (
               <div className="inspector-empty">
@@ -2600,15 +2635,17 @@ export default function App() {
             }}
             onNotify={notify}
             onBoardDeleted={boardDeleted}
-          />
-        )}
-      </Exit>
-      <Exit when={membership}>
-        {(membership) => (
-          <MembershipDialog
-            reason={membership.reason}
-            onClose={() => setMembership(null)}
-            onNotify={notify}
+            onRunPlugin={runPlugin}
+            onOpenPluginFolder={(id) =>
+              run(async () => {
+                const { path } = await invoke<{ path: string }>('plugin-folder', {
+                  id,
+                  action: 'ensure',
+                });
+                setSettingsRequest(null);
+                await openHome(path);
+              })
+            }
           />
         )}
       </Exit>

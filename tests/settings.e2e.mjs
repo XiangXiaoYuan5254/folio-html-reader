@@ -42,28 +42,19 @@ const server = http.createServer(async (req, res) => {
       }),
     );
   }
-  res.end(
-    JSON.stringify({
-      ready: true,
-      plans: [
-        { plan: 'month', days: 30, amount: 1990 },
-        { plan: 'year', days: 365, amount: 9900 },
-        { plan: 'life', days: 0, amount: 19800 },
-      ],
-    }),
-  );
+  res.end('{}');
 });
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 let app, page;
 const errors = [];
-async function start(member = true) {
+// `fresh`: a first launch, with nothing saved yet.
+async function start(fresh = false) {
   app = await electron.launch({
     args: [root],
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: undefined,
-      FOLIO_MEMBER: member ? '1' : undefined,
-      FOLIO_USER_DATA: path.join(temp, member ? 'user-data' : 'free-data'),
+      FOLIO_USER_DATA: path.join(temp, fresh ? 'fresh-data' : 'user-data'),
       FOLIO_WORKSPACE: project,
       FOLIO_LICENSE_SERVER: `http://127.0.0.1:${server.address().port}`,
     },
@@ -220,14 +211,12 @@ try {
   await dialog()
     .getByRole('radio', { name: /^静音讲解/ })
     .click();
-  await nav().getByRole('button', { name: '会员', exact: true }).click();
-  await dialog().locator('.membership-status').waitFor();
+  assert.equal(await nav().getByRole('button', { name: '会员', exact: true }).count(), 0);
   assert.equal(
     await page.getByRole('dialog').count(),
     1,
     'embedded pages do not create nested dialogs',
   );
-  await page.screenshot({ path: path.join(evidence, 'settings-membership.png') });
   await nav().getByRole('button', { name: '关于', exact: true }).click();
   await dialog().getByText('常用快捷键', { exact: true }).waitFor();
   assert.equal(await dialog().locator('.announcements-page').count(), 0);
@@ -284,16 +273,7 @@ try {
   await legacyAi().locator('.announcement-dot').waitFor({ state: 'detached' });
   await gearDot().waitFor({ state: 'detached' });
   await closeLegacyAi();
-  // macOS has a membership menu; Windows uses the workspace's membership button.
-  if (process.platform === 'darwin') await menu('会员与激活…');
-  else {
-    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1536, 1024));
-    await page.locator('.member-chip').click();
-  }
-  const member = page.getByRole('dialog', { name: '页间会员' });
-  await member.waitFor();
-  await member.getByRole('button', { name: '关闭', exact: true }).click();
-  await member.waitFor({ state: 'hidden' });
+  assert.equal(await page.locator('.member-chip').count(), 0, 'no membership button');
   await app.close();
   // Settings persist through a real restart, with no migration of the existing storage keys.
   await start();
@@ -339,30 +319,17 @@ try {
     'cloud:edge:zh-CN-YunxiNeural',
   );
   await app.close();
-  await start(false);
+  // A first launch: every theme is there to pick, with nothing to unlock.
+  await start(true);
   await menu('设置…');
   await dialog()
     .getByRole('button', { name: /^夜读：/ })
     .click();
-  await dialog().getByRole('heading', { name: '会员', exact: true }).waitFor();
-  await dialog().getByRole('heading', { name: '页间会员', exact: true }).waitFor();
-  assert.equal(
-    await page.getByRole('dialog').count(),
-    1,
-    'locked themes open the membership category',
-  );
-  await dialog().getByRole('button', { name: '有激活码？' }).click();
-  await dialog().getByRole('textbox', { name: '激活码' }).fill('DEMO-CODE-NOT-SUBMITTED');
-  await nav().getByRole('button', { name: '外观与阅读' }).click();
-  await nav().getByRole('button', { name: '会员', exact: true }).click();
-  assert.equal(
-    await dialog().getByRole('textbox', { name: '激活码' }).inputValue(),
-    'DEMO-CODE-NOT-SUBMITTED',
-  );
-  await dialog().getByRole('textbox', { name: '激活码' }).fill('');
-  await page.screenshot({ path: path.join(evidence, 'settings-membership-free.png') });
+  await page.waitForFunction(() => document.documentElement.dataset.theme === 'night');
+  assert.equal(await page.getByRole('dialog').count(), 1, 'picking a theme opens nothing else');
+  assert.equal(await dialog().locator('.theme-card-pro').count(), 0, 'no theme is marked Pro');
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(980, 680));
-  await page.screenshot({ path: path.join(evidence, 'settings-membership-narrow.png') });
+  await page.screenshot({ path: path.join(evidence, 'settings-narrow.png') });
   assert.ok(await dialog().evaluate((el) => el.scrollWidth <= el.clientWidth + 1));
   assert.deepEqual(errors, []);
   console.log(

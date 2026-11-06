@@ -18,6 +18,9 @@ const speechServices = require('./cloud-voice.cjs');
 const efforts = ['', 'off', 'on', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 // Parts of the app that can have their own model; chat is the active service itself.
 const uses = ['explain', 'translate', 'board', 'edit'];
+// Each plugin can have its own service and model too (electron/plugins.cjs ids).
+const isUse = (use) =>
+  uses.includes(use) || (typeof use === 'string' && /^plugin:[a-z0-9][a-z0-9-]{1,39}$/.test(use));
 const clean = (value, max = 300) => (typeof value === 'string' ? value.trim().slice(0, max) : '');
 function number(value, min, max) {
   const n = Math.round(Number(value));
@@ -75,7 +78,7 @@ function createAi({
   }
   // A part's own choice, while its service is still there.
   function choiceFor(c, use) {
-    const choice = uses.includes(use) ? c.uses[use] : null;
+    const choice = isUse(use) ? c.uses[use] : null;
     return choice && c.providers.some((p) => p.id === choice.provider) ? choice : null;
   }
   async function config() {
@@ -84,7 +87,9 @@ function createAi({
       providers: c.providers.map(view),
       active: c.providers.some((p) => p.id === c.active) ? c.active : c.providers[0]?.id || '',
       uses: Object.fromEntries(
-        uses.filter((use) => choiceFor(c, use)).map((use) => [use, c.uses[use]]),
+        Object.keys(c.uses)
+          .filter((use) => choiceFor(c, use))
+          .map((use) => [use, c.uses[use]]),
       ),
       prefs: c.prefs,
       presets,
@@ -264,7 +269,7 @@ function createAi({
   // chat's again.
   async function setUse({ use, provider, model, effort, follow }) {
     const c = await read();
-    if (!uses.includes(use)) throw new AiError('无效的功能');
+    if (!isUse(use)) throw new AiError('无效的功能');
     const next = { ...c.uses };
     if (follow) delete next[use];
     else {
