@@ -2,18 +2,6 @@
   "version": 1,
   "plugins": [
     {
-      "id": "ai-daily",
-      "name": "AI 前沿日报",
-      "author": "页间",
-      "description": "每天收集 AI 领域的新论文、新模型、开源项目和行业动态，整理成一篇 HTML 日报。",
-      "repo": "https://github.com/XiangXiaoYuan5254/folio-plugins/tree/main/examples/ai-daily",
-      "tags": [
-        "日报",
-        "AI",
-        "示例"
-      ]
-    },
-    {
       "id": "hn-digest",
       "name": "Hacker News 摘要",
       "author": "页间",
