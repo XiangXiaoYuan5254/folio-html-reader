@@ -23,6 +23,11 @@ await fs.copyFile(
 let published = Date.now();
 let announcementGate = null;
 const server = http.createServer(async (req, res) => {
+  // The group's QR code, as the website serves it (any JPEG will do).
+  if (req.url.startsWith('/qr.jpg')) {
+    res.writeHead(200, { 'Content-Type': 'image/jpeg' });
+    return res.end(await fs.readFile(path.join(root, 'website/community/qr.jpg')));
+  }
   res.writeHead(200, { 'Content-Type': 'application/json' });
   if (req.url.endsWith('/announcements')) {
     if (announcementGate) await announcementGate;
@@ -57,6 +62,7 @@ async function start(fresh = false) {
       FOLIO_USER_DATA: path.join(temp, fresh ? 'fresh-data' : 'user-data'),
       FOLIO_WORKSPACE: project,
       FOLIO_LICENSE_SERVER: `http://127.0.0.1:${server.address().port}`,
+      FOLIO_COMMUNITY_QR: `http://127.0.0.1:${server.address().port}/qr.jpg`,
     },
   });
   page = await app.firstWindow();
@@ -101,7 +107,7 @@ try {
   await gearDot().waitFor();
   await page.getByRole('button', { name: '设置', exact: true }).click();
   await dialog().getByRole('heading', { name: '外观与阅读', exact: true }).waitFor();
-  assert.equal(await nav().getByRole('button').count(), 7);
+  assert.equal(await nav().getByRole('button').count(), 8);
   await announcementDot().waitFor();
   await page.screenshot({ path: path.join(evidence, 'settings-overview.png') });
   await dialog().getByLabel('划词工具条位置', { exact: true }).selectOption('above');
@@ -217,8 +223,16 @@ try {
     1,
     'embedded pages do not create nested dialogs',
   );
+  // 用户交流群: the QR code itself, read from the website, not a link out.
+  await nav().getByRole('button', { name: '用户交流群', exact: true }).click();
+  const qr = dialog().getByRole('img', { name: '页间用户交流群的微信二维码' });
+  await qr.waitFor();
+  assert.match(await qr.getAttribute('src'), /^data:image\/jpeg;base64,/);
+  assert.ok(await qr.evaluate((img) => img.complete && img.naturalWidth > 0));
+  await page.screenshot({ path: path.join(evidence, 'settings-community.png') });
   await nav().getByRole('button', { name: '关于', exact: true }).click();
   await dialog().getByText('常用快捷键', { exact: true }).waitFor();
+  assert.equal(await dialog().locator('.settings-about').getByText('交流群').count(), 0);
   assert.equal(await dialog().locator('.announcements-page').count(), 0);
   await announcementDot().waitFor();
   await gearDot().waitFor();

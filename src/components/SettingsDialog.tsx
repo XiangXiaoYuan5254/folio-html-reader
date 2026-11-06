@@ -2,18 +2,18 @@ import { useEffect, useRef, useState } from 'react';
 import {
   AudioLines,
   BookOpen,
-  ExternalLink,
   HardDrive,
   Info,
   LoaderCircle,
   Megaphone,
+  MessagesSquare,
   Palette,
   Puzzle,
   Settings,
   Sparkles,
   X,
 } from 'lucide-react';
-import { invoke, isDesktop } from '../api';
+import { isDesktop } from '../api';
 import { useUnreadAnnouncements } from '../announcements';
 import { useAiConfig } from '../ai/client';
 import { useSpeechSupport, useVoiceSettings } from '../ai/voice';
@@ -22,6 +22,7 @@ import type { UpdateState } from '../types';
 import type { ToolbarSide } from './SelectionToolbar';
 import { AiSettings, SpeechVoices } from './AiSettings';
 import { Announcements } from './Announcements';
+import { CommunitySettings } from './CommunitySettings';
 import { VoiceButton } from './BoardVoice';
 import { PluginSettings } from './PluginSettings';
 import { ThemePicker } from './ThemePicker';
@@ -31,16 +32,11 @@ import '../whiteboard.css';
 import '../settings.css';
 
 export type SettingsPage =
-  'appearance' | 'ai' | 'plugins' | 'voices' | 'storage' | 'announcements' | 'about';
+  'appearance' | 'ai' | 'plugins' | 'voices' | 'storage' | 'announcements' | 'community' | 'about';
 const pages = [
   { id: 'appearance', name: '外观与阅读', icon: Palette, detail: '让页间更适合你的阅读习惯。' },
   { id: 'ai', name: 'AI', icon: Sparkles, detail: '连接自己的服务，为不同功能选择合适的模型。' },
-  {
-    id: 'plugins',
-    name: '插件',
-    icon: Puzzle,
-    detail: '让 AI 按插件的说明定时或一键干活，比如每天整理一份 AI 前沿日报。',
-  },
+  { id: 'plugins', name: '插件', icon: Puzzle, detail: '让 AI 定时或一键替你干活。' },
   {
     id: 'voices',
     name: '语音',
@@ -59,7 +55,13 @@ const pages = [
     icon: Megaphone,
     detail: '查看 AI 服务的免费额度与优惠活动。',
   },
-  { id: 'about', name: '关于', icon: Info, detail: '版本信息、更新、用户交流与常用快捷键。' },
+  {
+    id: 'community',
+    name: '用户交流群',
+    icon: MessagesSquare,
+    detail: '和其他读者交流用法、反馈问题。',
+  },
+  { id: 'about', name: '关于', icon: Info, detail: '版本、更新与常用快捷键。' },
 ] as const;
 
 export function SettingsDialog(p: {
@@ -321,6 +323,13 @@ export function SettingsDialog(p: {
           </section>
           <section
             className="settings-page settings-scroll"
+            hidden={page !== 'community'}
+            aria-label="用户交流群"
+          >
+            {visited.has('community') ? <CommunitySettings /> : null}
+          </section>
+          <section
+            className="settings-page settings-scroll"
             hidden={page !== 'about'}
             aria-label="关于页间"
           >
@@ -429,23 +438,6 @@ function AboutSettings(p: {
           查看 {p.update.version} 更新
         </button>
       ) : null}
-      <div className="settings-row">
-        <span>
-          <strong>用户交流群</strong>
-          <small>交流用法、反馈问题，分享你的阅读体验。</small>
-        </span>
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={() =>
-            void invoke('external', { url: 'https://helloxxy.com/works/folio/community/' }).catch(
-              (error) => setResult(error instanceof Error ? error.message : '暂时无法打开交流群页面'),
-            )
-          }
-        >
-          加入交流群 <ExternalLink size={13} />
-        </button>
-      </div>
       <section className="settings-group">
         <h4>常用快捷键</h4>
         <dl className="settings-shortcuts">

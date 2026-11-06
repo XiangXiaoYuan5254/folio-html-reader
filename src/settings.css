@@ -1,5 +1,8 @@
 /* One settings window, with the existing controls shared by their original entry points. */
 .settings-dialog {
+  /* Secondary text in settings is read, not glanced at: a step darker than elsewhere. */
+  --muted: var(--text-3);
+  --faint: var(--text-4);
   display: flex;
   width: min(1020px, calc(100vw - 48px));
   height: min(740px, calc(100vh - 64px));
@@ -845,6 +848,7 @@
 }
 .plugin-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
 }
 .plugin-card,
@@ -866,7 +870,7 @@
   align-items: center;
   gap: 12px;
 }
-.plugin-head > div {
+.plugin-title {
   flex: 1;
   min-width: 0;
 }
@@ -901,8 +905,8 @@
   cursor: not-allowed;
 }
 .plugin-icon {
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   flex-shrink: 0;
   border-radius: 9px;
 }
@@ -961,9 +965,11 @@
   color: var(--text-3);
 }
 .plugin-permissions summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   cursor: pointer;
   color: var(--muted);
-  width: fit-content;
 }
 .plugin-permissions ul {
   margin: 6px 0 0;
@@ -979,7 +985,7 @@
 }
 .plugin-body {
   display: grid;
-  gap: 10px;
+  gap: 14px;
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid var(--line-soft);
@@ -996,7 +1002,8 @@
   gap: 5px;
 }
 .plugin-field small {
-  font-size: 11.5px;
+  font-size: 12px;
+  line-height: 1.6;
   color: var(--muted);
 }
 .plugin-field textarea {
@@ -1061,11 +1068,6 @@ small.plugin-schedule {
   display: block;
   line-height: 1.7;
 }
-.plugin-destination {
-  margin: 0;
-  font-size: 12px;
-  color: var(--text-3);
-}
 .plugin-schedule,
 .plugin-last {
   display: flex;
@@ -1103,12 +1105,22 @@ small.plugin-schedule {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.plugin-title .plugin-summary {
+  margin-top: 3px;
+}
+.plugin-summary.open {
+  white-space: normal;
+  line-height: 1.65;
+}
+.plugin-details {
+  margin-top: 4px;
+}
 .plugin-more {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 4px;
-  margin-left: auto;
-  padding: 6px 8px;
+  padding: 5px 8px;
   border-radius: 5px;
   font-size: 12.5px;
   color: var(--muted);
@@ -1123,12 +1135,54 @@ small.plugin-schedule {
 .plugin-more[aria-expanded='true'] svg {
   transform: rotate(180deg);
 }
-/* Installing from this computer: a folder being written, or a .zip, picked or dropped. */
-.plugin-third-party {
+/* Official plugins not installed yet: one list, the real icon, an install button. */
+.plugin-catalog {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.plugin-catalog li {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+}
+.plugin-catalog li + li {
+  border-top: 1px solid var(--line-soft);
+}
+.plugin-catalog li > div {
+  flex: 1;
+  min-width: 0;
+}
+.plugin-catalog strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.plugin-catalog p {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--text-3);
+}
+.plugin-catalog .secondary-button {
+  flex-shrink: 0;
+  min-width: 64px;
+  padding: 6px 14px;
+  font-size: 12.5px;
+}
+/* Community plugins; one can be dropped in from this computer, a folder or a .zip. */
+.plugin-community {
   border-radius: 10px;
   transition: background var(--dur-fast) var(--ease-out);
 }
-.plugin-third-party.dragging {
+.plugin-community > .settings-row {
+  padding-top: 0;
+}
+.plugin-community.dragging {
   outline: 2px dashed var(--accent-line-strong);
   outline-offset: 4px;
   background: var(--accent-soft);
@@ -1145,9 +1199,7 @@ small.plugin-schedule {
   font-size: 12.5px;
 }
 .plugin-local small {
-  flex-basis: 100%;
-  font-size: 11.5px;
-  line-height: 1.6;
+  font-size: 12px;
   color: var(--muted);
 }
 .plugin-badge.dev {
@@ -1253,9 +1305,9 @@ small.plugin-schedule {
   padding: 4px 10px;
   font-size: 12px;
 }
-/* The directory of third-party plugins. */
+/* The directory of community plugins. */
 .plugin-directory {
-  margin-top: 14px;
+  margin-top: 16px;
   font-size: 12.5px;
 }
 .plugin-directory > summary {
@@ -1390,4 +1442,68 @@ small.plugin-schedule {
   font-family: ui-monospace, Menlo, monospace;
   font-size: 11.5px;
   color: var(--muted);
+}
+/* 设置 › 用户交流群: the group's QR code, read from the website. */
+.settings-community {
+  display: flex;
+  align-items: center;
+  gap: 40px;
+  padding: 6px 4px;
+}
+.community-code {
+  flex: none;
+  width: 240px;
+}
+.community-code img {
+  display: block;
+  width: 100%;
+  border-radius: 14px;
+  box-shadow:
+    0 1px 2px rgb(var(--shadow-rgb) / calc(0.08 * var(--shadow-k))),
+    0 10px 30px rgb(var(--shadow-rgb) / calc(0.12 * var(--shadow-k)));
+}
+.community-code-empty {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 12px;
+  aspect-ratio: 1166 / 1643;
+  padding: 24px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 14px;
+  background: var(--surface-2);
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-3);
+}
+.community-code-empty .secondary-button {
+  padding: 6px 12px;
+  font-size: 12.5px;
+}
+.community-text h4 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.community-text p {
+  max-width: 24em;
+  margin: 0 0 18px;
+  font-size: 13px;
+  line-height: 1.75;
+  color: var(--text-2);
+}
+.community-text .settings-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12.5px;
+}
+@media (max-width: 620px) {
+  .settings-community {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 24px;
+  }
 }

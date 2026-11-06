@@ -7,6 +7,8 @@
     "description": "每天收集 AI 领域的新论文、新模型、开源项目和行业动态，挑出最值得看的，整理成一篇 HTML 日报，放进它自己的文件夹。",
     "requires": ">=0.30.0",
     "url": "https://helloxxy.com/works/folio/plugins/ai-daily-1.1.0.zip",
-    "sha256": "5b21c67f22581a13cdbeaeaf55ad3e093c8a808c068545e5ef034ea713f783de"
+    "sha256": "5b21c67f22581a13cdbeaeaf55ad3e093c8a808c068545e5ef034ea713f783de",
+    "digest": "20f7aec1e19a6a953b162ecdd35a8f107a92c58cfd728a5ab7d5230c2ddb9bef",
+    "icon": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTQiIGZpbGw9IiMyODY0ZDciLz48cmVjdCB4PSIxNCIgeT0iMTYiIHdpZHRoPSIzMCIgaGVpZ2h0PSIzNCIgcng9IjQiIGZpbGw9IiNmZmYiLz48cmVjdCB4PSIxOSIgeT0iMjIiIHdpZHRoPSIyMCIgaGVpZ2h0PSI0IiByeD0iMiIgZmlsbD0iIzI4NjRkNyIvPjxyZWN0IHg9IjE5IiB5PSIzMCIgd2lkdGg9IjIwIiBoZWlnaHQ9IjMiIHJ4PSIxLjUiIGZpbGw9IiNiOWNiZWYiLz48cmVjdCB4PSIxOSIgeT0iMzYiIHdpZHRoPSIxNCIgaGVpZ2h0PSIzIiByeD0iMS41IiBmaWxsPSIjYjljYmVmIi8+PHBhdGggZD0iTTQ3IDEybDIuMiA1LjNMNTQuNSAxOS41bC01LjMgMi4yTDQ3IDI3bC0yLjItNS4zLTUuMy0yLjIgNS4zLTIuMnoiIGZpbGw9IiNmZmQxNjYiLz48L3N2Zz4K"
   }
 ]

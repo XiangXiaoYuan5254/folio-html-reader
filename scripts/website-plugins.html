@@ -3,194 +3,45 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>插件下载 · 页间 Folio</title>
-    <meta
-      name="description"
-      content="按需下载页间插件。AI 前沿日报每天整理新论文、新模型与开源项目；插件不随页间安装包下载。"
-    />
+    <title>插件 · 页间 Folio</title>
+    <meta name="description" content="页间的插件在应用里安装：打开「设置 › 插件」，一键装上。" />
     <link rel="icon" href="../assets/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../styles.css" />
     <style>
-      :root {
-        color-scheme: light;
-        font-family:
-          -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei',
-          sans-serif;
-        color: #223c36;
-        background: #f6f8f5;
-      }
-      * {
-        box-sizing: border-box;
-      }
-      body {
-        margin: 0;
-        line-height: 1.8;
-      }
-      main,
-      header,
-      footer {
-        width: min(900px, calc(100% - 40px));
-        margin: auto;
-      }
-      header {
-        padding: 28px 0;
-      }
-      a {
-        color: #226d55;
-        text-underline-offset: 4px;
-      }
-      .brand {
-        display: inline-flex;
-        gap: 10px;
-        align-items: center;
-        font-weight: 700;
-        text-decoration: none;
-      }
-      h1 {
-        font-size: clamp(32px, 6vw, 48px);
-        line-height: 1.25;
-        margin: 12px 0 20px;
-        letter-spacing: -0.04em;
-      }
-      .intro {
-        max-width: 660px;
-        color: #52675f;
-        margin-bottom: 34px;
-      }
-      .eyebrow {
-        color: #467660;
-        font-size: 13px;
-        letter-spacing: 0.12em;
-        margin: 28px 0 0;
-      }
-      .card {
-        background: white;
-        border: 1px solid #dce5dd;
-        border-radius: 24px;
-        padding: clamp(24px, 5vw, 44px);
-        box-shadow: 0 14px 40px #223c3606;
-      }
-      .badge {
-        font-size: 12px;
-        border-radius: 20px;
-        padding: 5px 10px;
-        background: #eaf3ec;
-        color: #3b7057;
-      }
-      h2 {
-        font-size: 26px;
-        line-height: 1.4;
-        margin: 18px 0 12px;
-      }
-      .meta,
-      .note {
-        color: #63776e;
-        font-size: 14px;
-      }
-      .actions {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 18px;
-        margin: 28px 0 10px;
-      }
-      .button {
-        display: inline-flex;
-        background: #245f49;
-        color: white;
-        border-radius: 12px;
-        padding: 12px 22px;
-        text-decoration: none;
-        font-weight: 600;
-      }
-      .button:hover {
-        background: #184c39;
-      }
-      a:focus-visible {
-        outline: 3px solid #dfad47;
-        outline-offset: 4px;
-      }
-      section {
-        margin-top: 42px;
-      }
-      ol {
-        padding-left: 24px;
-      }
-      li {
-        margin: 10px 0;
-      }
-      code {
-        background: #eaf0e9;
-        border-radius: 5px;
-        padding: 2px 5px;
-        overflow-wrap: anywhere;
-      }
-      summary {
-        cursor: pointer;
-      }
-      .hash {
-        font-size: 12px;
-        overflow-wrap: anywhere;
-      }
-      footer {
-        padding: 40px 0;
-        color: #63776e;
-        font-size: 13px;
-      }
+      .plugins-header, .plugins-main, .plugins-footer { width: min(760px, calc(100% - 40px)); margin: auto; }
+      .plugins-header { padding: 28px 0; }
+      .plugins-brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 600; }
+      .plugins-main { padding: 36px 0 20px; }
+      .plugins-main h1 { margin: 14px 0 16px; font-size: clamp(30px, 5.5vw, 42px); }
+      .plugins-intro { max-width: 560px; color: var(--ink-2); }
+      .plugin-entry { display: flex; gap: 18px; align-items: flex-start; margin-top: 36px; padding: 24px; border: 1px solid var(--line); border-radius: 18px; background: var(--card); }
+      .plugin-entry img { flex: none; width: 52px; height: 52px; border-radius: 12px; }
+      .plugin-entry h2 { margin: 2px 0 6px; font-size: 19px; }
+      .plugin-entry p { margin: 0; color: var(--ink-2); }
+      .plugin-entry .plugin-meta { margin-top: 10px; font-size: 13px; color: var(--ink-3); }
+      .plugins-actions { margin-top: 32px; }
+      .plugins-footer { padding: 36px 0 44px; color: var(--ink-3); font-size: 14px; }
+      @media (max-width: 560px) { .plugin-entry { padding: 20px; gap: 14px; } }
     </style>
   </head>
   <body>
-    <header>
-      <a class="brand" href="../"
-        ><img src="../assets/icon.svg" width="32" height="32" alt="" />页间 Folio
-        <span aria-hidden="true">/</span> 插件</a
-      >
+    <header class="plugins-header">
+      <a class="plugins-brand" href="../"><img src="../assets/icon.svg" width="28" height="28" alt="" />页间 Folio</a>
     </header>
-    <main>
-      <p class="eyebrow">按需安装</p>
-      <h1>给页间添一点本领。</h1>
-      <p class="intro">
-        插件单独下载，由你决定装哪些。页间的插件页会展示推荐，只有点击「下载」才会获取插件；插件不随应用安装包分发。
-      </p>
-      <article class="card" aria-labelledby="plugin-name">
-        <span class="badge">页间推荐 · 独立下载</span>
-        <h2 id="plugin-name">{{name}}</h2>
-        <p>{{description}}</p>
-        <p class="meta">作者：{{author}} · v{{version}} · ZIP / {{size}} · 需要页间 {{requires}}</p>
-        <div class="actions">
-          <a class="button" href="{{filename}}" download="{{filename}}">下载 AI 前沿日报</a>
-          <a href="#install">如何安装</a>
+    <main class="plugins-main">
+      <p class="eyebrow">插件</p>
+      <h1>插件在页间里安装</h1>
+      <p class="plugins-intro">打开页间的「设置 › 插件」，在官方插件里点一下就装好，不用来这里下载。</p>
+      <article class="plugin-entry" aria-labelledby="plugin-name">
+        <img src="{{icon}}" alt="" />
+        <div>
+          <h2 id="plugin-name">{{name}}</h2>
+          <p>{{description}}</p>
+          <p class="plugin-meta">官方插件 · {{version}} · 需要页间 {{since}} 或更新版本</p>
         </div>
-        <p class="note">
-          需要页间 0.30.0 或更新版本。若当前下载的页间还没有「设置 › 插件」，请等 0.30.0
-          发布后再安装。
-        </p>
-        <details>
-          <summary class="note">校验下载文件</summary>
-          <p class="hash">SHA-256：<code>{{sha256}}</code></p>
-          <a href="SHA256SUMS.txt">下载校验文件</a>
-        </details>
       </article>
-      <section id="install" aria-labelledby="install-title">
-        <h2 id="install-title">安装后，再由你开启。</h2>
-        <ol>
-          <li>
-            在页间打开「设置 › 插件」，点击推荐卡片的「下载」。首次使用时，按提示打开「外部插件」。
-          </li>
-          <li>
-            下载完成后查看插件的联网、文件写入和 AI 使用权限，确认后点击「安装」。如果在本页下载了
-            ZIP，也可以在插件页点击「安装 .zip…」选择它，无需解压。
-          </li>
-          <li>
-            安装完成后手动开启「AI 前沿日报」，选择 AI
-            模型和日报保存位置。可立即生成日报，也可设置每天运行的时间。
-          </li>
-        </ol>
-        <p class="note">
-          定时运行需要页间开着。插件使用你接入的 AI 服务并消耗相应额度；下载和安装本身不会调用
-          AI。想停用时关闭插件，需要移除时在插件卡片中卸载。
-        </p>
-      </section>
+      <p class="plugins-actions"><a class="btn btn-primary" href="../#download">下载页间</a></p>
     </main>
-    <footer><a href="../">返回页间官网</a> · 文档留在你自己的电脑里。</footer>
+    <footer class="plugins-footer"><a href="../">返回页间官网</a></footer>
   </body>
 </html>

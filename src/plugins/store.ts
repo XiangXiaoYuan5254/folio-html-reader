@@ -70,6 +70,10 @@ export const loadDirectory = (refresh = false) =>
   invoke<PluginDirectory>('plugin-directory', { refresh });
 export const installPlugin = (stage: string) =>
   invoke<PluginList>('plugin-install', { stage }).then(put);
+// An official plugin: downloaded, checked against the SHA-256 Folio knows, and installed in one
+// go (it stays off until switched on). Also how one is updated.
+export const installOfficial = async (id: string) =>
+  installPlugin((await inspectPlugin({ recommendation: id })).stage);
 export const removePlugin = (id: string) => invoke<PluginList>('plugin-remove', { id }).then(put);
 export const pluginIcon = (id: string) => invoke<string>('plugin-icon', { id });
 
@@ -90,5 +94,5 @@ export const toolNames: Record<string, string> = {
   write_note: '写文档笔记',
   save_pdf: '下载 PDF',
 };
-export const isThirdParty = (p: PluginInfo) => !p.bundled;
+export const isOfficial = (p: PluginInfo) => p.source?.type === 'official';
 export const isDev = (p: PluginInfo) => p.source?.type === 'folder';

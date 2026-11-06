@@ -457,7 +457,8 @@ try {
   const dialog = page.getByRole('dialog', { name: '设置', exact: true });
   await dialog.getByRole('button', { name: '插件' }).click();
   const daily1 = dialog.locator('.plugin-card').filter({ has: page.getByLabel('开启AI 前沿日报') });
-  await daily1.getByText('外部插件', { exact: true }).waitFor();
+  // A copy set up by hand, not the official release: a community plugin.
+  await daily1.getByText('社区', { exact: true }).waitFor();
   // Folded to one line until opened.
   await daily1
     .locator('.plugin-summary')
@@ -475,7 +476,7 @@ try {
   );
   await page.screenshot({ path: path.join(evidence, 'plugin-settings.png') });
   // Third-party plugins off: the script plugin stops, its switch is locked.
-  await dialog.getByLabel('允许外部插件').click();
+  await dialog.getByLabel('允许社区插件').click();
   await waitFor(
     async () =>
       !JSON.parse(await fs.readFile(path.join(userData, 'plugins.json'), 'utf8')).thirdParty,
@@ -493,11 +494,11 @@ try {
     /已关闭/,
   );
   // On again only after the warning.
-  await dialog.getByLabel('允许外部插件').click();
-  await dialog.getByRole('alertdialog', { name: '打开外部插件前请确认' }).waitFor();
+  await dialog.getByLabel('允许社区插件').click();
+  await dialog.getByRole('alertdialog', { name: '开启社区插件前请确认' }).waitFor();
   await page.screenshot({ path: path.join(evidence, 'plugin-warning.png') });
   assert.ok(!JSON.parse(await fs.readFile(path.join(userData, 'plugins.json'), 'utf8')).thirdParty);
-  await dialog.getByRole('button', { name: '我了解，打开外部插件' }).click();
+  await dialog.getByRole('button', { name: '开启社区插件' }).click();
   await dialog.getByPlaceholder('粘贴插件的 GitHub 或 Gitee 链接').waitFor();
   await dialog.getByPlaceholder('粘贴插件的 GitHub 或 Gitee 链接').fill('https://gitlab.com/a/b');
   await dialog.getByRole('button', { name: '安装', exact: true }).click();
@@ -510,7 +511,7 @@ try {
     }, dir);
   const folderField = daily1.getByLabel('日报放在哪个文件夹');
   assert.equal(await folderField.inputValue(), outFolder);
-  await daily1.getByText(/日报和每次运行的记录都放在这个文件夹里/).waitFor();
+  await daily1.getByRole('button', { name: '在页间打开' }).waitFor();
   // Typed: ~ is the home folder.
   await folderField.fill('~/folio-测试-日报');
   await daily1.getByRole('button', { name: '保存设置' }).click();
@@ -552,7 +553,7 @@ try {
   assert.ok((await daily1.getByLabel('每天定时运行').boundingBox()).width < 60);
   await daily1.getByLabel('每天定时运行').click();
   await waitFor(async () => (await pluginState())['ai-daily'].schedule?.off === true, 'off');
-  await daily1.getByText('不自动运行，需要时手动点').waitFor();
+  await daily1.getByText('不自动运行', { exact: true }).waitFor();
   assert.ok(await timeField.isDisabled());
   // A plugin working in the open project picks folders in it: not outside it, and the
   // project folder itself means right in it. Picked in another project, it moves there.
@@ -617,11 +618,11 @@ try {
     async () => (await panel.locator('.assistant-messages').innerText()).includes('日报写好了'),
     'the run finished in its project',
   );
-  // 在页间里打开这个文件夹 (here already): its project, with that run in 整个项目.
+  // 在页间打开 (here already): its project, with that run in 整个项目.
   await page.getByRole('button', { name: '设置', exact: true }).click();
   await dialog.getByRole('button', { name: '插件' }).click();
   await daily1.getByRole('button', { name: '展开AI 前沿日报' }).click();
-  await daily1.getByRole('button', { name: '在页间里打开这个文件夹' }).click();
+  await daily1.getByRole('button', { name: '在页间打开' }).click();
   await files.getByRole('button', { name: '手动日报.html', exact: true }).waitFor();
   await waitFor(
     async () => (await panel.locator('.assistant-messages').innerText()).includes('日报写好了'),

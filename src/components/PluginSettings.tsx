@@ -22,6 +22,7 @@ import {
   ScrollText,
   Search,
   ShieldAlert,
+  ShieldCheck,
   Sparkles,
   Trash2,
   TriangleAlert,
@@ -36,8 +37,10 @@ import { clearPluginLog, usePluginLog } from '../plugins/log';
 import {
   droppedPath,
   inspectPlugin,
+  installOfficial,
   installPlugin,
   isDev,
+  isOfficial,
   loadDirectory,
   pickLocalPlugin,
   pluginIcon,
@@ -57,10 +60,14 @@ import type {
 
 // The public repository with the plugin directory, the format and the tools for writing one.
 const PLUGIN_HOME = 'https://github.com/XiangXiaoYuan5254/folio-plugins';
-const PLUGIN_DOWNLOADS = 'https://helloxxy.com/works/folio/plugins/';
 
-// 设置 › 插件: Folio's own plugins and the ones installed from links. Third-party plugins
-// are off until switched on, as Obsidian's community plugins are.
+// Where on the page an error is shown: under the part it came from.
+type Area = 'installed' | 'official' | 'community';
+
+// 设置 › 插件: the plugins installed, the official ones not installed yet, and community plugins
+// (from the directory, a link, a .zip or a folder), which are off until switched on, as
+// Obsidian's are. Official plugins are checked against the SHA-256 Folio ships with, so they
+// don't wait for that switch.
 export function PluginSettings(p: {
   root?: string;
   projectName?: string;
@@ -70,12 +77,13 @@ export function PluginSettings(p: {
 }) {
   const list = usePlugins();
   const [warning, setWarning] = useState(false);
-  const [pendingRecommendation, setPendingRecommendation] = useState('');
   const [link, setLink] = useState('');
   const [busy, setBusy] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState<{ at: Area; text: string } | null>(null);
   const [inspection, setInspection] = useState<PluginInspection | null>(null);
   const [dragging, setDragging] = useState(false);
+  // An official plugin just installed: its card opens, to show what it does.
+  const [fresh, setFresh] = useState('');
   if (!isDesktop) return <p className="settings-footnote">请在桌面版页间中使用插件。</p>;
   if (!list)
     return (
@@ -84,29 +92,41 @@ export function PluginSettings(p: {
       </p>
     );
   const thirdParty = list.thirdParty;
-  async function act(label: string, fn: () => Promise<unknown>) {
+  async function act(label: string, at: Area, fn: () => Promise<unknown>) {
     setBusy(label);
-    setError('');
+    setError(null);
     try {
       await fn();
     } catch (e) {
-      setError(errorText(e));
+      setError({ at, text: errorText(e) });
     } finally {
       setBusy('');
     }
   }
-  const inspect = (from: {
-    url?: string;
-    id?: string;
-    local?: string;
-    expect?: string;
-    recommendation?: string;
-  }) => act('inspect', async () => setInspection(await inspectPlugin(from)));
+  const inspect = (from: { url?: string; id?: string; local?: string; expect?: string }) =>
+    act('inspect', 'community', async () => setInspection(await inspectPlugin(from)));
   const pickLocal = (kind: 'folder' | 'zip') =>
-    act('inspect', async () => {
+    act('inspect', 'community', async () => {
       const seen = await pickLocalPlugin(kind);
       if (seen) setInspection(seen);
     });
+  // Installing an official plugin, or updating one. (Marked fresh first: its card appears as
+  // soon as the list has it, before the install call returns.)
+  const official = (id: string, at: Area) =>
+    act(`official:${id}`, at, async () => {
+      if (at === 'official') setFresh(id);
+      await installOfficial(id);
+    });
+  const installed = new Set(list.plugins.map((x) => x.id));
+  const available = list.recommendations.filter((x) => !installed.has(x.id));
+  const latest = new Map(list.recommendations.map((x) => [x.id, x.version]));
+  const errorAt = (at: Area) =>
+    error?.at === at ? (
+      <p className="plugin-error" role="alert">
+        <CircleAlert size={14} />
+        {error.text}
+      </p>
+    ) : null;
   // A plugin folder or .zip dragged in from Finder / Explorer.
   const dropZone = thirdParty
     ? {
@@ -126,113 +146,121 @@ export function PluginSettings(p: {
           setDragging(false);
           const file = e.dataTransfer.files[0];
           const local = file ? droppedPath(file) : '';
-          if (!local) setError('没有读到拖进来的文件，请改用「从文件夹加载…」或「安装 .zip…」');
+          if (!local)
+            setError({
+              at: 'community',
+              text: '没有读到拖进来的文件，请改用「从文件夹加载…」或「安装 .zip…」',
+            });
           else if (!busy) void inspect({ local });
         },
       }
     : {};
   return (
     <div className="plugin-settings">
-      <section className="settings-group">
-        <h4>推荐插件</h4>
-        <p className="settings-footnote">
-          推荐会一直显示，插件由你选择安装。点击「下载」才会从官网获取，确认安装后再手动开启。
-        </p>
-        <div className="plugin-list">
-          {list.recommendations.map((item) => {
-            const installed = list.plugins.some((plugin) => plugin.id === item.id);
-            return (
-              <article className="plugin-card" key={item.id} aria-label={`推荐：${item.name}`}>
-                <div className="plugin-head">
-                  <Puzzle size={24} aria-hidden="true" />
-                  <div>
-                    <h5>
-                      {item.name}
-                      <span className="plugin-version">{item.version}</span>
-                    </h5>
-                    <p className="plugin-meta">{item.author} · 官网独立下载</p>
-                  </div>
+      {list.plugins.length ? (
+        <section className="settings-group">
+          <h4>已安装</h4>
+          <div className="plugin-list">
+            {list.plugins.map((plugin) => {
+              const newer = latest.get(plugin.id);
+              return (
+                <PluginCard
+                  key={plugin.id}
+                  plugin={plugin}
+                  thirdParty={thirdParty}
+                  fresh={fresh === plugin.id}
+                  update={
+                    isOfficial(plugin) && newer && newer !== plugin.manifest?.version ? newer : ''
+                  }
+                  updating={busy === `official:${plugin.id}`}
+                  root={p.root}
+                  projectName={p.projectName}
+                  busy={!!busy}
+                  onRun={() => p.onRun(plugin.id)}
+                  onOpenFolder={p.onOpenFolder}
+                  onCheck={() => void inspect({ id: plugin.id })}
+                  onUpdate={() => void official(plugin.id, 'installed')}
+                  onError={(text) => setError({ at: 'installed', text })}
+                />
+              );
+            })}
+          </div>
+          {errorAt('installed')}
+        </section>
+      ) : null}
+      {available.length ? (
+        <section className="settings-group">
+          <h4>官方插件</h4>
+          <ul className="plugin-catalog" aria-label="官方插件">
+            {available.map((item) => (
+              <li key={item.id}>
+                {item.icon ? (
+                  <img className="plugin-icon" src={item.icon} alt="" />
+                ) : (
+                  <span className="plugin-icon plugin-icon-blank">
+                    <Puzzle size={18} />
+                  </span>
+                )}
+                <div>
+                  <strong>{item.name}</strong>
+                  <p>{item.description}</p>
                 </div>
-                <p>{item.description}</p>
                 <button
                   type="button"
                   className="secondary-button"
-                  disabled={!!busy || installed}
-                  onClick={() => {
-                    if (thirdParty) void inspect({ recommendation: item.id });
-                    else {
-                      setPendingRecommendation(item.id);
-                      setWarning(true);
-                    }
-                  }}
+                  aria-label={`安装${item.name}`}
+                  disabled={!!busy}
+                  onClick={() => void official(item.id, 'official')}
                 >
-                  {busy === 'inspect' ? (
-                    <LoaderCircle size={14} className="spin" />
+                  {busy === `official:${item.id}` ? (
+                    <>
+                      <LoaderCircle size={14} className="spin" />
+                      正在安装
+                    </>
                   ) : (
-                    <Download size={14} />
+                    '安装'
                   )}
-                  {installed ? '已安装' : busy === 'inspect' ? '正在下载…' : '下载'}
                 </button>
-              </article>
-            );
-          })}
-        </div>
-        <div className="plugin-actions">
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => void act('website', () => invoke('external', { url: PLUGIN_DOWNLOADS }))}
-            disabled={!!busy}
-          >
-            <ExternalLink size={14} />
-            查看官网插件页
-          </button>
-        </div>
-      </section>
+              </li>
+            ))}
+          </ul>
+          {errorAt('official')}
+        </section>
+      ) : null}
       <section
-        className={`settings-group plugin-third-party${dragging ? ' dragging' : ''}`}
+        className={`settings-group plugin-community${dragging ? ' dragging' : ''}`}
         {...dropZone}
       >
-        <h4>外部插件</h4>
+        <h4>社区插件</h4>
         <label className="settings-row">
           <span>
-            <strong>允许安装和运行外部插件</strong>
-            <small>
-              插件独立于页间安装。打开后可以从官网推荐、插件目录、GitHub / Gitee 链接、.zip
-              或本地文件夹安装插件；关闭后已装的外部插件都会停止运行。
-            </small>
+            <strong>允许社区插件</strong>
+            <small>由其他作者编写，页间没有审核。</small>
           </span>
           <input
             type="checkbox"
             role="switch"
-            aria-label="允许外部插件"
+            aria-label="允许社区插件"
             checked={thirdParty || warning}
             disabled={!!busy}
             onChange={(e) => {
               if (e.target.checked) setWarning(true);
               else {
                 setWarning(false);
-                setPendingRecommendation('');
-                void act('third-party', () => setThirdParty(false));
+                void act('third-party', 'community', () => setThirdParty(false));
               }
             }}
           />
         </label>
         {warning && !thirdParty ? (
-          <div className="plugin-warning" role="alertdialog" aria-label="打开外部插件前请确认">
+          <div className="plugin-warning" role="alertdialog" aria-label="开启社区插件前请确认">
             <ShieldAlert size={18} />
             <div>
-              <strong>打开前请确认</strong>
+              <strong>开启前请确认</strong>
               <ul>
-                <li>请确认插件的来源和作者；社区插件由各自作者维护，推荐不代表对其内容的担保。</li>
-                <li>
-                  插件会让 AI 用你的 API Key
-                  工作，产生的费用由你承担；它能访问安装时列出的网站，在列出的文件夹里写文件。
-                </li>
-                <li>
-                  带脚本的插件在沙箱里运行，拿不到你的 API
-                  Key，也不能自己联网；但请只安装你信任的作者的插件，安装前看清楚它要的权限。
-                </li>
+                <li>社区插件由各自的作者维护，只装你信任的。</li>
+                <li>插件用你的 API Key 调用 AI，费用由你承担。</li>
+                <li>安装前会列出它要访问的网站和写入的文件夹。</li>
               </ul>
               <div className="plugin-actions">
                 <button
@@ -240,24 +268,18 @@ export function PluginSettings(p: {
                   className="primary-button"
                   disabled={!!busy}
                   onClick={() =>
-                    void act(pendingRecommendation ? 'inspect' : 'third-party', async () => {
+                    void act('third-party', 'community', async () => {
                       await setThirdParty(true);
                       setWarning(false);
-                      const recommendation = pendingRecommendation;
-                      setPendingRecommendation('');
-                      if (recommendation) setInspection(await inspectPlugin({ recommendation }));
                     })
                   }
                 >
-                  我了解，打开外部插件
+                  开启社区插件
                 </button>
                 <button
                   type="button"
                   className="secondary-button"
-                  onClick={() => {
-                    setWarning(false);
-                    setPendingRecommendation('');
-                  }}
+                  onClick={() => setWarning(false)}
                 >
                   取消
                 </button>
@@ -266,71 +288,70 @@ export function PluginSettings(p: {
           </div>
         ) : null}
         {thirdParty ? (
-          <form
-            className="plugin-install"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (link.trim()) void inspect({ url: link });
-            }}
-          >
-            <input
-              type="url"
-              aria-label="插件链接"
-              placeholder="粘贴插件的 GitHub 或 Gitee 链接"
-              value={link}
-              disabled={!!busy}
-              onChange={(e) => setLink(e.target.value)}
+          <div className="plugin-community-tools">
+            <DirectoryBrowser
+              installed={installed}
+              busy={!!busy}
+              onInstall={(entry) => void inspect({ url: entry.repo, expect: entry.id })}
             />
-            <button type="submit" className="secondary-button" disabled={!!busy || !link.trim()}>
-              {busy === 'inspect' ? (
-                <LoaderCircle size={14} className="spin" />
-              ) : (
-                <Download size={14} />
-              )}
-              {busy === 'inspect' ? '正在读取…' : '安装'}
-            </button>
-          </form>
-        ) : null}
-        {thirdParty ? (
-          <div className="plugin-local">
-            <button
-              type="button"
-              className="secondary-button"
-              disabled={!!busy}
-              onClick={() => void pickLocal('folder')}
+            <form
+              className="plugin-install"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (link.trim()) void inspect({ url: link });
+              }}
             >
-              <FolderCode size={14} />
-              从文件夹加载…
-            </button>
-            <button
-              type="button"
-              className="secondary-button"
-              disabled={!!busy}
-              onClick={() => void pickLocal('zip')}
-            >
-              <FileArchive size={14} />
-              安装 .zip…
-            </button>
-            <small>
-              {dragging
-                ? '松开就会读取这个插件'
-                : '也可以把插件文件夹或 .zip 拖到这里。从文件夹加载的是开发版：页间直接读那个文件夹，保存后马上生效，适合自己写插件时用。'}
-            </small>
+              <input
+                type="url"
+                aria-label="插件链接"
+                placeholder="粘贴插件的 GitHub 或 Gitee 链接"
+                value={link}
+                disabled={!!busy}
+                onChange={(e) => setLink(e.target.value)}
+              />
+              <button type="submit" className="secondary-button" disabled={!!busy || !link.trim()}>
+                {busy === 'inspect' ? (
+                  <LoaderCircle size={14} className="spin" />
+                ) : (
+                  <Download size={14} />
+                )}
+                {busy === 'inspect' ? '正在读取…' : '安装'}
+              </button>
+            </form>
+            <div className="plugin-local">
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={!!busy}
+                title="写插件时用：页间直接读这个文件夹，保存后马上生效"
+                onClick={() => void pickLocal('folder')}
+              >
+                <FolderCode size={14} />
+                从文件夹加载…
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={!!busy}
+                onClick={() => void pickLocal('zip')}
+              >
+                <FileArchive size={14} />
+                安装 .zip…
+              </button>
+              <small>
+                {dragging ? '松开就会读取这个插件' : '也可以把插件文件夹或 .zip 拖到这里'}
+              </small>
+            </div>
           </div>
         ) : null}
-        {error ? (
-          <p className="plugin-error" role="alert">
-            <CircleAlert size={14} />
-            {error}
-          </p>
-        ) : null}
+        {errorAt('community')}
         {inspection ? (
           <InstallConfirm
             inspection={inspection}
             busy={busy === 'install'}
             onCancel={() => setInspection(null)}
             onInstall={() =>
-              void act('install', async () => {
+              void act('install', 'community', async () => {
                 await installPlugin(inspection.stage);
                 setInspection(null);
                 setLink('');
@@ -338,40 +359,6 @@ export function PluginSettings(p: {
             }
           />
         ) : null}
-        {thirdParty ? (
-          <DirectoryBrowser
-            installed={new Set(list.plugins.map((x) => x.id))}
-            busy={!!busy}
-            onInstall={(entry) => void inspect({ url: entry.repo, expect: entry.id })}
-          />
-        ) : null}
-      </section>
-      <section className="settings-group">
-        <h4>插件</h4>
-        {list.plugins.length ? (
-          <div className="plugin-list">
-            {list.plugins.map((plugin) => (
-              <PluginCard
-                key={plugin.id}
-                plugin={plugin}
-                thirdParty={thirdParty}
-                root={p.root}
-                projectName={p.projectName}
-                busy={!!busy}
-                onRun={() => p.onRun(plugin.id)}
-                onOpenFolder={p.onOpenFolder}
-                onCheck={() => void inspect({ id: plugin.id })}
-                onError={setError}
-              />
-            ))}
-          </div>
-        ) : (
-          <p className="settings-footnote">还没有插件。</p>
-        )}
-        <p className="settings-footnote">
-          插件默认用「AI」里为助手聊天选的模型，也可以在每个插件里单独选，会消耗你的 AI
-          额度。定时运行需要页间开着；错过的时间会在下次启动时补跑一次。
-        </p>
       </section>
     </div>
   );
@@ -417,15 +404,29 @@ function when(time: number) {
     : `${d.getMonth() + 1} 月 ${d.getDate()} 日 ${hm}`;
 }
 
+// What kind of plugin it is, next to its name.
+function Badge({ plugin }: { plugin: PluginInfo }) {
+  if (isDev(plugin)) return <span className="plugin-badge dev">开发版</span>;
+  if (plugin.bundled) return <span className="plugin-badge">页间自带</span>;
+  if (isOfficial(plugin)) return <span className="plugin-badge">官方</span>;
+  return <span className="plugin-badge third">社区</span>;
+}
+
 function PluginCard(p: {
   plugin: PluginInfo;
   thirdParty: boolean;
+  // Just installed: shown open.
+  fresh: boolean;
+  // An official plugin's newer version, or ''.
+  update: string;
+  updating: boolean;
   root?: string;
   projectName?: string;
   busy: boolean;
   onRun: () => void;
   onOpenFolder: (id: string) => void;
   onCheck: () => void;
+  onUpdate: () => void;
   onError: (message: string) => void;
 }) {
   const { plugin } = p;
@@ -451,7 +452,7 @@ function PluginCard(p: {
   // Shown in one line until opened; switching it on opens it, to set it up. Open while
   // anything is left unsaved. (Before the broken card's return: a plugin loaded from a folder
   // can turn broken and back while it's being written, and the hooks must stay the same.)
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(p.fresh);
   if (!m)
     return (
       <article className="plugin-card broken">
@@ -459,7 +460,7 @@ function PluginCard(p: {
           <span className="plugin-icon plugin-icon-blank">
             <CircleAlert size={18} />
           </span>
-          <div>
+          <div className="plugin-title">
             <h5>
               {plugin.id}
               {isDev(plugin) ? <span className="plugin-badge dev">开发版</span> : null}
@@ -468,10 +469,6 @@ function PluginCard(p: {
               <p className="plugin-meta" title={plugin.source.path}>
                 {plugin.source.shown}
               </p>
-            ) : null}
-            <p className="plugin-error">这个插件读不了：{plugin.error}</p>
-            {isDev(plugin) ? (
-              <small className="plugin-hint">改好保存后，这里会自动重新读取。</small>
             ) : null}
           </div>
           <button
@@ -484,9 +481,15 @@ function PluginCard(p: {
             {isDev(plugin) ? '移除' : '卸载'}
           </button>
         </div>
+        <p className="plugin-error">这个插件读不了：{plugin.error}</p>
+        {isDev(plugin) ? (
+          <small className="plugin-hint">改好保存后，这里会自动重新读取。</small>
+        ) : null}
       </article>
     );
-  const locked = !plugin.bundled && !p.thirdParty;
+  // Official and bundled plugins: the name, then what it does. Others: where they came from.
+  const trusted = plugin.bundled || isOfficial(plugin);
+  const locked = !trusted && !p.thirdParty;
   const changed =
     m.settings.some((s) => (draft[s.key] ?? '') !== (plugin.settings[s.key] ?? '')) ||
     (!!moveTo && moveTo !== plugin.root);
@@ -520,6 +523,19 @@ function PluginCard(p: {
         .filter(Boolean)
         .join(' · ')
     : m.description;
+  const origin = [
+    m.author,
+    plugin.source && 'commit' in plugin.source
+      ? `${plugin.source.owner}/${plugin.source.repo} @ ${shortCommit(plugin.source.commit)}`
+      : plugin.source?.type === 'folder'
+        ? `从文件夹加载 · ${plugin.source.shown}`
+        : plugin.source?.type === 'zip'
+          ? `从压缩包安装 · ${plugin.source.name}`
+          : '本地',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const savedFolder = (key: string) => draft[key] === plugin.settings[key];
   // A folder setting picked in Finder / Explorer, inside the plugin's project; saved with the
   // other settings.
   async function pickFolder(key: string, title: string) {
@@ -529,8 +545,7 @@ function PluginCard(p: {
       if (own) {
         const picked = await invoke<string | null>('choose-plugin-folder', {
           anywhere: true,
-          current:
-            draft[key] === plugin.settings[key] ? plugin.folder?.path || '' : draft[key] || '',
+          current: savedFolder(key) ? plugin.folder?.path || '' : draft[key] || '',
           title,
         });
         // Saved at once: picking it in Finder is the choice.
@@ -550,46 +565,57 @@ function PluginCard(p: {
       setFolderError(errorText(e));
     }
   }
+  const checkable = shownOpen && plugin.source && 'commit' in plugin.source && p.thirdParty;
+  const actions =
+    !!p.update ||
+    plugin.enabled ||
+    (shownOpen && (checkable || !!sourceLink(plugin) || !plugin.bundled));
   return (
     <article className={`plugin-card${plugin.enabled ? ' on' : ''}`}>
       <div className="plugin-head">
         <PluginIcon plugin={plugin} />
-        <div>
+        <div className="plugin-title">
           <h5>
             {m.name}
             <span className="plugin-version">{m.version}</span>
-            {isDev(plugin) ? (
-              <span className="plugin-badge dev">开发版</span>
-            ) : (
-              <span className={`plugin-badge${plugin.bundled ? '' : ' third'}`}>
-                {plugin.bundled ? '页间自带' : '外部插件'}
-              </span>
-            )}
+            <Badge plugin={plugin} />
             {m.run.script ? <span className="plugin-badge third">含脚本</span> : null}
           </h5>
-          <p
-            className="plugin-meta"
-            title={plugin.source?.type === 'folder' ? plugin.source.path : undefined}
-          >
-            {m.author ? `${m.author} · ` : ''}
-            {plugin.source && 'commit' in plugin.source
-              ? `${plugin.source.owner}/${plugin.source.repo} @ ${shortCommit(plugin.source.commit)}`
-              : plugin.source?.type === 'folder'
-                ? `从文件夹加载 · ${plugin.source.shown}`
-                : plugin.source?.type === 'zip'
-                  ? `从压缩包安装 · ${plugin.source.name}`
-                  : plugin.bundled
-                    ? '随页间安装'
-                    : '本地'}
-          </p>
+          {trusted ? (
+            <p
+              className={shownOpen ? 'plugin-summary open' : 'plugin-summary'}
+              title={shownOpen ? undefined : summary}
+            >
+              {shownOpen ? m.description : summary}
+            </p>
+          ) : (
+            <p
+              className="plugin-meta"
+              title={plugin.source?.type === 'folder' ? plugin.source.path : origin}
+            >
+              {origin}
+            </p>
+          )}
         </div>
+        <button
+          type="button"
+          className="plugin-more"
+          aria-expanded={shownOpen}
+          aria-label={`${shownOpen ? '收起' : '展开'}${m.name}`}
+          disabled={changed}
+          title={changed ? '先保存或还原设置' : undefined}
+          onClick={() => setOpen(!shownOpen)}
+        >
+          {shownOpen ? '收起' : plugin.enabled ? '设置' : '详情'}
+          <ChevronDown size={14} />
+        </button>
         <input
           type="checkbox"
           role="switch"
           aria-label={`开启${m.name}`}
           checked={plugin.enabled}
           disabled={p.busy || locked}
-          title={locked ? '先打开「外部插件」' : undefined}
+          title={locked ? '先打开「社区插件」' : undefined}
           onChange={(e) =>
             run(() =>
               setPlugin({
@@ -602,23 +628,23 @@ function PluginCard(p: {
           }
         />
       </div>
-      {shownOpen ? (
-        <>
-          <p className="plugin-description">{m.description}</p>
-          {isDev(plugin) ? (
-            <p className="plugin-hint">
-              开发版：页间每次运行都直接读这个文件夹，保存后马上生效（包括它要的权限），不会再问你。
-            </p>
-          ) : null}
-          <Warnings warnings={plugin.warnings} />
-          <Permissions manifest={m} />
-          <PluginLog id={plugin.id} />
-        </>
+      {trusted ? null : shownOpen ? (
+        <p className="plugin-description">{m.description}</p>
       ) : (
         <p className="plugin-summary" title={summary}>
           {summary}
         </p>
       )}
+      {shownOpen ? (
+        <div className="plugin-details">
+          {isDev(plugin) ? (
+            <p className="plugin-hint">开发版：页间直接读这个文件夹，保存后马上生效。</p>
+          ) : null}
+          <Warnings warnings={plugin.warnings} />
+          <Permissions manifest={m} />
+          <PluginLog id={plugin.id} />
+        </div>
+      ) : null}
       {plugin.enabled && shownOpen ? (
         <div className="plugin-body">
           {m.settings.map((s) =>
@@ -633,11 +659,9 @@ function PluginCard(p: {
                     id={`${ids}-${s.key}`}
                     type="text"
                     placeholder="例如 ~/Documents/AI日报"
-                    title={
-                      draft[s.key] === plugin.settings[s.key] ? plugin.folder?.path : draft[s.key]
-                    }
+                    title={savedFolder(s.key) ? plugin.folder?.path : draft[s.key]}
                     value={
-                      draft[s.key] === plugin.settings[s.key]
+                      savedFolder(s.key)
                         ? plugin.folder?.shown || draft[s.key] || ''
                         : draft[s.key] || ''
                     }
@@ -649,9 +673,19 @@ function PluginCard(p: {
                     title={`在${fileManager}里选择或新建文件夹`}
                     onClick={() => void pickFolder(s.key, s.label)}
                   >
-                    <FolderOpen size={14} />
                     选择…
                   </button>
+                  {savedFolder(s.key) ? (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      title="在页间里打开这个文件夹，看它生成的每一篇"
+                      onClick={() => p.onOpenFolder(plugin.id)}
+                    >
+                      <FolderOpen size={14} />
+                      在页间打开
+                    </button>
+                  ) : null}
                 </div>
                 {folderError ? (
                   <p className="plugin-error" role="alert">
@@ -659,18 +693,6 @@ function PluginCard(p: {
                     {folderError}
                   </p>
                 ) : null}
-                <p className="plugin-destination">
-                  日报和每次运行的记录都放在这个文件夹里，它就是这个插件的项目：在页间里打开它，「整个项目」里能看到每一次运行。插件只在这里读写，没有的话第一次运行时会新建。
-                  {draft[s.key] === plugin.settings[s.key] ? (
-                    <button
-                      type="button"
-                      className="settings-link"
-                      onClick={() => p.onOpenFolder(plugin.id)}
-                    >
-                      在页间里打开这个文件夹
-                    </button>
-                  ) : null}
-                </p>
                 {s.hint ? <small>{s.hint}</small> : null}
               </div>
             ) : s.type === 'folder' ? (
@@ -703,7 +725,7 @@ function PluginCard(p: {
                     {folderError}
                   </p>
                 ) : null}
-                <p className="plugin-destination">
+                <small>
                   {(() => {
                     const folder = cleanFolder(draft[s.key] ?? '');
                     if (!folder) return '这个文件夹写法不对，换一个名字或点「选择…」';
@@ -715,7 +737,7 @@ function PluginCard(p: {
                       ? `${where}（保存后，这个插件改在「${homeName}」里运行）`
                       : where;
                   })()}
-                </p>
+                </small>
                 {s.hint ? <small>{s.hint}</small> : null}
               </div>
             ) : (
@@ -746,7 +768,6 @@ function PluginCard(p: {
             <div className="plugin-model">
               <ModelMenu use={`plugin:${plugin.id}`} label={m.name} className="model-pick" />
             </div>
-            <small>默认跟随助手聊天。单独选一个服务和模型后，只有这个插件用它，马上生效。</small>
           </div>
           {changed ? (
             <div className="plugin-actions">
@@ -807,12 +828,12 @@ function PluginCard(p: {
                       run(() => setPlugin({ id: plugin.id, schedule: { time: next } }));
                   }}
                 />
-                <span>{plugin.schedule.off ? '不自动运行，需要时手动点' : '自动运行'}</span>
+                <span>{plugin.schedule.off ? '不自动运行' : '自动运行'}</span>
               </div>
               <small className="plugin-schedule">
                 {own
-                  ? '只要页间开着就会运行，不管打开的是哪个项目。'
-                  : `在项目「${plugin.root ? plugin.root.split(/[\\/]/).pop() : '（未选择）'}」打开时运行。`}
+                  ? '页间开着就会按时运行，错过了下次打开时补一次。'
+                  : `在项目「${plugin.root ? plugin.root.split(/[\\/]/).pop() : '（未选择）'}」打开时运行，错过了下次打开时补一次。`}
                 {elsewhere || (!own && !plugin.root && p.root) ? (
                   <button
                     type="button"
@@ -822,7 +843,6 @@ function PluginCard(p: {
                     改为当前项目{p.projectName ? `「${p.projectName}」` : ''}
                   </button>
                 ) : null}
-                错过的时间会在下次启动时补跑一次；改了时间，从下一个这个时间开始。
               </small>
             </div>
           ) : null}
@@ -837,70 +857,71 @@ function PluginCard(p: {
           ) : null}
         </div>
       ) : null}
-      <div className="plugin-actions">
-        {plugin.enabled ? (
-          <button
-            type="button"
-            className="secondary-button"
-            disabled={!running && ((!own && !p.root) || changed)}
-            title={
-              running
-                ? '看它在「整个项目」里的每一步'
-                : !p.root
-                  ? '先打开一个项目'
-                  : changed
-                    ? '先保存设置'
-                    : undefined
-            }
-            onClick={p.onRun}
-          >
-            {running ? <LoaderCircle size={14} className="spin" /> : <Play size={14} />}
-            {running
-              ? '正在运行 · 查看进度'
-              : m.triggers.find((t) => t.type === 'button')?.label || '立即运行'}
-          </button>
-        ) : null}
-        {shownOpen && plugin.source && 'commit' in plugin.source && p.thirdParty ? (
-          <button type="button" className="secondary-button" disabled={p.busy} onClick={p.onCheck}>
-            <RefreshCw size={14} />
-            检查更新
-          </button>
-        ) : null}
-        {shownOpen && sourceLink(plugin) ? (
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => void invoke('external', { url: sourceLink(plugin) }).catch(() => {})}
-          >
-            <ExternalLink size={14} />
-            {plugin.bundled ? '主页' : '源代码'}
-          </button>
-        ) : null}
-        {shownOpen && !plugin.bundled ? (
-          <button
-            type="button"
-            className="secondary-button danger-text"
-            disabled={p.busy}
-            title={isDev(plugin) ? '只从页间移除，不会删除你的文件夹' : undefined}
-            onClick={() => run(() => removePlugin(plugin.id))}
-          >
-            <Trash2 size={14} />
-            {isDev(plugin) ? '移除' : '卸载'}
-          </button>
-        ) : null}
-        <button
-          type="button"
-          className="plugin-more"
-          aria-expanded={shownOpen}
-          aria-label={`${shownOpen ? '收起' : '展开'}${m.name}`}
-          disabled={changed}
-          title={changed ? '先保存或还原设置' : undefined}
-          onClick={() => setOpen(!shownOpen)}
-        >
-          {shownOpen ? '收起' : plugin.enabled ? '设置' : '详情'}
-          <ChevronDown size={14} />
-        </button>
-      </div>
+      {actions ? (
+        <div className="plugin-actions">
+          {p.update ? (
+            <button type="button" className="primary-button" disabled={p.busy} onClick={p.onUpdate}>
+              {p.updating ? <LoaderCircle size={14} className="spin" /> : <RefreshCw size={14} />}
+              {p.updating ? '正在更新…' : `更新到 ${p.update}`}
+            </button>
+          ) : null}
+          {plugin.enabled ? (
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={!running && ((!own && !p.root) || changed)}
+              title={
+                running
+                  ? '看它在「整个项目」里的每一步'
+                  : !own && !p.root
+                    ? '先打开一个项目'
+                    : changed
+                      ? '先保存设置'
+                      : undefined
+              }
+              onClick={p.onRun}
+            >
+              {running ? <LoaderCircle size={14} className="spin" /> : <Play size={14} />}
+              {running
+                ? '正在运行 · 查看进度'
+                : m.triggers.find((t) => t.type === 'button')?.label || '立即运行'}
+            </button>
+          ) : null}
+          {checkable ? (
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={p.busy}
+              onClick={p.onCheck}
+            >
+              <RefreshCw size={14} />
+              检查更新
+            </button>
+          ) : null}
+          {shownOpen && sourceLink(plugin) ? (
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => void invoke('external', { url: sourceLink(plugin) }).catch(() => {})}
+            >
+              <ExternalLink size={14} />
+              {trusted ? '主页' : '源代码'}
+            </button>
+          ) : null}
+          {shownOpen && !plugin.bundled ? (
+            <button
+              type="button"
+              className="secondary-button danger-text"
+              disabled={p.busy}
+              title={isDev(plugin) ? '只从页间移除，不会删除你的文件夹' : undefined}
+              onClick={() => run(() => removePlugin(plugin.id))}
+            >
+              <Trash2 size={14} />
+              {isDev(plugin) ? '移除' : '卸载'}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -918,7 +939,10 @@ function Permissions({
     !!added && (added[kind] as string[]).includes(value);
   return (
     <details className="plugin-permissions" open={open}>
-      <summary>它能做什么</summary>
+      <summary>
+        <ShieldCheck size={13} />
+        它能做什么
+      </summary>
       <ul>
         {m.run.tools.map((t) => (
           <li key={t} className={isNew('tools', t) ? 'new' : ''}>
@@ -982,6 +1006,12 @@ function InstallConfirm(p: {
 }) {
   const { manifest: m, source, installed, added, sameCommit, warnings } = p.inspection;
   const size = p.inspection.files.reduce((n, f) => n + f.size, 0);
+  // Asked from a card higher up (检查更新), it's brought into view.
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(
+    () => box.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }),
+    [p.inspection],
+  );
   const linked = source.type === 'folder';
   const title = linked
     ? installed
@@ -993,7 +1023,7 @@ function InstallConfirm(p: {
         : `更新「${m.name}」`
       : `安装「${m.name}」？`;
   return (
-    <div className="plugin-confirm" role="dialog" aria-label={`安装${m.name}`}>
+    <div className="plugin-confirm" role="dialog" aria-label={`安装${m.name}`} ref={box}>
       <h5>{title}</h5>
       <p className="plugin-description">{m.description || '（作者没有写介绍）'}</p>
       <dl>
@@ -1005,7 +1035,9 @@ function InstallConfirm(p: {
         </dd>
         <dt>来源</dt>
         <dd>
-          {source.type === 'folder' ? (
+          {source.type === 'official' ? (
+            <span>页间官网</span>
+          ) : source.type === 'folder' ? (
             <span title={source.path}>本地文件夹 · {source.shown}</span>
           ) : source.type === 'zip' ? (
             <span>压缩包 · {source.name}</span>
@@ -1036,13 +1068,15 @@ function InstallConfirm(p: {
       ) : null}
       <Warnings warnings={warnings} />
       <Permissions manifest={m} added={added} open />
-      <p className="settings-footnote">
-        {source.type === 'folder'
-          ? '这是从文件夹加载的开发版，页间没有审核它。不会复制：页间每次运行都直接读这个文件夹，你保存的改动（包括它要的权限）马上生效，不会再问你。只加载你自己在写、或者已经看过内容的插件。'
-          : source.type === 'zip'
-            ? '会从压缩包复制一份插件装上。安装前请确认来源和权限；以后要更新，再装一次新的压缩包。'
-            : `这是外部插件，页间没有审核它。会装上 commit ${shortCommit(source.commit)} 这一版，作者之后的修改要你再点「检查更新」才会装。`}
-      </p>
+      {source.type === 'official' ? null : (
+        <p className="settings-footnote">
+          {source.type === 'folder'
+            ? '开发版：页间直接读这个文件夹，保存的改动（包括它要的权限）马上生效，不会再问你。'
+            : source.type === 'zip'
+              ? '以后要更新，再装一次新的压缩包。'
+              : `装的是 commit ${shortCommit(source.commit)} 这一版；作者之后的修改，点「检查更新」才会装。`}
+        </p>
+      )}
       <div className="plugin-actions">
         <button
           type="button"
@@ -1163,10 +1197,7 @@ function PluginLog({ id }: { id: string }) {
           </div>
         </>
       ) : (
-        <p className="settings-footnote">
-          还没有记录。运行一次后，这里会列出它调用的每个工具和结果，以及脚本用 folio.log
-          写的话和出的错。
-        </p>
+        <p className="settings-footnote">还没有记录。运行一次后，这里会列出它的每一步。</p>
       )}
     </details>
   );
@@ -1211,7 +1242,7 @@ function DirectoryBrowser(p: {
     >
       <summary>
         <LibraryBig size={14} />
-        浏览插件目录
+        浏览社区插件目录
       </summary>
       <div className="plugin-directory-bar">
         <label className="plugin-search">
@@ -1293,13 +1324,13 @@ function DirectoryBrowser(p: {
         )
       ) : null}
       <p className="settings-footnote">
-        目录里的插件由作者提交、经页间收录；收录前会看一遍清单和权限，但不保证安全，安装前仍会列出它要的权限。
+        收录前看过清单和权限，但不保证安全。
         <button
           type="button"
           className="settings-link"
           onClick={() => void invoke('external', { url: PLUGIN_HOME }).catch(() => {})}
         >
-          写一个插件 / 提交到目录
+          写一个插件
         </button>
       </p>
     </details>

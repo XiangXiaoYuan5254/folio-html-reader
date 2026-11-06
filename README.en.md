@@ -38,7 +38,7 @@ Get the latest version from [Releases](https://github.com/XiangXiaoYuan5254/foli
 
 **Make it yours**
 - Ten interface themes, light and dark, optionally following the system.
-- Optional plugins that let AI do a job on a schedule or at a click, such as a daily AI news digest. The Plugins page shows recommendations; downloads begin only when you click Download. No plugins are bundled with the app. Standalone ZIPs are also available on the [website](https://helloxxy.com/works/folio/plugins/). See [folio-plugins](https://github.com/XiangXiaoYuan5254/folio-plugins) for the manifest, script API, template and CLI (MIT).
+- Optional plugins that let AI do a job on a schedule or at a click, such as a daily AI news digest. Official plugins are listed under Settings → Plugins and download only when you click Install; nothing is bundled with the app. Community plugins are off until you allow them. See [folio-plugins](https://github.com/XiangXiaoYuan5254/folio-plugins) for the manifest, script API, template and CLI (MIT).
 
 ![A whiteboard lesson explaining a passage](website/assets/board.webp)
 
@@ -48,7 +48,7 @@ Join the Chinese-language WeChat group to discuss Folio, share plugins and repor
 
 <a href="https://helloxxy.com/works/folio/community/"><img src="https://helloxxy.com/works/folio/community/qr.jpg" width="300" alt="Folio WeChat community QR code" /></a>
 
-QR codes expire. [Open the community page for the latest code](https://helloxxy.com/works/folio/community/), also available from **Settings → About → Join community** in the app.
+The code changes every week. [Open the community page for the latest one](https://helloxxy.com/works/folio/community/); in the app, **Settings → Community** always shows the current code.
 
 ## Privacy
 

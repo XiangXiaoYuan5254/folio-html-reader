@@ -26,6 +26,12 @@
 
 macOS 版使用 Developer ID 签名并经过 Apple 公证，公证票据已贴进应用。`npm run dist:mac` 用 `spctl` 确认应用来自已公证的 Developer ID（`source=Notarized Developer ID`），否则不出包；开发机关掉了 Gatekeeper，所以只看这一项，不看 accepted。
 
+## 0.30.1 发布验证（2026-11-06）
+
+- 单元测试 174 项通过；设置、插件、插件开发三组桌面回归通过，覆盖新的「用户交流群」页、官方插件一键安装（不需要打开社区插件）、0.30.0 以普通 .zip 装的官方插件按内容认回「官方」。
+- Mac arm64 包在 macOS 虚拟机里打包（输出放在本机磁盘，见 [releasing.md](releasing.md)），Developer ID 签名、Apple 公证（`source=Notarized Developer ID`）、票据和 DMG 完整性检查通过；打包好的应用在独立用户目录启动，版本 0.30.1，插件页列出官方插件，交流群页从官网读到二维码，无界面脚本错误。
+- Windows 安装包在同一台机器交叉构建，只带 Windows 版语音模块，未签名（与 0.30.0 相同）。
+
 ## 0.30.0 发布验证（2026-11-06）
 
 - macOS 单元测试 172 项通过，1 项 Windows 专属测试跳过；类型检查、生产构建和桌面回归通过，覆盖阅读批注、PDF、AI、设置、插件、白板与语音。

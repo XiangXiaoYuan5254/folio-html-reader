@@ -8,7 +8,7 @@ const { atomicWrite } = require('../electron/workspace.cjs');
 const { readZip } = require('../electron/zip.cjs');
 const recommendations = require('../electron/recommended-plugins.json');
 
-test('recommendations stay offline; only an explicit download stages the standalone ZIP', async () => {
+test('official plugins stay offline until installed, and need no community switch', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'folio-download-'));
   const outputDir = path.join(dir, 'website');
   const calls = [];
@@ -51,33 +51,69 @@ test('recommendations stay offline; only an explicit download stages the standal
       assert.equal(list.recommendations[0].id, 'ai-daily');
     }
     assert.deepEqual(calls, [], 'startup/listing must not fetch plugin files');
-    await assert.rejects(plugins.inspect({ recommendation: 'ai-daily' }), /外部插件/);
-    assert.deepEqual(calls, [], 'consent is required before downloading');
-    await plugins.setThirdParty({ on: true });
     await assert.rejects(plugins.inspect({ recommendation: 'unknown' }), /没有找到/);
     assert.deepEqual(calls, []);
+    // Official plugins don't wait for the community switch: the SHA-256 vouches for them.
     const inspection = await plugins.inspect({ recommendation: 'ai-daily' });
     assert.deepEqual(calls, [entry.url]);
     assert.equal(inspection.manifest.id, 'ai-daily');
+    assert.deepEqual(inspection.source, { type: 'official' });
     assert.deepEqual((await plugins.list()).plugins, [], 'download is not installation');
     assert.equal(await fs.stat(path.join(dir, 'user/plugins/ai-daily')).catch(() => null), null);
     let list = await plugins.install({ stage: inspection.stage });
+    assert.equal(list.thirdParty, false);
     assert.equal(list.plugins.length, 1);
     assert.equal(list.plugins[0].bundled, false);
+    assert.deepEqual(list.plugins[0].source, { type: 'official' });
     assert.equal(list.plugins[0].enabled, false, 'installation never auto-enables a plugin');
     await plugins.set({ id: 'ai-daily', enabled: true });
     assert.match((await plugins.load({ id: 'ai-daily' })).prompt, /AI/);
+    await plugins.setThirdParty({ on: true });
     await plugins.setThirdParty({ on: false });
-    assert.equal((await plugins.list()).plugins[0].enabled, false);
+    assert.equal(
+      (await plugins.list()).plugins[0].enabled,
+      true,
+      'the community switch is not its',
+    );
     await plugins.remove({ id: 'ai-daily' });
     list = await plugins.list();
     assert.deepEqual(list.plugins, []);
     assert.equal(list.recommendations[0].id, 'ai-daily');
     assert.equal(calls.length, 1, 'removal/listing must not re-download');
-    await plugins.setThirdParty({ on: true });
     corrupt = true;
     await assert.rejects(plugins.inspect({ recommendation: 'ai-daily' }), /校验失败/);
     assert.deepEqual((await plugins.list()).plugins, []);
+    // 0.30.0 installed it as a plain .zip: the same files make it official again; others don't.
+    const zipFile = path.join(dir, filename);
+    await fs.writeFile(zipFile, zip);
+    await plugins.setThirdParty({ on: true });
+    list = await plugins.install({ stage: (await plugins.inspect({ local: zipFile })).stage });
+    assert.deepEqual(list.plugins[0].source, { type: 'official' }, 'the same files, by hand');
+    const state = path.join(dir, 'user/plugins.json');
+    const saved = JSON.parse(await fs.readFile(state, 'utf8'));
+    saved.thirdParty = false;
+    saved.plugins['ai-daily'].source = { type: 'zip', name: filename };
+    await fs.writeFile(state, JSON.stringify(saved));
+    const fresh = () =>
+      createPlugins({
+        userDir: path.join(dir, 'user'),
+        appVersion: '0.30.0',
+        documentsDir: path.join(dir, 'Documents'),
+        atomicWrite,
+        fetch: async () => Response.error(),
+      });
+    assert.deepEqual((await fresh().list()).plugins[0].source, { type: 'official' });
+    assert.equal(
+      JSON.parse(await fs.readFile(state, 'utf8')).plugins['ai-daily'].source.type,
+      'official',
+    );
+    await fs.writeFile(state, JSON.stringify(saved));
+    await fs.appendFile(path.join(dir, 'user/plugins/ai-daily/prompt.md'), '\n多一行');
+    assert.equal(
+      (await fresh().list()).plugins[0].source.type,
+      'zip',
+      'changed files are not official',
+    );
     const rebuilt = await buildWebsitePlugins({
       outputDir,
       recommendationsFile: path.join(dir, 'recommendations.json'),

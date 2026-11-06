@@ -9,6 +9,8 @@ npm run test:e2e
 npm run dist:mac
 ```
 
+在虚拟机的共享文件夹（如 AppleVirtIOFS）里打 Mac 包时，公证会因为读不出框架里的符号链接而报「The signature of the binary is invalid」。这时把输出放到本机磁盘：`APPLE_KEYCHAIN_PROFILE=helloxxy-notary npx electron-builder --mac dmg zip --arm64 --publish never -c.directories.output=$HOME/folio-release`，再把 DMG、zip、`.zip.blockmap` 和 `latest-mac.yml` 复制回 `release/`，运行 `node scripts/checksums.mjs mac`。
+
 `release/` 会包含 arm64 的 DMG、`SHA256SUMS.txt`，以及自动更新用的 zip、`.zip.blockmap` 和 `latest-mac.yml`（见下文「自动更新」）。DMG 中包含页间、Applications 文件夹快捷方式和中文安装说明。安装包只包含 `samples/` 中的原创演示资料。
 
 发布前检查：
@@ -101,13 +103,13 @@ Windows 的同一测试在 GitHub Actions 的 `Windows` 工作流里运行（「
 
 ## 官网独立插件
 
-插件不放进安装包。`electron/recommended-plugins.json` 只保存推荐卡片的文字、下载地址和 SHA-256；启动与打开插件页都不下载。用户点击推荐卡片的「下载」并同意使用外部插件后，才从官网下载 ZIP，校验后显示安装权限，确认安装后仍需手动开启。
+插件不放进安装包。`electron/recommended-plugins.json` 只保存官方插件的名称、说明、图标、下载地址、SHA-256 和内容摘要；启动与打开插件页都不下载。用户在「官方插件」里点「安装」才从官网下载 ZIP，SHA-256 对上才装，装好后默认关闭。官方插件不需要打开「允许社区插件」。内容摘要用来认出 0.30.0 当成普通 .zip 装的官方插件。
 
 ```sh
 npm run website:plugins
 ```
 
-这会校验 `plugins/ai-daily/`，按清单打包，生成 `website/plugins/` 的独立下载页、带版本号的 ZIP、校验文件，以及应用使用的推荐信息。网页模板在 `scripts/website-plugins.html`。修改插件时先更新插件版本、运行 `node scripts/sync-plugin-kit.mjs`，再生成下载文件；**在构建页间之前生成推荐信息，在发布页间之前上传 ZIP**，不要替换已经发布版本的 ZIP 内容，也不要删除旧版页间推荐的 ZIP。
+这会校验 `plugins/ai-daily/`，按清单打包，生成 `website/plugins/` 的说明页、带版本号的 ZIP、校验文件，以及应用使用的推荐信息。网页模板在 `scripts/website-plugins.html`。修改插件时先更新插件版本、运行 `node scripts/sync-plugin-kit.mjs`，再生成下载文件；**在构建页间之前生成推荐信息，在发布页间之前上传 ZIP**，不要替换已经发布版本的 ZIP 内容，也不要删除旧版页间要下载的 ZIP。
 
 `npm run website:downloads` 也会生成插件文件。仅发布插件时，单独上传 `website/plugins/` 即可，不更新应用的 `.yml`、安装包或发布说明。插件功能从页间 0.30.0 开始提供。
 

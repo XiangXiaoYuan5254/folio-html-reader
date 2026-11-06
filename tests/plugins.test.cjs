@@ -212,7 +212,7 @@ test('installing from a link: off until third-party plugins are on, pinned to a 
       list.plugins.map((p) => [p.id, p.bundled, p.enabled]),
       [['ai-daily', true, false]],
     );
-    await assert.rejects(plugins.inspect({ url: 'https://github.com/me/plug' }), /外部插件/);
+    await assert.rejects(plugins.inspect({ url: 'https://github.com/me/plug' }), /社区插件/);
     await plugins.setThirdParty({ on: true });
     const seen = await plugins.inspect({ url: 'https://github.com/me/plug' });
     assert.equal(seen.manifest.id, 'paper-digest');
@@ -725,7 +725,7 @@ test("installing a .zip: Finder's and GitHub's layouts, one plugin at a time", a
     await assert.rejects(plugins.inspect({ local: path.join(dir, 'x.txt') }), /\.zip/);
     // Third-party plugins off: nothing from this computer either.
     await plugins.setThirdParty({ on: false });
-    await assert.rejects(plugins.inspect({ local: finder }), /外部插件/);
+    await assert.rejects(plugins.inspect({ local: finder }), /社区插件/);
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }

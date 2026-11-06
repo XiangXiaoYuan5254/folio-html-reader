@@ -35,6 +35,8 @@ export type PluginManifest = {
 export type PluginSource =
   | { type: 'bundled' }
   | { type: 'local' }
+  // An official plugin: downloaded from the website and checked against its SHA-256.
+  | { type: 'official' }
   // Loaded from a folder being written: read where it is, so saved changes count at once.
   | { type: 'folder'; path: string; shown: string }
   // Installed from a .zip: a copy, updated by installing a newer .zip.
@@ -73,6 +75,7 @@ export type PluginInfo = {
   // off; changedAt is when that was last changed.
   schedule?: { time: string; off: boolean; changedAt: number };
 };
+// An official plugin, as listed before anything is downloaded.
 export type PluginRecommendation = {
   id: string;
   name: string;
@@ -80,6 +83,8 @@ export type PluginRecommendation = {
   author: string;
   description: string;
   requires: string;
+  // Its icon, as a data: URL ('' for none).
+  icon?: string;
 };
 export type PluginList = {
   thirdParty: boolean;

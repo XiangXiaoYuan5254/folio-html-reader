@@ -279,35 +279,37 @@ try {
   const dialog = page.getByRole('dialog', { name: '设置', exact: true });
   await dialog.getByRole('button', { name: '插件' }).click();
 
-  // A fresh install shows only recommendation metadata. Declining consent fetches nothing.
-  const recommendation = dialog.getByRole('article', { name: '推荐：AI 前沿日报' });
-  await recommendation.waitFor();
+  // A fresh install lists the official plugin. Nothing is downloaded until it's installed, and
+  // installing it needs no community switch.
+  const official = dialog.getByRole('list', { name: '官方插件' });
+  await official.getByText('AI 前沿日报').waitFor();
+  assert.match(await official.locator('img.plugin-icon').getAttribute('src'), /^data:image\/svg/);
   await page.screenshot({ path: path.join(evidence, 'optional-plugin-recommended.png') });
   assert.equal((await page.evaluate(() => window.folio.invoke('plugins'))).plugins.length, 0);
   assert.equal(await app.evaluate(() => globalThis.pluginDownloads), 0);
-  await recommendation.getByRole('button', { name: '下载', exact: true }).click();
-  const warning = dialog.getByRole('alertdialog', { name: '打开外部插件前请确认' });
-  await warning.getByRole('button', { name: '取消', exact: true }).click();
-  assert.equal(await app.evaluate(() => globalThis.pluginDownloads), 0);
-  await recommendation.getByRole('button', { name: '下载', exact: true }).click();
-  await warning.getByRole('button', { name: '我了解，打开外部插件' }).click();
-  const dailyConfirm = dialog.getByRole('dialog', { name: '安装AI 前沿日报' });
-  await dailyConfirm.waitFor();
-  assert.equal(await app.evaluate(() => globalThis.pluginDownloads), 1);
-  assert.equal((await page.evaluate(() => window.folio.invoke('plugins'))).plugins.length, 0);
-  await dailyConfirm.getByRole('button', { name: '取消', exact: true }).click();
-  await recommendation.getByRole('button', { name: '下载', exact: true }).click();
-  await dailyConfirm.getByRole('button', { name: '安装', exact: true }).click();
-  await recommendation.getByRole('button', { name: '已安装', exact: true }).waitFor();
+  await official.getByRole('button', { name: '安装AI 前沿日报' }).click();
   const dailyCard = dialog
     .locator('.plugin-card')
     .filter({ has: page.getByLabel('开启AI 前沿日报') });
+  await dailyCard.getByText('官方', { exact: true }).waitFor();
+  assert.equal(await app.evaluate(() => globalThis.pluginDownloads), 1);
+  assert.equal(await official.count(), 0, 'installed, it leaves the official list');
   assert.equal(await dailyCard.getByLabel('开启AI 前沿日报').isChecked(), false);
+  assert.equal((await page.evaluate(() => window.folio.invoke('plugins'))).thirdParty, false);
   await page.screenshot({ path: path.join(evidence, 'optional-plugin-installed.png') });
-  await dailyCard.getByLabel('展开AI 前沿日报').click();
+  // Opened once installed, to show what it does.
   await dailyCard.getByRole('button', { name: '卸载', exact: true }).click();
-  await recommendation.getByRole('button', { name: '下载', exact: true }).waitFor();
-  assert.equal(await app.evaluate(() => globalThis.pluginDownloads), 2);
+  await official.getByRole('button', { name: '安装AI 前沿日报' }).waitFor();
+  assert.equal(await app.evaluate(() => globalThis.pluginDownloads), 1);
+
+  // Community plugins: on only after the warning.
+  await dialog.getByLabel('允许社区插件').click();
+  const warning = dialog.getByRole('alertdialog', { name: '开启社区插件前请确认' });
+  await warning.getByRole('button', { name: '取消', exact: true }).click();
+  assert.equal((await page.evaluate(() => window.folio.invoke('plugins'))).thirdParty, false);
+  await dialog.getByLabel('允许社区插件').click();
+  await warning.getByRole('button', { name: '开启社区插件' }).click();
+  await dialog.getByRole('button', { name: '从文件夹加载…' }).waitFor();
 
   // 1. Loaded from its folder: where it is, with what its author may have got wrong.
   await pick(devDir);

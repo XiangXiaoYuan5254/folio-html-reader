@@ -6,7 +6,8 @@
 // 带脚本的插件（run.script）只在一个看不见的沙箱页面里运行（sandboxPage），不能自己联网，
 // 也拿不到 API Key：它只能通过页间转交的 fetch 访问清单里写明的网站。
 //
-// 外部插件和 Obsidian 的社区插件一样默认关闭：打开「外部插件」之后才能安装和运行。
+// 官方插件（electron/recommended-plugins.json 列出的，从官网下载、按 SHA-256 校验）随时可以装。
+// 其他插件是社区插件，和 Obsidian 的一样默认关闭：打开「社区插件」之后才能安装和运行。
 const fs = require('node:fs/promises');
 const fsWatch = require('node:fs').watch;
 const path = require('node:path');
@@ -33,7 +34,7 @@ const { readZip } = require('./zip.cjs');
 const recommendations = require('./recommended-plugins.json');
 
 const FETCH_LIMIT = 3 * 1024 * 1024;
-// 插件目录：作者提交、页间收录的外部插件列表（公开仓库 folio-plugins 里的
+// 插件目录：作者提交、页间收录的社区插件列表（公开仓库 folio-plugins 里的
 // community-plugins.json）。GitHub 连不上时改走 jsDelivr。
 const DIRECTORY_URLS = [
   'https://raw.githubusercontent.com/XiangXiaoYuan5254/folio-plugins/main/community-plugins.json',
@@ -41,6 +42,16 @@ const DIRECTORY_URLS = [
 ];
 const ZIP_LIMIT = 8 * 1024 * 1024;
 const LOG_KEEP = 400;
+
+// A plugin's contents as one hash: its manifest, then the files it lists, in that order. The
+// website build (scripts/website-plugins.mjs) records it for each official plugin, so a copy
+// installed as a plain .zip (页间 0.30.0 didn't tell official plugins apart) is recognised by
+// what it is, not by its file name.
+function pluginDigest(files) {
+  const hash = crypto.createHash('sha256');
+  for (const { name, data } of files) hash.update(`${name}\0${data.length}\0`).update(data);
+  return hash.digest('hex');
+}
 
 // GitHub / Gitee 链接：仓库，或仓库里的一个文件夹（…/tree/<分支>/<文件夹>）。
 function parseSource(input) {
@@ -270,6 +281,8 @@ function createPlugins({
   // Told when a plugin being written in a folder of its own (loaded for development) changes.
   onChange,
   directoryUrls = DIRECTORY_URLS,
+  // The official plugins, as the website build wrote them (tests pass their own).
+  recommended = recommendations,
 }) {
   const installedDir = path.join(userDir, 'plugins');
   const stagingDir = path.join(installedDir, '.staging');
@@ -302,6 +315,35 @@ function createPlugins({
   async function readManifest(dir) {
     const raw = await fs.readFile(path.join(dir, MANIFEST), 'utf8');
     return validateManifest(JSON.parse(raw), { appVersion });
+  }
+  // 页间自带的和官方插件不受「社区插件」开关影响。
+  const trusted = (entry, s) =>
+    entry.bundled || (!entry.dev && s.plugins[entry.manifest?.id]?.source?.type === 'official');
+  // An official plugin installed by 0.30.0 is saved as a .zip install: its files, compared with
+  // the official release's, make it official again. Checked once per install.
+  const notOfficial = new Set();
+  async function recogniseOfficial(s, found) {
+    let changed = false;
+    for (const [id, entry] of found) {
+      const saved = s.plugins[id];
+      const official = recommended.find((r) => r.id === id && r.digest);
+      if (!official || entry.error || entry.bundled || entry.dev) continue;
+      if (saved?.source?.type !== 'zip') continue;
+      const key = `${id}:${saved.installedAt}`;
+      if (notOfficial.has(key)) continue;
+      try {
+        const files = [{ name: MANIFEST, data: await fs.readFile(path.join(entry.dir, MANIFEST)) }];
+        for (const name of entry.manifest.files)
+          files.push({ name, data: await fs.readFile(path.join(entry.dir, name)) });
+        if (pluginDigest(files) === official.digest) {
+          saved.source = { type: 'official' };
+          changed = true;
+          continue;
+        }
+      } catch {}
+      notOfficial.add(key);
+    }
+    if (changed) await saveState();
   }
   // 自带的、装好的，和从本地文件夹加载、正在写的插件（开发版：直接读那个文件夹，不复制）。
   // 读不了的插件也列出来，附上原因。
@@ -393,7 +435,9 @@ function createPlugins({
   async function list() {
     const s = await readState();
     const plugins = [];
-    for (const [id, entry] of await catalog()) {
+    const found = await catalog();
+    await recogniseOfficial(s, found);
+    for (const [id, entry] of found) {
       const saved = s.plugins[id] || {};
       if (entry.error) {
         // The same fields as any other, so a card can turn broken and back while it's written.
@@ -420,8 +464,8 @@ function createPlugins({
         source: bundled ? { type: 'bundled' } : sourceOf(saved.source) || { type: 'local' },
         // A plugin loaded from a folder: what its author may have got wrong.
         ...(entry.dev ? { warnings: entry.warnings || [] } : {}),
-        // 关掉「外部插件」时，外部插件都不运行。
-        enabled: !!saved.enabled && (bundled || s.thirdParty),
+        // 关掉「社区插件」时，社区插件都不运行；自带的和官方插件照常。
+        enabled: !!saved.enabled && (trusted(entry, s) || s.thirdParty),
         settings: settingsFor(manifest, saved.settings),
         root: typeof saved.root === 'string' ? saved.root : '',
         enabledAt: Number(saved.enabledAt) || 0,
@@ -446,7 +490,7 @@ function createPlugins({
     }
     plugins.sort((a, b) => Number(b.bundled) - Number(a.bundled) || a.id.localeCompare(b.id));
     syncWatchers(s);
-    return { thirdParty: s.thirdParty, appVersion, plugins, recommendations };
+    return { thirdParty: s.thirdParty, appVersion, plugins, recommendations: recommended };
   }
   // Where a plugin came from, as the window shows it.
   function sourceOf(source) {
@@ -497,7 +541,7 @@ function createPlugins({
   async function set({ id, enabled, settings, root, schedule }) {
     const entry = await find(id);
     const s = await readState();
-    if (enabled && !entry.bundled && !s.thirdParty) fail('请先在插件设置里打开「外部插件」');
+    if (enabled && !trusted(entry, s) && !s.thirdParty) fail('请先在插件设置里打开「社区插件」');
     const saved = { ...(s.plugins[id] || {}) };
     if (typeof enabled === 'boolean') {
       if (enabled && !saved.enabled) saved.enabledAt = Date.now();
@@ -547,9 +591,10 @@ function createPlugins({
   }
   // 运行时要读的文件：任务说明、模板和脚本。
   async function load({ id }) {
-    const { manifest, dir, bundled } = await find(id);
+    const entry = await find(id);
+    const { manifest, dir } = entry;
     const s = await readState();
-    if (!bundled && !s.thirdParty) fail('「外部插件」已关闭');
+    if (!trusted(entry, s) && !s.thirdParty) fail('「社区插件」已关闭');
     const read = (file) => (file ? fs.readFile(path.join(dir, file), 'utf8') : Promise.resolve(''));
     return {
       manifest,
@@ -601,18 +646,19 @@ function createPlugins({
   // 从链接读出插件、下载到暂存处，交给窗口请用户确认；确认后 install 才真正装上。
   // local：本地的插件文件夹（开发版，直接读那个文件夹）或 .zip（解压出一份装上）。
   // expect：从插件目录装时目录里写的 id，仓库里的插件必须是它。
+  // recommendation：官方插件，从官网下载，和页间里记下的 SHA-256 对上才装；不用打开「社区插件」。
   async function inspect({ url, id, local, expect, recommendation }) {
     const s = await readState();
-    if (!s.thirdParty) fail('请先在插件设置里打开「外部插件」');
     if (recommendation) {
-      const entry = recommendations.find((p) => p.id === recommendation);
-      if (!entry) fail('没有找到这个推荐插件');
+      const entry = recommended.find((p) => p.id === recommendation);
+      if (!entry) fail('没有找到这个官方插件');
       if (!satisfies(appVersion, entry.requires)) fail(`这个插件需要页间 ${entry.requires}`);
       const zip = await remote.get(entry.url, { limit: ZIP_LIMIT });
       if (crypto.createHash('sha256').update(zip).digest('hex') !== entry.sha256)
         fail('插件下载校验失败，请稍后重新下载');
       return inspectZip(zip, path.basename(new URL(entry.url).pathname), entry);
     }
+    if (!s.thirdParty) fail('请先在插件设置里打开「社区插件」');
     if (local) return inspectLocal(String(local));
     let source;
     if (id) {
@@ -713,7 +759,7 @@ function createPlugins({
     }
     const manifest = validateManifest(parsed, { appVersion });
     if (expected && (manifest.id !== expected.id || manifest.version !== expected.version))
-      fail('下载的插件与推荐信息不一致，没有安装');
+      fail('下载的插件和官方插件的信息对不上，没有安装');
     const before = await existingFor(manifest, 'zip');
     const files = [];
     let total = raw.length;
@@ -726,7 +772,7 @@ function createPlugins({
       files.push({ name, data });
     }
     const { stage, dir } = await stageFiles(raw, files);
-    const source = { type: 'zip', name };
+    const source = expected ? { type: 'official' } : { type: 'zip', name };
     staged.set(stage, { dir, manifest, source });
     const text = (file) => files.find((f) => f.name === file)?.data.toString('utf8') || '';
     return {
@@ -745,8 +791,8 @@ function createPlugins({
   }
   async function install({ stage }) {
     const s = await readState();
-    if (!s.thirdParty) fail('请先在插件设置里打开「外部插件」');
     const item = staged.get(stage);
+    if (!s.thirdParty && item?.source.type !== 'official') fail('请先在插件设置里打开「社区插件」');
     if (!item) fail('安装已过期，请重新选择插件');
     staged.delete(stage);
     if (item.link) {
@@ -801,9 +847,10 @@ function createPlugins({
   }
   // 插件联网：只能是清单里写明的网站，https，GET；跳转后的地址也要在名单里。
   async function pluginFetch({ id, url, accept }) {
-    const { manifest, bundled } = await find(id);
+    const entry = await find(id);
+    const { manifest } = entry;
     const s = await readState();
-    if (!bundled && !s.thirdParty) fail('「外部插件」已关闭');
+    if (!trusted(entry, s) && !s.thirdParty) fail('「社区插件」已关闭');
     if (!s.plugins[id]?.enabled) fail('插件没有开启');
     let current = String(url || '');
     for (let hop = 0; hop < 5; hop++) {
@@ -874,9 +921,10 @@ function createPlugins({
   }
   // 脚本插件的沙箱页面（electron/main.cjs 用 app://plugin/<id> 提供）。
   async function sandbox(id) {
-    const { manifest, dir, bundled } = await find(id);
+    const entry = await find(id);
+    const { manifest, dir } = entry;
     const s = await readState();
-    if (!bundled && !s.thirdParty) fail('「外部插件」已关闭');
+    if (!trusted(entry, s) && !s.thirdParty) fail('「社区插件」已关闭');
     if (!s.plugins[id]?.enabled) fail('插件没有开启');
     if (!manifest.run.script) fail('这个插件没有脚本');
     const code = await fs.readFile(path.join(dir, manifest.run.script), 'utf8');
@@ -892,9 +940,10 @@ function createPlugins({
   // A folder plugin at work in its folder: what's there, reading a page, writing a new one.
   // Every path stays inside the folder, links included; nothing is deleted or overwritten.
   async function folderPlugin(id) {
-    const { manifest, bundled } = await find(id);
+    const entry = await find(id);
+    const { manifest } = entry;
     const s = await readState();
-    if (!bundled && !s.thirdParty) fail('「外部插件」已关闭');
+    if (!trusted(entry, s) && !s.thirdParty) fail('「社区插件」已关闭');
     if (!s.plugins[id]?.enabled) fail('插件没有开启');
     if (manifest.run.where !== 'folder') fail('这个插件在打开的项目里运行');
     return { manifest, dir: folderFor(manifest, settingsFor(manifest, s.plugins[id]?.settings)) };
@@ -1142,6 +1191,7 @@ function cleanDirectory(raw) {
 
 module.exports = {
   createPlugins,
+  pluginDigest,
   validateManifest,
   parseSource,
   allowedUrl,

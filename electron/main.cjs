@@ -23,6 +23,7 @@ const { projectFor, filesFromArgv } = require('./open-file.cjs');
 const { createUpdates } = require('./updater.cjs');
 const { createAi } = require('./ai.cjs');
 const { createAnnouncements } = require('./announcements.cjs');
+const { createCommunity } = require('./community.cjs');
 const { createSpeech } = require('./speech.cjs');
 const { createSpeechLog } = require('./speech-log.cjs');
 const { createAiLog } = require('./ai-log.cjs');
@@ -45,6 +46,7 @@ let uiZoom = 1;
 const previews = new Map();
 let ai;
 let announcements;
+let community;
 let plugins;
 // The teacher's sentences said by a speech service, two at a time.
 const voiceQueue = limiter(2);
@@ -366,6 +368,13 @@ app
       file: path.join(app.getPath('userData'), 'announcements.json'),
       fetch: (url, init) => net.fetch(url, init),
     });
+    community = createCommunity({
+      fetch: (url, init) => net.fetch(url, init),
+      // FOLIO_COMMUNITY_QR: tests run from source read the picture from a stand-in.
+      ...(!app.isPackaged && process.env.FOLIO_COMMUNITY_QR
+        ? { url: process.env.FOLIO_COMMUNITY_QR }
+        : {}),
+    });
     speechLog = createSpeechLog(path.join(app.getPath('userData'), 'logs', 'speech.jsonl'));
     ai = createAi({
       file: path.join(app.getPath('userData'), 'ai.json'),
@@ -555,6 +564,7 @@ app
           'cloud-voice',
           'cloud-voice-hush',
           'speech-diagnostic',
+          'community-qr',
           'plugins',
           'plugin-set',
           'plugin-third-party',
@@ -747,6 +757,8 @@ app
           return true;
         case 'announcements':
           return announcements.load(payload || {});
+        case 'community-qr':
+          return community.qr(payload || {});
         // Plugins (electron/plugins.cjs): what's there, switching them on, installing from a
         // GitHub or Gitee link, and the network a run may reach.
         case 'plugins':

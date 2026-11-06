@@ -7,6 +7,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { readPluginDir, MANIFEST } = require('../electron/plugin-manifest.cjs');
+const { pluginDigest } = require('../electron/plugins.cjs');
 const { writeZip } = require('../folio-plugins/cli/lib/zip.cjs');
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const escapeHtml = (s) =>
@@ -22,6 +23,11 @@ const escapeHtml = (s) =>
       })[c],
   );
 
+async function iconData(file) {
+  const type = /\.svg$/i.test(file) ? 'image/svg+xml' : 'image/png';
+  return `data:${type};base64,${(await fs.readFile(file)).toString('base64')}`;
+}
+
 export async function buildWebsitePlugins({
   outputDir = path.join(root, 'website/plugins'),
   recommendationsFile = path.join(root, 'electron/recommended-plugins.json'),
@@ -32,11 +38,14 @@ export async function buildWebsitePlugins({
   const { manifest, raw, dir } = await readPluginDir(path.join(root, 'plugins/ai-daily'), {
     appVersion,
   });
-  const files = [{ name: `${manifest.id}/${MANIFEST}`, data: raw }];
+  const contents = [{ name: MANIFEST, data: raw }];
   for (const name of manifest.files)
-    files.push({ name: `${manifest.id}/${name}`, data: await fs.readFile(path.join(dir, name)) });
+    contents.push({ name, data: await fs.readFile(path.join(dir, name)) });
   // Stable archive bytes, so the app can pin and verify its SHA-256 before installation.
-  const zip = writeZip(files, { date: new Date(2000, 0, 1) });
+  const zip = writeZip(
+    contents.map((f) => ({ ...f, name: `${manifest.id}/${f.name}` })),
+    { date: new Date(2000, 0, 1) },
+  );
   const filename = `${manifest.id}-${manifest.version}.zip`;
   const sha256 = crypto.createHash('sha256').update(zip).digest('hex');
   const recommendation = {
@@ -48,12 +57,21 @@ export async function buildWebsitePlugins({
     requires: manifest.engines.folio,
     url: `https://helloxxy.com/works/folio/plugins/${filename}`,
     sha256,
+    // Recognises a copy installed as a plain .zip (electron/plugins.cjs).
+    digest: pluginDigest(contents),
+    // Shown in 设置 › 插件 before anything is downloaded.
+    icon: manifest.icon ? await iconData(path.join(dir, manifest.icon)) : '',
   };
   await fs.mkdir(outputDir, { recursive: true });
   await fs.writeFile(path.join(outputDir, filename), zip);
   await fs.writeFile(path.join(outputDir, 'SHA256SUMS.txt'), `${sha256}  ${filename}\n`);
   const template = await fs.readFile(path.join(root, 'scripts/website-plugins.html'), 'utf8');
-  const values = { ...recommendation, filename, size: `${Math.ceil(zip.length / 1024)} KB` };
+  const values = {
+    ...recommendation,
+    filename,
+    size: `${Math.ceil(zip.length / 1024)} KB`,
+    since: recommendation.requires.replace(/^>=\s*/, ''),
+  };
   await fs.writeFile(
     path.join(outputDir, 'index.html'),
     template.replace(/\{\{(\w+)\}\}/g, (_, key) => {
