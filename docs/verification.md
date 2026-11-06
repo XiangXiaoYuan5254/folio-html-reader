@@ -16,7 +16,6 @@
 - `npm run test:storage`：按类别统计项目数据，确认后清理旧白板、语音、无用数据及旧备份；单元测试另外验证每篇文档最新备份和外部改名文档的数据保留。
 - `npm run test:new-file`：新建时建议未占用的文件名，遇到同名文件自动编号并告知实际名称。
 - `npm run test:ui-type`：界面字体与缩放即时生效并在重启后保留，正文显示大小不变，可恢复默认值。
-- `node --test tests/license-pricing.mjs tests/license-devices.mjs`：本地临时数据库中的价格、邀请优惠截止时间、设备状态与访问日志统计；不修改线上数据。
 - `npm run dist:mac`：类型检查、生产构建、macOS arm64 安装包和 SHA-256 校验文件。
 
 测试数据均在临时工作空间中运行。`FOLIO_TEST_SAMPLES` 可指定额外本地 HTML，`FOLIO_QA_DIR` 可指定截图目录。默认示例不加载远程服务。
