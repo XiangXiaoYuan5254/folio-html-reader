@@ -6,7 +6,7 @@
 // 带脚本的插件（run.script）只在一个看不见的沙箱页面里运行（sandboxPage），不能自己联网，
 // 也拿不到 API Key：它只能通过页间转交的 fetch 访问清单里写明的网站。
 //
-// 官方插件（electron/recommended-plugins.json 列出的，从官网下载、按 SHA-256 校验）随时可以装。
+// 官方插件（官网上签过名的列表里的，从官网下载、按 SHA-256 校验；见 official-plugins.cjs）随时可以装。
 // 其他插件是社区插件，和 Obsidian 的一样默认关闭：打开「社区插件」之后才能安装和运行。
 const fs = require('node:fs/promises');
 const fsWatch = require('node:fs').watch;
@@ -30,8 +30,7 @@ const {
   lintPlugin,
 } = require('./plugin-manifest.cjs');
 const { readZip } = require('./zip.cjs');
-// Metadata only: listing recommendations never contacts the website or loads plugin code.
-const recommendations = require('./recommended-plugins.json');
+const { createOfficial, OFFICIAL_URL, OFFICIAL_KEYS } = require('./official-plugins.cjs');
 
 const FETCH_LIMIT = 3 * 1024 * 1024;
 // 插件目录：作者提交、页间收录的社区插件列表（公开仓库 folio-plugins 里的
@@ -281,14 +280,29 @@ function createPlugins({
   // Told when a plugin being written in a folder of its own (loaded for development) changes.
   onChange,
   directoryUrls = DIRECTORY_URLS,
-  // The official plugins, as the website build wrote them (tests pass their own).
-  recommended = recommendations,
+  // The signed list of official plugins on the website (tests pass their own).
+  officialUrl = OFFICIAL_URL,
+  officialKeys = OFFICIAL_KEYS,
 }) {
   const installedDir = path.join(userDir, 'plugins');
   const stagingDir = path.join(installedDir, '.staging');
   const stateFile = path.join(userDir, 'plugins.json');
   const logDir = path.join(userDir, 'logs', 'plugins');
   const remote = createRemote(fetch);
+  const official = createOfficial({
+    fetch,
+    atomicWrite,
+    file: path.join(userDir, 'official-plugins.json'),
+    url: officialUrl,
+    keys: officialKeys,
+  });
+  // The official plugins this 页间 can install: the list as last read, while a newer one is
+  // fetched in the background (the window reads the plugins again when it comes).
+  async function officialPlugins() {
+    if (official.stale()) void official.refresh().then((changed) => changed && onChange?.());
+    const list = await official.saved();
+    return (list?.plugins || []).filter((p) => satisfies(appVersion, p.requires));
+  }
   let state = null;
   let writing = Promise.resolve();
   const staged = new Map();
@@ -322,11 +336,11 @@ function createPlugins({
   // An official plugin installed by 0.30.0 is saved as a .zip install: its files, compared with
   // the official release's, make it official again. Checked once per install.
   const notOfficial = new Set();
-  async function recogniseOfficial(s, found) {
+  async function recogniseOfficial(s, found, offered) {
     let changed = false;
     for (const [id, entry] of found) {
       const saved = s.plugins[id];
-      const official = recommended.find((r) => r.id === id && r.digest);
+      const official = offered.find((r) => r.id === id && r.digest);
       if (!official || entry.error || entry.bundled || entry.dev) continue;
       if (saved?.source?.type !== 'zip') continue;
       const key = `${id}:${saved.installedAt}`;
@@ -436,7 +450,8 @@ function createPlugins({
     const s = await readState();
     const plugins = [];
     const found = await catalog();
-    await recogniseOfficial(s, found);
+    const offered = await officialPlugins();
+    await recogniseOfficial(s, found, offered);
     for (const [id, entry] of found) {
       const saved = s.plugins[id] || {};
       if (entry.error) {
@@ -490,7 +505,7 @@ function createPlugins({
     }
     plugins.sort((a, b) => Number(b.bundled) - Number(a.bundled) || a.id.localeCompare(b.id));
     syncWatchers(s);
-    return { thirdParty: s.thirdParty, appVersion, plugins, recommendations: recommended };
+    return { thirdParty: s.thirdParty, appVersion, plugins, recommendations: offered };
   }
   // Where a plugin came from, as the window shows it.
   function sourceOf(source) {
@@ -650,7 +665,7 @@ function createPlugins({
   async function inspect({ url, id, local, expect, recommendation }) {
     const s = await readState();
     if (recommendation) {
-      const entry = recommended.find((p) => p.id === recommendation);
+      const entry = (await officialPlugins()).find((p) => p.id === recommendation);
       if (!entry) fail('没有找到这个官方插件');
       if (!satisfies(appVersion, entry.requires)) fail(`这个插件需要页间 ${entry.requires}`);
       const zip = await remote.get(entry.url, { limit: ZIP_LIMIT });

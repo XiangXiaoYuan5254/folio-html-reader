@@ -101,17 +101,25 @@ npm run test:update
 
 Windows 的同一测试在 GitHub Actions 的 `Windows` 工作流里运行（「Test automatic update」一步）。
 
-## 官网独立插件
+## 官方插件（和页间分开发布）
 
-插件不放进安装包。`electron/recommended-plugins.json` 只保存官方插件的名称、说明、图标、下载地址、SHA-256 和内容摘要；启动与打开插件页都不下载。用户在「官方插件」里点「安装」才从官网下载 ZIP，SHA-256 对上才装，装好后默认关闭。官方插件不需要打开「允许社区插件」。内容摘要用来认出 0.30.0 当成普通 .zip 装的官方插件。
+官方插件不进安装包，也不跟页间一起发版：插件更新、新增官方插件都不用发新版页间，页间更新也不会动用户装好的插件。
+
+- 官网 `plugins/official.json` 是官方插件的列表（名称、说明、图标、版本、下载地址、ZIP 的 SHA-256、内容摘要），**用 Ed25519 签名**。页间里只有它的地址和公钥（`electron/official-plugins.cjs` 的 `OFFICIAL_KEYS`），签名不对、比已经见过的旧（`seq` 更小）都不认；读到的列表存在用户数据目录，离线时照样列出。打开插件页时最多每半小时读一次，不阻塞界面。
+- 用户在「官方插件」里点「安装」才下载 ZIP，SHA-256 对上才装，装好后默认关闭，不需要打开「允许社区插件」。已装的官方插件有新版本时，卡片上显示「更新到 x」。列表里要求更新版页间（`engines.folio`）的插件，旧版页间看不到。
+- 签名私钥只在维护者的电脑上：`~/.config/folio/official-plugins.pem`（或 `FOLIO_PLUGIN_KEY` 指定的文件），**不进仓库、不放服务器**，服务器被改了也冒充不了官方插件。请另外备份一份；丢了只能换一把新钥匙，把新公钥加进 `OFFICIAL_KEYS` 发一版页间，新旧公钥并存一个版本后再去掉旧的。`node scripts/website-plugins.mjs --new-key` 生成新钥匙并打印公钥。
+
+发布哪些插件写在 `plugins/publish.json`：`dir` 是插件文件夹（相对 `plugins/`，可以在仓库外，比如挂件「深深」在 `../../folio-shenshen-widget`），`listed: false` 的插件照样打包上传，但不进列表，用户看不到，准备好了改成 `true` 再发布一次即可。
 
 ```sh
 npm run website:plugins
 ```
 
-这会校验 `plugins/ai-daily/`，按清单打包，生成 `website/plugins/` 的说明页、带版本号的 ZIP、校验文件，以及应用使用的推荐信息。网页模板在 `scripts/website-plugins.html`。修改插件时先更新插件版本、运行 `node scripts/sync-plugin-kit.mjs`，再生成下载文件；**在构建页间之前生成推荐信息，在发布页间之前上传 ZIP**，不要替换已经发布版本的 ZIP 内容，也不要删除旧版页间要下载的 ZIP。
+这会校验每个插件、打出带版本号的 ZIP（字节固定，重复打包 SHA-256 不变），生成签名的 `official.json`、`SHA256SUMS.txt` 和说明页（模板 `scripts/website-plugins.html`）。然后把 `website/plugins/` 传到服务器：**先传 ZIP，最后传 `official.json`**，传完在服务器上 `sha256sum -c SHA256SUMS.txt`。
 
-`npm run website:downloads` 也会生成插件文件。仅发布插件时，单独上传 `website/plugins/` 即可，不更新应用的 `.yml`、安装包或发布说明。插件功能从页间 0.30.0 开始提供。
+- 改插件就改它的 `version`：已经发布的 ZIP 内容不能替换，旧 ZIP 也不要删。
+- 改了 `plugins/ai-daily/` 后运行 `node scripts/sync-plugin-kit.mjs`，把示例同步到 folio-plugins。
+- 页间 0.30.0、0.30.1 还用安装包里自带的列表，只认 `ai-daily-1.1.0.zip`：这个文件要一直留在服务器上。
 
 ## 交流群二维码
 

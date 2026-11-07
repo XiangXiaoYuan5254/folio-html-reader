@@ -4,6 +4,7 @@
 // installed, and the plugin directory browsed and installed from. No real network or API key.
 import { _electron as electron } from 'playwright';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import os from 'node:os';
@@ -16,16 +17,36 @@ const { writeZip } = require('../folio-plugins/cli/lib/zip.cjs');
 const root = path.resolve('.');
 const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'folio-plugin-dev-'));
 const pluginDownloads = path.join(temp, 'downloads');
-await buildWebsitePlugins({
-  outputDir: pluginDownloads,
-  recommendationsFile: path.join(temp, 'recommendations.json'),
-});
+// The website's official plugins, signed with a key of the test's own (FOLIO_OFFICIAL_KEY).
+const signing = crypto.generateKeyPairSync('ed25519');
+await fs.mkdir(pluginDownloads, { recursive: true });
+await fs.writeFile(
+  path.join(temp, 'key.pem'),
+  signing.privateKey.export({ type: 'pkcs8', format: 'pem' }),
+);
+await fs.writeFile(
+  path.join(temp, 'publish.json'),
+  JSON.stringify({ plugins: [{ dir: path.join(root, 'plugins/ai-daily'), listed: true }] }),
+);
+const [officialEntry] = (
+  await buildWebsitePlugins({
+    outputDir: pluginDownloads,
+    sourcesFile: path.join(temp, 'publish.json'),
+    keyFile: path.join(temp, 'key.pem'),
+  })
+).listed;
 const project = path.join(temp, '项目');
 const userData = path.join(temp, 'user-data');
 const documents = path.join(temp, 'Documents');
 const evidence = process.env.FOLIO_QA_DIR || path.join(os.tmpdir(), 'folio-plugin-dev-qa');
 await fs.mkdir(project, { recursive: true });
 await fs.mkdir(userData, { recursive: true });
+// As if read from the website before (that path is in tests/plugin-downloads.test.cjs): the
+// window lists it at once, whatever the real website answers in the background.
+await fs.copyFile(
+  path.join(pluginDownloads, 'official.json'),
+  path.join(userData, 'official-plugins.json'),
+);
 await fs.mkdir(evidence, { recursive: true });
 await fs.writeFile(
   path.join(project, '笔记.html'),
@@ -223,6 +244,9 @@ try {
       FOLIO_DOCUMENTS: documents,
       FOLIO_NO_SPEECH_HELPER: '1',
       FOLIO_PLUGIN_DIRECTORY: `http://127.0.0.1:${port}/directory.json`,
+      FOLIO_OFFICIAL_KEY: signing.publicKey
+        .export({ type: 'spki', format: 'der' })
+        .toString('base64'),
     },
   });
   // The plugin's one site, and a GitHub with the directory's plugin in it.
@@ -252,13 +276,10 @@ try {
     {
       sha,
       listed: listedManifest,
-      pluginUrl: require('../electron/recommended-plugins.json')[0].url,
+      pluginUrl: officialEntry.url,
       pluginZip: (
         await fs.readFile(
-          path.join(
-            pluginDownloads,
-            path.basename(new URL(require('../electron/recommended-plugins.json')[0].url).pathname),
-          ),
+          path.join(pluginDownloads, path.basename(new URL(officialEntry.url).pathname)),
         )
       ).toString('base64'),
     },

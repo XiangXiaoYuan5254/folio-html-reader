@@ -401,6 +401,10 @@ app
       ...(!app.isPackaged && process.env.FOLIO_PLUGIN_DIRECTORY
         ? { directoryUrls: [process.env.FOLIO_PLUGIN_DIRECTORY] }
         : {}),
+      // FOLIO_OFFICIAL_KEY: tests run from source sign the official plugin list with their own key.
+      ...(!app.isPackaged && process.env.FOLIO_OFFICIAL_KEY
+        ? { officialKeys: [process.env.FOLIO_OFFICIAL_KEY] }
+        : {}),
     });
     void plugins.cleanup();
     protocol.handle('app', async (request) => {

@@ -292,7 +292,7 @@ npx electron-builder --mac dir -c.mac.identity=null -c.mac.notarize=false
 - `electron/ai-kimi.cjs`：通过本机 Kimi Code CLI 的 ACP 接口使用 Kimi 会员：登录、模型与额度、流式回答，以及用本机的 MCP 接口把项目 Agent 的工具交给 Kimi 调用。和 Codex 一样，一段对话保留同一个会话；退出 App 时留下的会话，下次启动 CLI 时删除。
 - `electron/hearing.cjs`、`electron/hearing-worker.cjs`、`electron/cloud-hearing.cjs`：没有 macOS 语音 helper 时（Windows）的语音对话识别：界面打开麦克风，子进程用 Silero VAD 判断什么时候在说话，再用 SenseVoice 在本机识别，或交给通义百炼 / 豆包语音的流式识别。
 - `src/ai/`：对话与项目 Agent、文档上下文与长文档分段、原文引用定位、源码修改的解析与对比。
-- `electron/plugins.cjs`、`electron/plugin-manifest.cjs`、`electron/zip.cjs`、`src/plugins/`、`plugins/`：插件。主进程读取和校验插件清单（`plugin-manifest.cjs`，公开的命令行工具用同一份），从 GitHub / Gitee 按 commit 下载安装，从 .zip 解压安装，从本地文件夹加载开发版并监视它的改动，读取插件目录，保存运行日志，按白名单替插件联网，并提供脚本插件的沙箱页面（`app://plugin/<id>`）；界面里的运行器把插件交给项目 Agent 运行（只给它清单里的工具，写入限制在它的文件夹里），记运行日志，并负责每天的定时。`plugins/` 是官方插件的源码，从官网单独下载，不随页间打包；`electron/recommended-plugins.json` 只带名称、说明、图标和下载校验信息。`electron/community.cjs`：从官网读取用户交流群的二维码。
+- `electron/plugins.cjs`、`electron/plugin-manifest.cjs`、`electron/zip.cjs`、`src/plugins/`、`plugins/`：插件。主进程读取和校验插件清单（`plugin-manifest.cjs`，公开的命令行工具用同一份），从 GitHub / Gitee 按 commit 下载安装，从 .zip 解压安装，从本地文件夹加载开发版并监视它的改动，读取插件目录，保存运行日志，按白名单替插件联网，并提供脚本插件的沙箱页面（`app://plugin/<id>`）；界面里的运行器把插件交给项目 Agent 运行（只给它清单里的工具，写入限制在它的文件夹里），记运行日志，并负责每天的定时。`plugins/` 是官方插件的源码，和页间分开发布：官网上签过名的插件列表由 `electron/official-plugins.cjs` 读取和核对，插件更新不用发新版页间（见 [docs/releasing.md](docs/releasing.md)）。`electron/community.cjs`：从官网读取用户交流群的二维码。
 - `folio-plugins/`：公开仓库 [folio-plugins](https://github.com/XiangXiaoYuan5254/folio-plugins) 的内容（文档、模板、示例、Schema、类型定义、`folio-plugin` 命令行工具、插件目录），不随页间打包。
 
 AI 读取文档用的是阅读区本身：打开的文档直接取渲染后的文字，没打开的在隐藏的阅读区中载入，所以 AI 标出的高亮与手动高亮的定位方式完全相同。
