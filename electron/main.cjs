@@ -339,6 +339,31 @@ app.on('before-quit', () => {
   speech.stop();
   hearing.stop();
 });
+// A plugin's fetch checks every address before going there, so it asks for redirects to be
+// handed back (`redirect: 'manual'`). net.fetch can't: it turns down any redirect with
+// "Redirect was cancelled". Then net.request, which does report where a redirect goes, asks
+// again, and the redirect comes back as a plain 3xx response for the plugin to check.
+async function fetchOneHop(url, init) {
+  try {
+    return await net.fetch(url, init);
+  } catch (e) {
+    if (!/Redirect was cancelled/i.test(e?.message || '')) throw e;
+    const { status, location } = await new Promise((resolve, reject) => {
+      const req = net.request({ url, redirect: 'manual', credentials: 'omit' });
+      for (const [name, value] of Object.entries(init.headers || {})) req.setHeader(name, value);
+      init.signal?.addEventListener('abort', () => req.abort(), { once: true });
+      req.on('redirect', (code, _method, next) => {
+        req.abort();
+        resolve({ status: code, location: next });
+      });
+      req.on('response', () => reject(e));
+      req.on('abort', () => reject(e));
+      req.on('error', reject);
+      req.end();
+    });
+    return new Response(null, { status, headers: { location } });
+  }
+}
 // On Windows keys are encrypted with the user's login (DPAPI). macOS keeps them in the app's
 // data folder, readable only by this user: with an ad-hoc signed app the Keychain would ask
 // for the login password again after every update.
@@ -390,7 +415,8 @@ app
     plugins = createPlugins({
       // Plugins are optional downloads, including in development. Only load user installs.
       userDir: app.getPath('userData'),
-      fetch: (url, init) => net.fetch(url, init),
+      fetch: (url, init) =>
+        init?.redirect === 'manual' ? fetchOneHop(url, init) : net.fetch(url, init),
       atomicWrite,
       appVersion: app.getVersion(),
       // FOLIO_DOCUMENTS: tests run from source keep plugin folders out of the real Documents.
