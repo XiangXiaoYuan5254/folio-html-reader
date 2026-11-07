@@ -261,6 +261,9 @@ export function PluginSettings(p: {
                 <li>社区插件由各自的作者维护，只装你信任的。</li>
                 <li>插件用你的 API Key 调用 AI，费用由你承担。</li>
                 <li>安装前会列出它要访问的网站和写入的文件夹。</li>
+                <li>
+                  带脚本的插件可以自己访问任何网站，可能把它经手的内容发出去，不受这份网站列表限制。
+                </li>
               </ul>
               <div className="plugin-actions">
                 <button
@@ -499,10 +502,16 @@ function PluginCard(p: {
   const daily = m.triggers.find((t) => t.type === 'daily');
   // Works in a folder of its own, whichever project is open.
   const own = m.run.where === 'folder';
+  // Has a task for the AI; a plugin with only a widget has none, so nothing to run or schedule.
+  const runs = !!m.run.prompt;
   const elsewhere = !own && plugin.enabled && plugin.root && p.root && plugin.root !== p.root;
   const run = (fn: () => Promise<unknown>) => void fn().catch((e) => p.onError(errorText(e)));
   const shownOpen = open || changed;
-  const summary = plugin.enabled
+  const summary = !runs
+    ? plugin.enabled && m.widget
+      ? `挂件${widgetPlaces[m.widget.anchor]}`
+      : m.description
+    : plugin.enabled
     ? [
         plugin.schedule
           ? plugin.schedule.off
@@ -622,7 +631,9 @@ function PluginCard(p: {
                 id: plugin.id,
                 enabled: e.target.checked,
                 // Its schedule runs in the project open when it's switched on.
-                ...(!own && e.target.checked && !plugin.root && p.root ? { root: p.root } : {}),
+                ...(runs && !own && e.target.checked && !plugin.root && p.root
+                  ? { root: p.root }
+                  : {}),
               }).then(() => e.target.checked && setOpen(true)),
             )
           }
@@ -760,15 +771,17 @@ function PluginCard(p: {
               </label>
             ),
           )}
-          <div className="plugin-field">
-            <span>
-              <Sparkles size={13} />
-              用哪个 AI
-            </span>
-            <div className="plugin-model">
-              <ModelMenu use={`plugin:${plugin.id}`} label={m.name} className="model-pick" />
+          {runs ? (
+            <div className="plugin-field">
+              <span>
+                <Sparkles size={13} />
+                用哪个 AI
+              </span>
+              <div className="plugin-model">
+                <ModelMenu use={`plugin:${plugin.id}`} label={m.name} className="model-pick" />
+              </div>
             </div>
-          </div>
+          ) : null}
           {changed ? (
             <div className="plugin-actions">
               <button
@@ -865,7 +878,7 @@ function PluginCard(p: {
               {p.updating ? '正在更新…' : `更新到 ${p.update}`}
             </button>
           ) : null}
-          {plugin.enabled ? (
+          {plugin.enabled && runs ? (
             <button
               type="button"
               className="secondary-button"
@@ -926,6 +939,20 @@ function PluginCard(p: {
   );
 }
 
+// Where a widget sits, and what each event it can hear tells it.
+const widgetPlaces: Record<string, string> = {
+  assistant: '趴在 AI 助手的输入框上',
+  'bottom-right': '在窗口右下角',
+  'bottom-left': '在窗口左下角',
+  'top-right': '在窗口右上角',
+  'top-left': '在窗口左上角',
+};
+const widgetEventNames: Record<string, string> = {
+  ai: '知道 AI 是否在思考、回答或出错（不含对话内容）',
+  reading: '知道你是否在阅读、读的是 HTML 还是 PDF（不含文档内容）',
+  document: '能看到你正在读的文档标题',
+};
+
 function Permissions({
   manifest: m,
   added,
@@ -952,9 +979,31 @@ function Permissions({
         {m.run.web ? (
           <li className={added?.web ? 'new' : ''}>让模型用它自己的联网搜索（服务支持时）</li>
         ) : null}
+        {m.widget ? (
+          <>
+            <li className={added?.widget ? 'new' : ''}>
+              {`${widgetPlaces[m.widget.anchor]}显示一个挂件（鼠标移上去可以收起）`}
+            </li>
+            {m.widget.events.map((e) => (
+              <li key={e} className={added?.events?.includes(e) ? 'new' : ''}>
+                {widgetEventNames[e] || e}
+              </li>
+            ))}
+            <li className={added?.widget ? 'new' : ''}>
+              挂件可以自己访问任何网站，可能把上面这些发出去；页间从来不会在挂件里问你要密码或 API Key
+            </li>
+            {m.widget.art.author || m.widget.art.license ? (
+              <li>
+                美术素材：
+                {[m.widget.art.author, m.widget.art.license].filter(Boolean).join('，')}
+              </li>
+            ) : null}
+          </>
+        ) : null}
         {m.run.script ? (
           <li className={added?.script ? 'new' : ''}>
-            运行插件自带的脚本（在沙箱里，不能自己联网）
+            运行插件自带的脚本：脚本可以自己访问任何网站，可能把它经手的内容（包括 AI
+            交给它的文档内容）发出去
           </li>
         ) : null}
         {m.permissions.network.length ? (

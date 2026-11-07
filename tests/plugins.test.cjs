@@ -12,6 +12,10 @@ const {
   satisfies,
   newPermissions,
   sandboxPage,
+  sandboxCspFor,
+  widgetPage,
+  widgetCspFor,
+  inlineScriptHashes,
 } = require('../electron/plugins.cjs');
 const { atomicWrite } = require('../electron/workspace.cjs');
 
@@ -50,7 +54,7 @@ test('manifests that ask for too much or are malformed are turned down', () => {
     assert.throws(() => validateManifest(raw, { appVersion: '0.30.0' }), message);
   };
   bad((m) => (m.id = 'Bad Id'), /id/);
-  bad((m) => (m.folio = 2), /格式/);
+  bad((m) => (m.folio = 3), /格式/);
   bad((m) => (m.engines.folio = '>=9.0.0'), /需要页间/);
   bad((m) => m.files.push('../escape.md'), /文件名无效/);
   bad((m) => m.files.push('tool.exe'), /不能有这种文件/);
@@ -925,4 +929,84 @@ test("the sandbox page waits for a script's own setup and says which of its line
   assert.match(html, /<title>名字 换行<\/title>/);
   assert.match(html, /!pending\.size && tools\.size === last/);
   assert.match(html, /注册得太晚/);
+});
+
+// A plugin with a widget (folio: 2): its manifest, what an update adds, its page and policy.
+const widgetPlugin = (widget = {}, extra = {}) => ({
+  folio: 2,
+  id: 'pet',
+  name: '挂件',
+  version: '0.1.0',
+  files: ['widget.html', 'widget.js', 'sprites.webp', 'more.js'],
+  widget: { entry: 'widget.html', anchor: 'assistant', events: ['ai'], ...widget },
+  ...extra,
+});
+
+test('a widget plugin needs folio 2, may leave out run, and has no button or schedule', () => {
+  const m = validateManifest(widgetPlugin());
+  assert.equal(m.folio, 2);
+  assert.equal(m.run.prompt, '');
+  assert.deepEqual(m.triggers, []);
+  assert.deepEqual(m.widget.events, ['ai']);
+  assert.equal(m.widget.anchor, 'assistant');
+  assert.deepEqual(m.widget.size, { width: 160, height: 160 });
+  assert.throws(() => validateManifest({ ...widgetPlugin(), folio: 1 }), /"folio": 2/);
+  assert.throws(() => validateManifest({ ...widgetPlugin(), widget: undefined }), /run.*widget/);
+  assert.throws(() => validateManifest(widgetPlugin({ entry: 'widget.js' })), /\.html/);
+  assert.throws(() => validateManifest(widgetPlugin({ anchor: 'middle' })), /widget\.anchor/);
+  assert.throws(() => validateManifest(widgetPlugin({ events: ['selection'] })), /selection/);
+  // Sizes are kept within reason.
+  assert.deepEqual(validateManifest(widgetPlugin({ size: { width: 5, height: 9000 } })).widget.size, {
+    width: 24,
+    height: 1200,
+  });
+  // Its scripts may be any number of files; without a widget only run.script may be one.
+  assert.ok(validateManifest(widgetPlugin()).files.includes('more.js'));
+  const plain = base();
+  plain.files.push('more.js');
+  assert.throws(() => validateManifest(plain, { appVersion: '0.30.0' }), /多了脚本文件/);
+  // AI tasks keep folio 1 and their button.
+  assert.equal(validateManifest(base(), { appVersion: '0.30.0' }).widget, null);
+});
+
+test('an update that adds a widget or what it hears about says so', () => {
+  const before = validateManifest(widgetPlugin());
+  const after = validateManifest(widgetPlugin({ events: ['ai', 'document'] }));
+  assert.deepEqual(newPermissions(before, after).events, ['document']);
+  assert.equal(newPermissions(before, after).widget, false);
+  const task = validateManifest(base(), { appVersion: '0.30.0' });
+  const withWidget = validateManifest(
+    {
+      ...base(),
+      folio: 2,
+      files: [...base().files, 'widget.html'],
+      widget: { entry: 'widget.html' },
+    },
+    { appVersion: '0.30.0' },
+  );
+  assert.equal(newPermissions(task, withWidget).widget, true);
+  assert.equal(newPermissions(before, before), null);
+});
+
+test("pages run only the inline scripts Folio served: no 'unsafe-inline', no eval", () => {
+  const script = sandboxPage({ code: 'folio.log(1)', settings: {}, name: 'x' });
+  const csp = sandboxCspFor(script);
+  assert.doesNotMatch(csp, /unsafe-inline'[^;]*;\s*style/);
+  assert.match(csp, /script-src 'sha256-[^']+' 'sha256-[^']+' 'sha256-[^']+';/);
+  assert.doesNotMatch(csp, /unsafe-eval/);
+  const page = widgetPage({
+    html: '<!doctype html><html><head><title>t</title></head><body><script>go()</script><script src="widget.js"></script></body></html>',
+    settings: { name: '</script>' },
+    events: ['ai'],
+  });
+  // The bootstrap comes first in <head>, before anything of the widget's own.
+  assert.ok(page.indexOf('<head><script>') > 0 && page.indexOf('<head><script>') < page.indexOf('<title>'));
+  assert.equal(inlineScriptHashes(page).length, 2, 'the bootstrap and the widget’s own, not src');
+  const wcsp = widgetCspFor('pet', page);
+  assert.match(wcsp, /script-src app:\/\/widget\/pet\/ 'sha256-/);
+  assert.doesNotMatch(wcsp.split('; ').find((d) => d.startsWith('script-src')), /unsafe|https?:|blob:/);
+  assert.match(wcsp, /connect-src [^;]*https:/);
+  // Without <head> it still goes after the doctype, never before it.
+  const bare = widgetPage({ html: '<!DOCTYPE html><p>hi</p>', settings: {}, events: [] });
+  assert.ok(bare.startsWith('<!DOCTYPE html><script>'));
 });

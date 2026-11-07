@@ -3,10 +3,10 @@
 // 开发版（不复制，直接读那个文件夹，改了马上生效）。清单的写法和检查在 plugin-manifest.cjs。
 // 插件是一个文件夹，folio-plugin.json 说明它叫什么、
 // 什么时候运行、能用哪些工具、能访问哪些网站、能往哪些文件夹写；prompt.md 是交给 AI 的任务说明。
-// 带脚本的插件（run.script）只在一个看不见的沙箱页面里运行（sandboxPage），不能自己联网，
-// 也拿不到 API Key：它只能通过页间转交的 fetch 访问清单里写明的网站。
+// 带脚本的插件（run.script）在一个看不见的沙箱页面里运行（sandboxPage），拿不到 API Key、
+// 用户的文件和页间的界面。脚本可以自己联网；通过页间转交的 folio.fetch 只能访问清单里写明的网站。
 //
-// 官方插件（electron/recommended-plugins.json 列出的，从官网下载、按 SHA-256 校验）随时可以装。
+// 官方插件（官网上签过名的列表里的，从官网下载、按 SHA-256 校验；见 official-plugins.cjs）随时可以装。
 // 其他插件是社区插件，和 Obsidian 的一样默认关闭：打开「社区插件」之后才能安装和运行。
 const fs = require('node:fs/promises');
 const fsWatch = require('node:fs').watch;
@@ -18,6 +18,8 @@ const {
   WRITE_TOOLS,
   FOLDER_TOOLS,
   LIMITS,
+  WIDGET_LIMITS,
+  limitsFor,
   PluginError,
   fail,
   text,
@@ -30,8 +32,7 @@ const {
   lintPlugin,
 } = require('./plugin-manifest.cjs');
 const { readZip } = require('./zip.cjs');
-// Metadata only: listing recommendations never contacts the website or loads plugin code.
-const recommendations = require('./recommended-plugins.json');
+const { createOfficial, OFFICIAL_URL, OFFICIAL_KEYS } = require('./official-plugins.cjs');
 
 const FETCH_LIMIT = 3 * 1024 * 1024;
 // 插件目录：作者提交、页间收录的社区插件列表（公开仓库 folio-plugins 里的
@@ -40,7 +41,8 @@ const DIRECTORY_URLS = [
   'https://raw.githubusercontent.com/XiangXiaoYuan5254/folio-plugins/main/community-plugins.json',
   'https://cdn.jsdelivr.net/gh/XiangXiaoYuan5254/folio-plugins@main/community-plugins.json',
 ];
-const ZIP_LIMIT = 8 * 1024 * 1024;
+// Big enough for a plugin with a widget (its pictures); each file is checked against its own limit.
+const ZIP_LIMIT = WIDGET_LIMITS.total;
 const LOG_KEEP = 400;
 
 // A plugin's contents as one hash: its manifest, then the files it lists, in that order. The
@@ -193,8 +195,11 @@ function createRemote(fetch) {
 }
 
 // 带脚本的插件运行的页面：一个独立的沙箱（iframe sandbox="allow-scripts"，没有同源权限），
-// 内容安全策略禁止它自己联网、加载图片或别的资源。它通过 postMessage 和页间说话：
-// 注册工具、通过页间按白名单联网、写运行日志。
+// 看不到页间的界面、用户的文件和 API Key，也没有 localStorage、Cookie。它通过 postMessage 和
+// 页间说话：注册工具、通过页间访问清单里的网站（不受跨域限制）、写运行日志。
+//
+// 脚本可以自己联网（fetch、WebSocket、图片、WebRTC……），安装时和说明里都写明了这一点。
+// 只有代码不能从网上加载：脚本就是插件包里的那一个文件，收录时看到的就是运行的。
 //
 // 工具在脚本顶层注册最好；先 await folio.fetch(…) 再注册也行：脚本跑完后，页间等这些请求
 // 都回来、注册不再变化（最多 8 秒）才告诉 AI 有哪些工具。之后才注册的会在运行日志里提示。
@@ -268,8 +273,147 @@ function sandboxPage({ code, settings, name }) {
   return `${bootstrap(bootstrap(0).split('\n').length - 1)}${code.replace(/<\/script/gi, '<\\/script')}
 </script><script>window.__folioReady();</script></body></html>`;
 }
-const sandboxCsp =
-  "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'";
+// Inline scripts a page may run: exactly those Folio served, by their SHA-256. With
+// 'unsafe-inline' a script could fetch code and run it in a <script> it adds; with hashes that
+// script, eval and inline event handlers are all refused, so only the plugin's own code runs.
+function inlineScriptHashes(html) {
+  const hashes = new Set();
+  for (const [, attrs, body] of html.matchAll(/<script(\s[^>]*)?>([\s\S]*?)<\/script\s*>/gi))
+    if (!/\ssrc\s*=/i.test(attrs || ''))
+      hashes.add(`'sha256-${crypto.createHash('sha256').update(body, 'utf8').digest('base64')}'`);
+  return [...hashes];
+}
+// Scripts may reach any website, but only the script in the plugin runs: no code from elsewhere.
+const sandboxCspFor = (html) =>
+  [
+    "default-src 'none'",
+    `script-src ${inlineScriptHashes(html).join(' ')}`,
+    "style-src 'unsafe-inline'",
+    'connect-src http: https: ws: wss: data: blob:',
+    'img-src http: https: data: blob:',
+    'media-src http: https: data: blob:',
+    'font-src http: https: data:',
+    "base-uri 'none'",
+    "form-action 'none'",
+  ].join('; ');
+
+// 挂件的页面：插件自己的入口 HTML，最前面插上页间的引导脚本（全局对象 folio）。挂件放在
+// iframe sandbox="allow-scripts" 里（没有同源权限），看不到页间的界面、用户的文件和 API Key；
+// 可以自己联网，但代码只能来自插件包（widgetCspFor）。它通过 postMessage 和页间说话：收事件、
+// 存取自己的小存储、写运行日志、回应页间的 ping（src/plugins/widget.ts）。
+function widgetPage({ html, settings, events }) {
+  const safe = (value) => JSON.stringify(value).replace(/</g, '\\u003c');
+  const boot = `<script>
+(() => {
+  const host = window.parent;
+  const allowed = new Set(${safe(['theme', 'visible', ...(events || [])])});
+  const listeners = new Map();
+  const pending = new Map();
+  let seq = 0;
+  let theme = Object.freeze({ dark: false, accent: '', reducedMotion: false });
+  const send = (m) => host.postMessage({ folioWidget: 1, ...m }, '*');
+  const say = (level, args) => send({ type: 'log', level, text: args.map((a) => a instanceof Error ? a.message : typeof a === 'string' ? a : (() => { try { return JSON.stringify(a); } catch { return String(a); } })()).join(' ').slice(0, 500) });
+  const call = (type, value) => new Promise((resolve, reject) => {
+    const id = ++seq;
+    pending.set(id, { resolve, reject });
+    send({ type, id, value });
+  });
+  const folio = Object.freeze({
+    settings: Object.freeze(${safe(settings || {})}),
+    get theme() { return theme; },
+    on(event, listener) {
+      if (typeof listener !== 'function') throw Error('folio.on(event, listener)');
+      if (!allowed.has(event)) say('warn', ['挂件订阅了 ' + event + '，但 widget.events 里没有写它，收不到']);
+      const set = listeners.get(event) || new Set();
+      set.add(listener);
+      listeners.set(event, set);
+      send({ type: 'listen', event });
+      return () => set.delete(listener);
+    },
+    storage: Object.freeze({ get: () => call('storage-get'), set: (value) => call('storage-set', value) }),
+    log: (...args) => say('info', args),
+    warn: (...args) => say('warn', args),
+    error: (...args) => say('error', args),
+  });
+  Object.defineProperty(window, 'folio', { value: folio });
+  addEventListener('message', (e) => {
+    if (e.source !== host || !e.data || e.data.folioWidget !== 1) return;
+    const m = e.data;
+    if (m.type === 'ping') return send({ type: 'pong', n: m.n });
+    if (m.type === 'reply') {
+      const p = pending.get(m.id);
+      pending.delete(m.id);
+      if (p) m.error ? p.reject(Error(m.error)) : p.resolve(m.value);
+    } else if (m.type === 'event') {
+      if (m.event === 'theme') theme = Object.freeze({ ...m.data });
+      for (const listener of listeners.get(m.event) || [])
+        try {
+          listener(m.data);
+        } catch (err) {
+          say('error', ['挂件处理 ' + m.event + ' 时出错：', err]);
+        }
+    }
+  });
+  addEventListener('error', (e) => say('error', ['挂件出错：' + e.message + (e.filename ? '（' + e.filename.split('/').pop() + ' 第 ' + e.lineno + ' 行）' : '')]));
+  addEventListener('unhandledrejection', (e) => say('error', ['挂件里有没处理的错误：', e.reason]));
+  send({ type: 'ready' });
+})();
+</script>`;
+  // Before anything of the widget's own: just inside <head>, else inside <html>, else after the
+  // doctype (never before it, which would put the page in quirks mode).
+  const source = String(html).replace(/\r\n?/g, '\n');
+  const after = (re) => {
+    const m = source.match(re);
+    return m ? m.index + m[0].length : -1;
+  };
+  let at = after(/<head(\s[^>]*)?>/i);
+  if (at < 0) at = after(/<html(\s[^>]*)?>/i);
+  if (at < 0) at = after(/<!doctype[^>]*>/i);
+  if (at < 0) at = 0;
+  return source.slice(0, at) + boot + source.slice(at);
+}
+// A widget may reach any website and load pictures, sounds and fonts from anywhere, but its code
+// comes only from its own files: scripts from app://widget/<id>/ and the inline ones served.
+const widgetCspFor = (id, html) => {
+  const own = `app://widget/${id}/`;
+  return [
+    "default-src 'none'",
+    `script-src ${own} ${inlineScriptHashes(html).join(' ')}`,
+    `style-src 'unsafe-inline' ${own} https:`,
+    `img-src ${own} http: https: data: blob:`,
+    `media-src ${own} http: https: data: blob:`,
+    `font-src ${own} https: data:`,
+    `connect-src ${own} http: https: ws: wss: data: blob:`,
+    "base-uri 'none'",
+    "form-action 'none'",
+  ].join('; ');
+};
+const mediaTypes = {
+  '.html': 'text/html; charset=utf-8',
+  '.htm': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.md': 'text/plain; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.avif': 'image/avif',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
+  '.otf': 'font/otf',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  '.m4a': 'audio/mp4',
+};
+// What a widget keeps for itself (folio.storage), per plugin.
+const WIDGET_STORAGE_LIMIT = 5 * 1024 * 1024;
 
 function createPlugins({
   bundledDir,
@@ -281,14 +425,30 @@ function createPlugins({
   // Told when a plugin being written in a folder of its own (loaded for development) changes.
   onChange,
   directoryUrls = DIRECTORY_URLS,
-  // The official plugins, as the website build wrote them (tests pass their own).
-  recommended = recommendations,
+  // The signed list of official plugins on the website (tests pass their own).
+  officialUrl = OFFICIAL_URL,
+  officialKeys = OFFICIAL_KEYS,
 }) {
   const installedDir = path.join(userDir, 'plugins');
   const stagingDir = path.join(installedDir, '.staging');
   const stateFile = path.join(userDir, 'plugins.json');
   const logDir = path.join(userDir, 'logs', 'plugins');
   const remote = createRemote(fetch);
+  const official = createOfficial({
+    fetch,
+    atomicWrite,
+    file: path.join(userDir, 'official-plugins.json'),
+    url: officialUrl,
+    keys: officialKeys,
+  });
+  // The official plugins this 页间 can install: the list as last read, while a newer one is
+  // fetched in the background (the window reads the plugins again when it comes).
+  async function officialPlugins() {
+    if (official.stale())
+      void official.refresh().then((changed) => changed && onChange?.());
+    const list = await official.saved();
+    return (list?.plugins || []).filter((p) => satisfies(appVersion, p.requires));
+  }
   let state = null;
   let writing = Promise.resolve();
   const staged = new Map();
@@ -322,11 +482,11 @@ function createPlugins({
   // An official plugin installed by 0.30.0 is saved as a .zip install: its files, compared with
   // the official release's, make it official again. Checked once per install.
   const notOfficial = new Set();
-  async function recogniseOfficial(s, found) {
+  async function recogniseOfficial(s, found, offered) {
     let changed = false;
     for (const [id, entry] of found) {
       const saved = s.plugins[id];
-      const official = recommended.find((r) => r.id === id && r.digest);
+      const official = offered.find((r) => r.id === id && r.digest);
       if (!official || entry.error || entry.bundled || entry.dev) continue;
       if (saved?.source?.type !== 'zip') continue;
       const key = `${id}:${saved.installedAt}`;
@@ -436,7 +596,8 @@ function createPlugins({
     const s = await readState();
     const plugins = [];
     const found = await catalog();
-    await recogniseOfficial(s, found);
+    const offered = await officialPlugins();
+    await recogniseOfficial(s, found, offered);
     for (const [id, entry] of found) {
       const saved = s.plugins[id] || {};
       if (entry.error) {
@@ -490,7 +651,7 @@ function createPlugins({
     }
     plugins.sort((a, b) => Number(b.bundled) - Number(a.bundled) || a.id.localeCompare(b.id));
     syncWatchers(s);
-    return { thirdParty: s.thirdParty, appVersion, plugins, recommendations: recommended };
+    return { thirdParty: s.thirdParty, appVersion, plugins, recommendations: offered };
   }
   // Where a plugin came from, as the window shows it.
   function sourceOf(source) {
@@ -650,7 +811,7 @@ function createPlugins({
   async function inspect({ url, id, local, expect, recommendation }) {
     const s = await readState();
     if (recommendation) {
-      const entry = recommended.find((p) => p.id === recommendation);
+      const entry = (await officialPlugins()).find((p) => p.id === recommendation);
       if (!entry) fail('没有找到这个官方插件');
       if (!satisfies(appVersion, entry.requires)) fail(`这个插件需要页间 ${entry.requires}`);
       const zip = await remote.get(entry.url, { limit: ZIP_LIMIT });
@@ -681,9 +842,10 @@ function createPlugins({
     const files = [];
     let total = raw.length;
     for (const name of manifest.files) {
-      const data = await remote.file(source, sha, name, LIMITS.file);
+      const data = await remote.file(source, sha, name, limitsFor(manifest).file);
       total += data.length;
-      if (total > LIMITS.total) fail(`插件太大（超过 ${LIMITS.total / 1024 / 1024} MB）`);
+      if (total > limitsFor(manifest).total)
+        fail(`插件太大（超过 ${limitsFor(manifest).total / 1024 / 1024} MB）`);
       files.push({ name, data });
     }
     const { stage, dir } = await stageFiles(raw, files);
@@ -766,9 +928,10 @@ function createPlugins({
     for (const name of manifest.files) {
       const entry = byName.get(prefix + name);
       if (!entry) fail(`压缩包里没有 files 列出的 ${name}`);
-      const data = entry.read(LIMITS.file);
+      const data = entry.read(limitsFor(manifest).file);
       total += data.length;
-      if (total > LIMITS.total) fail(`插件太大（超过 ${LIMITS.total / 1024 / 1024} MB）`);
+      if (total > limitsFor(manifest).total)
+        fail(`插件太大（超过 ${limitsFor(manifest).total / 1024 / 1024} MB）`);
       files.push({ name, data });
     }
     const { stage, dir } = await stageFiles(raw, files);
@@ -841,6 +1004,7 @@ function createPlugins({
       await fs.rm(dir, { recursive: true, force: true });
     delete s.plugins[id];
     await saveState();
+    if (idPattern.test(String(id))) await fs.unlink(widgetData(String(id))).catch(() => {});
     logs.delete(String(id));
     await fs.unlink(logFile(String(id))).catch(() => {});
     return list();
@@ -928,14 +1092,53 @@ function createPlugins({
     if (!s.plugins[id]?.enabled) fail('插件没有开启');
     if (!manifest.run.script) fail('这个插件没有脚本');
     const code = await fs.readFile(path.join(dir, manifest.run.script), 'utf8');
-    return {
-      html: sandboxPage({
-        code,
-        settings: settingsFor(manifest, s.plugins[id]?.settings),
-        name: manifest.name,
-      }),
-      csp: sandboxCsp,
-    };
+    const html = sandboxPage({
+      code,
+      settings: settingsFor(manifest, s.plugins[id]?.settings),
+      name: manifest.name,
+    });
+    return { html, csp: sandboxCspFor(html) };
+  }
+  // A widget's page (app://widget/<id>/) and its files (app://widget/<id>/<file>), served while
+  // the plugin is on (electron/main.cjs). Only files its folio-plugin.json lists.
+  async function widget(id, relative) {
+    const entry = await find(id);
+    const { manifest, dir } = entry;
+    const s = await readState();
+    if (!trusted(entry, s) && !s.thirdParty) fail('「社区插件」已关闭');
+    if (!s.plugins[id]?.enabled) fail('插件没有开启');
+    if (!manifest.widget) fail('这个插件没有挂件');
+    const name = String(relative || '') || manifest.widget.entry;
+    if (!manifest.files.includes(name)) fail(`插件里没有 ${name.slice(0, 80)}`);
+    const type = mediaTypes[path.extname(name).toLowerCase()] || 'application/octet-stream';
+    const data = await fs.readFile(path.join(dir, name));
+    if (!/^text\/html/.test(type)) return { data, type };
+    const html =
+      name === manifest.widget.entry
+        ? widgetPage({
+            html: data.toString('utf8'),
+            settings: settingsFor(manifest, s.plugins[id]?.settings),
+            events: manifest.widget.events,
+          })
+        : data.toString('utf8').replace(/\r\n?/g, '\n');
+    return { data: Buffer.from(html), type, csp: widgetCspFor(id, html) };
+  }
+  // A widget's own storage (folio.storage): read it, or replace it with a new value.
+  const widgetData = (id) => path.join(userDir, 'plugin-data', `${id}.json`);
+  async function widgetStorage({ id, value, set }) {
+    const { manifest } = await find(String(id));
+    if (!manifest.widget) fail('这个插件没有挂件');
+    const file = widgetData(manifest.id);
+    if (!set)
+      return fs
+        .readFile(file, 'utf8')
+        .then(JSON.parse)
+        .catch(() => null);
+    const body = JSON.stringify(value === undefined ? null : value);
+    if (Buffer.byteLength(body) > WIDGET_STORAGE_LIMIT) fail('挂件存的东西太多了（最多 5 MB）');
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await atomicWrite(file, body);
+    return true;
   }
   // A folder plugin at work in its folder: what's there, reading a page, writing a new one.
   // Every path stays inside the folder, links included; nothing is deleted or overwritten.
@@ -1151,6 +1354,8 @@ function createPlugins({
     remove,
     fetch: pluginFetch,
     sandbox,
+    widget,
+    widgetStorage,
     folder,
     saveRun,
     cleanup,
@@ -1198,6 +1403,10 @@ module.exports = {
   satisfies,
   newPermissions,
   sandboxPage,
+  sandboxCspFor,
+  widgetPage,
+  widgetCspFor,
+  inlineScriptHashes,
   cleanDirectory,
   PluginError,
   TOOLS,

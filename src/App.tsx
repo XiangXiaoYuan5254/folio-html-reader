@@ -65,6 +65,7 @@ import type { AiHost } from './ai/host';
 import type { DocText, PdfFigure } from './ai/types';
 import { withHiddenReader } from './ai/hidden-reader';
 import { AssistantPanel } from './components/AssistantPanel';
+import { WidgetLayer } from './components/WidgetLayer';
 import type { AssistantMode } from './components/AssistantPanel';
 import { AiSettings } from './components/AiSettings';
 import { SettingsDialog } from './components/SettingsDialog';
@@ -2654,6 +2655,15 @@ export default function App() {
           <Dialog key={objectKey(dialog)} options={dialog} onClose={() => setDialog(null)} />
         )}
       </Exit>
+      {isDesktop ? (
+        <WidgetLayer
+          assistant={assistant}
+          document={{
+            title: doc ? doc.path.split(/[\\/]/).pop()!.replace(/\.[^.]+$/, '') : '',
+            kind: doc?.kind || 'none',
+          }}
+        />
+      ) : null}
     </div>
   );
 }

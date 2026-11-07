@@ -1,0 +1,6 @@
+{
+  "plugins": [
+    { "dir": "ai-daily", "listed": true },
+    { "dir": "../../folio-shenshen-widget", "listed": false }
+  ]
+}

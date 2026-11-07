@@ -66,11 +66,11 @@ export function CommunitySettings() {
         )}
       </div>
       <div className="community-text">
-        <h4>微信扫一扫，加入交流群</h4>
+        <h4>微信扫码加入交流群</h4>
         <p>
-          聊聊阅读和 AI 的用法、反馈问题，
+          使用中遇到问题、想反馈 Bug，
           <br />
-          也欢迎分享你的笔记和插件。
+          或者有想要的新功能，都欢迎加群讨论。
         </p>
         <button type="button" className="settings-link" onClick={() => open(ISSUES)}>
           在 GitHub 上反馈问题

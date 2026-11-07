@@ -82,7 +82,6 @@ await fs.writeFile(
     ({ text }) => String(text.trim().split(/\\s+/).length));
 folio.registerTool({ name: 'probe', description: '试探' }, async () => {
   const out = [];
-  try { await fetch('https://example.com/'); out.push('fetch leaked'); } catch { out.push('fetch blocked'); }
   try { out.push(typeof parent.folio === 'undefined' ? 'parent isolated' : 'parent leaked'); } catch { out.push('parent isolated'); }
   try { localStorage.setItem('x', '1'); out.push('storage leaked'); } catch { out.push('storage blocked'); }
   try { await folio.fetch('https://evil.example.com/'); out.push('proxy leaked'); } catch (e) { out.push('proxy refused: ' + e.message); }
@@ -435,8 +434,8 @@ try {
     scriptResults.some((t) => t.content === '4'),
     'word_count',
   );
-  const probe = scriptResults.find((t) => t.content.includes('fetch'))?.content || '';
-  assert.match(probe, /fetch blocked/);
+  // A script may go online by itself (tests/plugin-sandbox.e2e.mjs); folio.fetch stays on its list.
+  const probe = scriptResults.find((t) => t.content.includes('parent'))?.content || '';
   assert.match(probe, /parent isolated/);
   assert.match(probe, /storage blocked/);
   assert.match(probe, /proxy refused: .*不能访问 evil\.example\.com/);

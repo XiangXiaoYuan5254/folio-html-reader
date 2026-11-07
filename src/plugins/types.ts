@@ -7,8 +7,21 @@ export type PluginSetting = {
   default: string;
 };
 export type PluginTrigger = { type: 'daily'; time: string } | { type: 'button'; label: string };
+// What a widget hears about (src/plugins/widget-events.ts): states only, and with 'document' the
+// open document's title.
+export type WidgetEvent = 'ai' | 'reading' | 'document';
+export type WidgetAnchor = 'assistant' | 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
+export type PluginWidget = {
+  entry: string;
+  size: { width: number; height: number };
+  // On top of the AI assistant's box where questions are typed, or a corner of the window.
+  anchor: WidgetAnchor;
+  events: WidgetEvent[];
+  art: { author: string; license: string };
+};
 export type PluginManifest = {
-  folio: 1;
+  // 2 when it has a widget.
+  folio: 1 | 2;
   id: string;
   name: string;
   version: string;
@@ -31,6 +44,9 @@ export type PluginManifest = {
   triggers: PluginTrigger[];
   permissions: { network: string[]; write: string[] };
   settings: PluginSetting[];
+  // A widget in the window (folio: 2); a plugin with only a widget has an empty run (no prompt)
+  // and no triggers.
+  widget: PluginWidget | null;
 };
 export type PluginSource =
   | { type: 'bundled' }
@@ -98,6 +114,8 @@ export type PluginAdded = {
   tools: string[];
   script: boolean;
   web: boolean;
+  widget: boolean;
+  events: string[];
 };
 // A plugin read from a link and waiting to be installed.
 export type PluginInspection = {

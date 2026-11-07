@@ -419,7 +419,8 @@
   border: 0;
   outline: none;
   resize: none;
-  padding: 10px 12px 4px;
+  /* A widget sitting in the box's top right corner (WidgetLayer.tsx) keeps the text clear. */
+  padding: 10px calc(12px + var(--composer-widget-room, 0px)) 4px 12px;
   font-size: 13.5px;
   line-height: 1.6;
   background: transparent;
