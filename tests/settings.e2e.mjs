@@ -23,10 +23,12 @@ await fs.copyFile(
 let published = Date.now();
 let announcementGate = null;
 const server = http.createServer(async (req, res) => {
-  // The group's QR code, as the website serves it (any JPEG will do).
+  // The group's QR code, as the website serves it. Any JPEG will do; the real one isn't in Git.
   if (req.url.startsWith('/qr.jpg')) {
     res.writeHead(200, { 'Content-Type': 'image/jpeg' });
-    return res.end(await fs.readFile(path.join(root, 'website/community/qr.jpg')));
+    return res.end(
+      await fs.readFile(path.join(root, 'website/assets/video/folio-promo-poster.jpg')),
+    );
   }
   res.writeHead(200, { 'Content-Type': 'application/json' });
   if (req.url.endsWith('/announcements')) {

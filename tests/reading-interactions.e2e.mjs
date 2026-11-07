@@ -342,6 +342,8 @@ try {
     await page.mouse.move(b.x + b.width / 2 + 35, b.y - 15, { steps: 6 });
     await page.mouse.up();
     await activeTool('画笔');
+    // The cards are rebuilt after the tool changes; a fourth note would never settle at three.
+    await wait(async () => (await cards.count()) === 3, 'note cards rebuilt after unpinning');
     assert.equal(await cards.count(), 3, 'unpin restores temporary use without a fourth note');
     assert.equal(await inputs.nth(2).inputValue(), '连续记录二');
     assert.equal(await f.locator('[data-annotation-id]').count(), inkCount, 'exit adds no ink');
