@@ -53,9 +53,15 @@ Mac 的芯片型号可在苹果菜单的“关于本机”中查看。Intel 芯�
 
 这是一个个人业余项目，按现状提供。欢迎在 [Issues](https://github.com/XiangXiaoYuan5254/folio-html-reader/issues) 里报告问题、提建议，也欢迎提交 Pull Request 或 fork 成你自己的版本；从源码运行和参与开发见 [CONTRIBUTING.md](CONTRIBUTING.md)，写插件见 [插件](#插件)。
 
+## 赞赏支持
+
+感谢您的支持与认可，这是我更新最大的动力～
+
+<img src="src/assets/wechat-reward.png" width="200" alt="页间作者的微信赞赏码" />
+
 ## 用户交流群
 
-欢迎加入微信交流群，交流用法、反馈问题，分享阅读心得和插件。
+使用中遇到问题、想反馈 Bug，或者有想要的新功能，都欢迎扫码加群讨论。
 
 <a href="https://helloxxy.com/works/folio/community/"><img src="https://helloxxy.com/works/folio/community/qr.jpg" width="300" alt="页间用户交流群二维码" /></a>
 

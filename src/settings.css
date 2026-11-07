@@ -485,6 +485,22 @@
 .settings-shortcuts {
   margin: 0;
 }
+.settings-reward > div {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.settings-reward img {
+  flex: none;
+  border-radius: 8px;
+  border: 1px solid var(--line-soft);
+}
+.settings-reward p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
 .settings-shortcuts > div {
   display: flex;
   justify-content: space-between;

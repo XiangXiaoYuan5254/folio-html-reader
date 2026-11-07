@@ -31,6 +31,9 @@ import { UiTypeSettings } from './UiTypeSettings';
 import '../whiteboard.css';
 import '../settings.css';
 
+// 设置 › 关于: the author's WeChat 赞赏码. It never changes, so it ships with the app.
+const rewardCode = new URL('../assets/wechat-reward.png', import.meta.url).href;
+
 export type SettingsPage =
   'appearance' | 'ai' | 'plugins' | 'voices' | 'storage' | 'announcements' | 'community' | 'about';
 const pages = [
@@ -456,6 +459,13 @@ function AboutSettings(p: {
             </div>
           ))}
         </dl>
+      </section>
+      <section className="settings-group settings-reward">
+        <h4>赞赏支持</h4>
+        <div>
+          <img src={rewardCode} width={112} height={112} alt="页间作者的微信赞赏码" />
+          <p>感谢您的支持与认可，这是我更新最大的动力～</p>
+        </div>
       </section>
     </div>
   );

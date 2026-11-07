@@ -237,6 +237,11 @@ try {
   await announcementDot().waitFor();
   await gearDot().waitFor();
   await page.screenshot({ path: path.join(evidence, 'settings-about.png') });
+  // 赞赏码 ships with the app, so it shows offline too.
+  const reward = dialog().getByRole('img', { name: '页间作者的微信赞赏码' });
+  await reward.scrollIntoViewIfNeeded();
+  assert.ok(await reward.evaluate((img) => img.complete && img.naturalWidth > 0));
+  await page.screenshot({ path: path.join(evidence, 'settings-about-reward.png') });
   await nav().getByRole('button', { name: '公告', exact: true }).click();
   await dialog().getByText('本地测试公告', { exact: true }).waitFor();
   await announcementDot().waitFor({ state: 'detached' });
