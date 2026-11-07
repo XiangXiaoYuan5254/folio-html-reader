@@ -46,6 +46,11 @@ const LOG_KEEP = 400;
 // website build (scripts/website-plugins.mjs) records it for each official plugin, so a copy
 // installed as a plain .zip (页间 0.30.0 didn't tell official plugins apart) is recognised by
 // what it is, not by its file name.
+// The official versions 0.30.0 could have installed that way, for when the website's list has
+// moved on to newer ones (AI 前沿日报 1.1.0).
+const OFFICIAL_BEFORE_0_30_1 = {
+  'ai-daily': ['20f7aec1e19a6a953b162ecdd35a8f107a92c58cfd728a5ab7d5230c2ddb9bef'],
+};
 function pluginDigest(files) {
   const hash = crypto.createHash('sha256');
   for (const { name, data } of files) hash.update(`${name}\0${data.length}\0`).update(data);
@@ -340,8 +345,12 @@ function createPlugins({
     let changed = false;
     for (const [id, entry] of found) {
       const saved = s.plugins[id];
-      const official = offered.find((r) => r.id === id && r.digest);
-      if (!official || entry.error || entry.bundled || entry.dev) continue;
+      const digests = new Set(
+        [offered.find((r) => r.id === id)?.digest, ...(OFFICIAL_BEFORE_0_30_1[id] || [])].filter(
+          Boolean,
+        ),
+      );
+      if (!digests.size || entry.error || entry.bundled || entry.dev) continue;
       if (saved?.source?.type !== 'zip') continue;
       const key = `${id}:${saved.installedAt}`;
       if (notOfficial.has(key)) continue;
@@ -349,7 +358,7 @@ function createPlugins({
         const files = [{ name: MANIFEST, data: await fs.readFile(path.join(entry.dir, MANIFEST)) }];
         for (const name of entry.manifest.files)
           files.push({ name, data: await fs.readFile(path.join(entry.dir, name)) });
-        if (pluginDigest(files) === official.digest) {
+        if (digests.has(pluginDigest(files))) {
           saved.source = { type: 'official' };
           changed = true;
           continue;

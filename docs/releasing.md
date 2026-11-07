@@ -119,7 +119,7 @@ npm run website:plugins
 
 - 改插件就改它的 `version`：已经发布的 ZIP 内容不能替换，旧 ZIP 也不要删。
 - 改了 `plugins/ai-daily/` 后运行 `node scripts/sync-plugin-kit.mjs`，把示例同步到 folio-plugins。
-- 页间 0.30.0、0.30.1 还用安装包里自带的列表，只认 `ai-daily-1.1.0.zip`：这个文件要一直留在服务器上。
+- 页间 0.30.0、0.30.1 还用安装包里自带的列表（0.30.2 起读官网的签名列表），只认 `ai-daily-1.1.0.zip`：这个文件要一直留在服务器上。
 
 ## 交流群二维码
 
