@@ -55,9 +55,11 @@ export function pluginSystem(
   const own = m.run.where === 'folder';
   const rules = [
     '- 只能使用提供给你的工具。',
-    m.permissions.network.length
-      ? `- 联网只能访问这些网站：${m.permissions.network.join('、')}。某个来源读取失败就跳过它，在结果里注明，不要编造内容。`
-      : '- 这个插件不能联网。',
+    !m.permissions.network.length
+      ? '- 这个插件不能联网。'
+      : loaded.anySite
+        ? '- 联网可以访问任何 https 网站（本机和局域网地址除外）。某个来源读取失败就跳过它，在结果里注明，不要编造内容。'
+        : `- 联网只能访问这些网站：${m.permissions.network.join('、')}。某个来源读取失败就跳过它，在结果里注明，不要编造内容。`,
     own
       ? `- 你的文件夹是 ${vars.folder}。你只看得到、也只能写进这个文件夹：list_files、read_document 和 create_html 的路径都相对这个文件夹，例如「名字.html」。新建文件前先用 list_files 看看有没有同名的。`
       : folders.length

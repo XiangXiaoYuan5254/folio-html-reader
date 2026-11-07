@@ -641,7 +641,7 @@ function PluginCard(p: {
             <p className="plugin-hint">开发版：页间直接读这个文件夹，保存后马上生效。</p>
           ) : null}
           <Warnings warnings={plugin.warnings} />
-          <Permissions manifest={m} />
+          <Permissions manifest={m} anySite={trusted} />
           <PluginLog id={plugin.id} />
         </div>
       ) : null}
@@ -930,10 +930,13 @@ function Permissions({
   manifest: m,
   added,
   open = false,
+  anySite = false,
 }: {
   manifest: PluginManifest;
   added?: PluginInspection['added'];
   open?: boolean;
+  // Bundled and official plugins aren't held to their list of sites.
+  anySite?: boolean;
 }) {
   const isNew = (kind: 'network' | 'write' | 'tools', value: string) =>
     !!added && (added[kind] as string[]).includes(value);
@@ -957,7 +960,11 @@ function Permissions({
             运行插件自带的脚本（在沙箱里，不能自己联网）
           </li>
         ) : null}
-        {m.permissions.network.length ? (
+        {!m.permissions.network.length ? null : anySite ? (
+          <li>
+            <Globe size={12} /> 访问任何网站（本机和局域网除外）
+          </li>
+        ) : (
           <li>
             <Globe size={12} /> 访问这些网站：
             {m.permissions.network.map((h, i) => (
@@ -967,7 +974,7 @@ function Permissions({
               </span>
             ))}
           </li>
-        ) : null}
+        )}
         {m.run.where === 'folder' ? (
           <li>
             <FolderInput size={12} /> 只在它自己的文件夹里读写（
@@ -1067,7 +1074,7 @@ function InstallConfirm(p: {
         </p>
       ) : null}
       <Warnings warnings={warnings} />
-      <Permissions manifest={m} added={added} open />
+      <Permissions manifest={m} added={added} open anySite={source.type === 'official'} />
       {source.type === 'official' ? null : (
         <p className="settings-footnote">
           {source.type === 'folder'

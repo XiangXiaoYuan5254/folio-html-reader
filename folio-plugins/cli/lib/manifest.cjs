@@ -259,6 +259,35 @@ function allowedUrl(url, network) {
   );
 }
 
+// 官方插件能访问的网址：任何 https 网站，但不能是本机或局域网（路由器、NAS 之类）。
+function publicUrl(url) {
+  let u;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== 'https:' || u.username || u.password || u.port) return false;
+  const host = u.hostname.toLowerCase();
+  // IPv6 literals, bare names like `router`, and names that only mean something nearby.
+  if (host.startsWith('[') || !host.includes('.')) return false;
+  if (/(^|\.)(localhost|local|lan|home|internal|home\.arpa)$/.test(host)) return false;
+  // URL has already turned 2130706433, 0x7f.1 and the like into dotted form.
+  const ip = host.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (!ip) return true;
+  const [a, b] = [Number(ip[1]), Number(ip[2])];
+  return !(
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    a >= 224 ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168)
+  );
+}
+
 // 不会让插件装不上、但多半是写错了的地方。
 function lintPlugin(manifest, { prompt = '', template = '' } = {}) {
   const warnings = [];
@@ -348,6 +377,7 @@ module.exports = {
   validateManifest,
   newPermissions,
   allowedUrl,
+  publicUrl,
   lintPlugin,
   readPluginDir,
 };

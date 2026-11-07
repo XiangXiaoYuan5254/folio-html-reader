@@ -9,6 +9,7 @@ const {
   validateManifest,
   parseSource,
   allowedUrl,
+  publicUrl,
   satisfies,
   newPermissions,
   sandboxPage,
@@ -121,6 +122,36 @@ test('only the sites a plugin names, over https', () => {
   assert.ok(!allowedUrl('https://badexample.com/', sites));
 });
 
+test('an official plugin: any public site over https, never this machine or the local network', () => {
+  assert.ok(publicUrl('https://www.hightouch.com/blog/x?y=1'));
+  assert.ok(publicUrl('https://8.8.8.8/'));
+  assert.ok(publicUrl('https://172.32.0.1/'));
+  for (const url of [
+    'http://example.org/',
+    'https://example.org:8443/',
+    'https://user:pw@example.org/',
+    'https://localhost/',
+    'https://a.localhost/',
+    'https://router/',
+    'https://nas.local/',
+    'https://home.arpa/',
+    'https://127.0.0.1/',
+    'https://2130706433/',
+    'https://0x7f.1/',
+    'https://10.0.0.8/',
+    'https://172.16.0.1/',
+    'https://192.168.1.1/',
+    'https://169.254.169.254/',
+    'https://100.64.0.1/',
+    'https://0.0.0.0/',
+    'https://[::1]/',
+    'https://[fd00::1]/',
+    'file:///etc/hosts',
+    'not a url',
+  ])
+    assert.ok(!publicUrl(url), url);
+});
+
 test('an update that asks for more is noticed', () => {
   const before = validateManifest(base(), { appVersion: '0.30.0' });
   const raw = base();
@@ -228,6 +259,12 @@ test('installing from a link: off until third-party plugins are on, pinned to a 
     await assert.rejects(plugins.install({ stage: seen.stage }), /过期/);
     // Switched on, then third-party plugins switched off: it no longer runs.
     await plugins.set({ id: 'paper-digest', enabled: true });
+    // A community plugin reaches only the sites on its list.
+    await assert.rejects(
+      plugins.fetch({ id: 'paper-digest', url: 'https://example.org/' }),
+      /不能访问 example\.org。它能访问的网站：api\.example\.com/,
+    );
+    assert.ok(!gh.calls.some((u) => u.includes('example.org')));
     assert.ok((await plugins.list()).plugins.find((p) => p.id === 'paper-digest').enabled);
     const page = await plugins.sandbox('paper-digest');
     assert.match(page.csp, /default-src 'none'/);
@@ -264,7 +301,7 @@ test('a repository whose plugin clashes with a bundled one is turned down', asyn
   }
 });
 
-test('a plugin fetches only its own sites, following redirects only within them', async () => {
+test('an official plugin fetches any public https site, redirects checked too', async () => {
   const seen = [];
   const fetch = async (url) => {
     seen.push(url);
@@ -272,6 +309,8 @@ test('a plugin fetches only its own sites, following redirects only within them'
     if (u.pathname === '/moved')
       return { status: 302, headers: new Map([['location', 'https://evil.com/steal']]) };
     if (u.pathname === '/inside') return { status: 302, headers: new Map([['location', '/feed']]) };
+    if (u.pathname === '/lan')
+      return { status: 302, headers: new Map([['location', 'https://192.168.1.1/admin']]) };
     const body = '<rss><channel><title>t</title></channel></rss>';
     return {
       status: 200,
@@ -290,15 +329,21 @@ test('a plugin fetches only its own sites, following redirects only within them'
     const got = await plugins.fetch({ id: 'ai-daily', url: 'https://export.arxiv.org/inside' });
     assert.equal(got.url, 'https://export.arxiv.org/feed');
     assert.match(got.text, /<rss>/);
+    // Off its list, and where a site on it sends it: both fine for an official plugin.
+    const off = await plugins.fetch({ id: 'ai-daily', url: 'https://example.org/' });
+    assert.equal(off.url, 'https://example.org/');
+    const moved = await plugins.fetch({ id: 'ai-daily', url: 'https://export.arxiv.org/moved' });
+    assert.equal(moved.url, 'https://evil.com/steal');
+    // Not the local network, even by a redirect, and not plain http.
     await assert.rejects(
-      plugins.fetch({ id: 'ai-daily', url: 'https://export.arxiv.org/moved' }),
-      /不能访问 evil\.com/,
+      plugins.fetch({ id: 'ai-daily', url: 'https://export.arxiv.org/lan' }),
+      /不能访问 192\.168\.1\.1。只能访问公网上的 https 网站/,
     );
     await assert.rejects(
-      plugins.fetch({ id: 'ai-daily', url: 'https://example.org/' }),
-      /不能访问 example\.org/,
+      plugins.fetch({ id: 'ai-daily', url: 'http://example.org/' }),
+      /不能访问 example\.org。只能访问公网上的 https 网站/,
     );
-    assert.ok(!seen.some((u) => u.includes('evil.com') || u.includes('example.org')));
+    assert.ok(!seen.some((u) => u.includes('192.168') || u.startsWith('http:')));
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }

@@ -4,7 +4,7 @@
 // 插件是一个文件夹，folio-plugin.json 说明它叫什么、
 // 什么时候运行、能用哪些工具、能访问哪些网站、能往哪些文件夹写；prompt.md 是交给 AI 的任务说明。
 // 带脚本的插件（run.script）只在一个看不见的沙箱页面里运行（sandboxPage），不能自己联网，
-// 也拿不到 API Key：它只能通过页间转交的 fetch 访问清单里写明的网站。
+// 也拿不到 API Key：它只能通过页间转交的 fetch 联网（社区插件只能访问清单里写明的网站）。
 //
 // 官方插件（官网上签过名的列表里的，从官网下载、按 SHA-256 校验；见 official-plugins.cjs）随时可以装。
 // 其他插件是社区插件，和 Obsidian 的一样默认关闭：打开「社区插件」之后才能安装和运行。
@@ -26,6 +26,7 @@ const {
   validateManifest,
   newPermissions,
   allowedUrl,
+  publicUrl,
   readPluginDir,
   lintPlugin,
 } = require('./plugin-manifest.cjs');
@@ -625,6 +626,8 @@ function createPlugins({
       prompt: await read(manifest.run.prompt),
       template: await read(manifest.run.template),
       hasScript: !!manifest.run.script,
+      // 自带的和官方插件联网不限网站（见 pluginFetch）。
+      anySite: trusted(entry, s),
     };
   }
   async function icon({ id }) {
@@ -869,16 +872,18 @@ function createPlugins({
     await fs.unlink(logFile(String(id))).catch(() => {});
     return list();
   }
-  // 插件联网：只能是清单里写明的网站，https，GET；跳转后的地址也要在名单里。
+  // 插件联网：https，GET；跳转后的地址也要检查。社区插件只能访问清单里写明的网站；
+  // 自带的和官方插件可以访问任何 https 网站，本机和局域网地址除外。
   async function pluginFetch({ id, url, accept }) {
     const entry = await find(id);
     const { manifest } = entry;
     const s = await readState();
-    if (!trusted(entry, s) && !s.thirdParty) fail('「社区插件」已关闭');
+    const anySite = trusted(entry, s);
+    if (!anySite && !s.thirdParty) fail('「社区插件」已关闭');
     if (!s.plugins[id]?.enabled) fail('插件没有开启');
     let current = String(url || '');
     for (let hop = 0; hop < 5; hop++) {
-      if (!allowedUrl(current, manifest.permissions.network))
+      if (anySite ? !publicUrl(current) : !allowedUrl(current, manifest.permissions.network))
         fail(
           `插件「${manifest.name}」不能访问 ${(() => {
             try {
@@ -886,7 +891,7 @@ function createPlugins({
             } catch {
               return current.slice(0, 80);
             }
-          })()}。它能访问的网站：${manifest.permissions.network.join('、')}`,
+          })()}。${anySite ? '只能访问公网上的 https 网站' : `它能访问的网站：${manifest.permissions.network.join('、')}`}`,
         );
       let res;
       try {
@@ -1219,6 +1224,7 @@ module.exports = {
   validateManifest,
   parseSource,
   allowedUrl,
+  publicUrl,
   satisfies,
   newPermissions,
   sandboxPage,

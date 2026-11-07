@@ -128,4 +128,6 @@ export type PluginLoaded = {
   prompt: string;
   template: string;
   hasScript: boolean;
+  // A bundled or official plugin: it may read any public https site, not just its list.
+  anySite?: boolean;
 };
