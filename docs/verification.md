@@ -26,6 +26,14 @@
 
 macOS 版使用 Developer ID 签名并经过 Apple 公证，公证票据已贴进应用。`npm run dist:mac` 用 `spctl` 确认应用来自已公证的 Developer ID（`source=Notarized Developer ID`），否则不出包；开发机关掉了 Gatekeeper，所以只看这一项，不看 accepted。
 
+## 0.30.3 发布验证（2026-11-07）
+
+- 单元测试 176 项，175 项通过，1 项 Windows 专属测试跳过；插件、插件开发两组桌面回归通过。新增测试覆盖：官方插件可访问清单以外的 https 网站、跟随跳转，本机和局域网地址（localhost、`.local`、10/8、172.16/12、192.168/16、169.254/16、100.64/10、IPv6 字面地址、`2130706433` 这类写法）、http 和非默认端口都拒绝，跳转到局域网也拒绝；社区插件仍只能访问清单里的网站。
+- 打包检查时发现 Electron 42 的 `net.fetch` 在 `redirect: 'manual'` 下遇到任何跳转都报「Redirect was cancelled」，插件联网从来跟不了跳转（单元测试用的是假的 fetch，测不出来）。改为遇到跳转时用 `net.request` 取出跳转地址，交回插件逐跳检查。
+- Mac arm64 包在虚拟机本机磁盘打包，Developer ID 签名、Apple 公证（`source=Notarized Developer ID`）、票据和 DMG 完整性检查通过，签名加公证约 7 分钟。打包好的应用在独立用户目录启动：版本 0.30.3，官方 AI 前沿日报读 `https://www.hightouch.com/`（308 跳到 `hightouch.com`）、`https://hightouch.com/blog`（两次跳转）和 `https://example.org/` 成功，`192.168.1.1`、`localhost`、`http://` 被拒；「它能做什么」显示「访问任何网站（本机和局域网除外）」，无界面脚本错误。
+- Windows 安装包在同一台机器交叉构建，只带 Windows 版语音模块，未签名。
+- AI 前沿日报 1.3.0 打包、签名列表（`engines.folio` 仍是 `>=0.30.0`）。
+
 ## 0.30.2 发布验证（2026-11-06）
 
 - 单元测试 174 项通过，1 项 Windows 专属测试跳过；插件、插件开发、设置三组桌面回归通过。新增的签名插件列表测试覆盖：列表在后台读取、只列出上架的插件、签名不对 / 换了钥匙 / 内容被改 / 比已见过的旧都不认、离线用上次的列表、需要更新版页间的插件不列出。
