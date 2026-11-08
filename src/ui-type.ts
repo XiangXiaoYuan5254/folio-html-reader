@@ -100,18 +100,39 @@ const chineseNames: Record<string, string> = {
   'LXGW WenKai': '霞鹜文楷',
 };
 export type FontOption = { family: string; name: string };
-let families: Promise<FontOption[]> | null = null;
-/** The font families installed on this computer, Chinese ones first; asked for once. */
-export function localFonts() {
-  families ||= (async () => {
-    const query = (window as { queryLocalFonts?: () => Promise<{ family: string }[]> })
-      .queryLocalFonts;
-    if (!query) return [];
-    const found = [...new Set((await query()).map((f) => clean(f.family)).filter(Boolean))];
-    return found
-      .map((family) => ({ family, name: chineseNames[family] || '' }))
-      .sort((a, b) => Number(!a.name) - Number(!b.name) || a.family.localeCompare(b.family, 'en'));
-  })();
-  families.catch(() => (families = null));
-  return families;
+// From the installed font files (electron/fonts.cjs): the Chinese name of each family, by
+// every name the system may list it by, and the families installed since this launch.
+type InstalledFonts = { names: Record<string, string>; added: string[] };
+const hasChinese = (s: string) => /[㐀-鿿豈-﫿]/.test(s);
+
+/** The font families on this computer, Chinese ones first; read again each time. */
+export async function localFonts(): Promise<FontOption[]> {
+  const query = (window as { queryLocalFonts?: () => Promise<{ family: string }[]> })
+    .queryLocalFonts;
+  const listed = query ? await query() : [];
+  const found = [...new Set(listed.map((f) => clean(f.family)).filter(Boolean))];
+  // The system's list is read once per launch; the files give the families installed since.
+  const installed: InstalledFonts | null = window.folio
+    ? await window.folio.invoke('installed-fonts', { listed: found }).catch(() => null)
+    : null;
+  const names = new Map(
+    Object.entries(installed?.names || {}).map(([family, name]) => [family.toLowerCase(), name]),
+  );
+  const known = new Set(found.map((f) => f.toLowerCase()));
+  for (const family of (installed?.added || []).map(clean)) {
+    if (family && !known.has(family.toLowerCase())) {
+      found.push(family);
+      known.add(family.toLowerCase());
+    }
+  }
+  return found
+    .map((family) => {
+      const name = chineseNames[family] || clean(names.get(family.toLowerCase()));
+      return { family, name: name === family ? '' : name };
+    })
+    .sort(
+      (a, b) =>
+        Number(!a.name && !hasChinese(a.family)) - Number(!b.name && !hasChinese(b.family)) ||
+        a.family.localeCompare(b.family, 'en'),
+    );
 }

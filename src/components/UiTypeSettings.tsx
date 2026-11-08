@@ -16,10 +16,22 @@ export function UiTypeSettings() {
   const button = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   useDismiss(picking, () => setPicking(false), button, panel);
+  // Read each time the list opens, so a font installed meanwhile shows.
   useEffect(() => {
-    if (!picking || fonts) return;
-    localFonts().then(setFonts, () => setFailed(true));
-  }, [picking, fonts]);
+    if (!picking) return;
+    let live = true;
+    localFonts().then(
+      (found) => {
+        if (!live) return;
+        setFonts(found);
+        setFailed(false);
+      },
+      () => live && setFailed(true),
+    );
+    return () => {
+      live = false;
+    };
+  }, [picking]);
   const q = query.trim().toLowerCase();
   const shown = (fonts || []).filter(
     (f) => !q || f.family.toLowerCase().includes(q) || f.name.includes(query.trim()),

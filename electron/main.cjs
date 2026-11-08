@@ -25,6 +25,7 @@ const { createUpdates } = require('./updater.cjs');
 const { createAi } = require('./ai.cjs');
 const { createAnnouncements } = require('./announcements.cjs');
 const { createCommunity } = require('./community.cjs');
+const { createFonts, familiesThatShow } = require('./fonts.cjs');
 const { createSpeech } = require('./speech.cjs');
 const { createSpeechLog } = require('./speech-log.cjs');
 const { createAiLog } = require('./ai-log.cjs');
@@ -44,6 +45,8 @@ let appearance = null;
 // The interface's size (src/ui-type.ts): the window's zoom.
 const uiZooms = [0.8, 0.9, 1, 1.1, 1.25, 1.5];
 let uiZoom = 1;
+// The installed fonts' names, read when the font list opens.
+let installedFonts;
 const previews = new Map();
 let ai;
 let announcements;
@@ -596,6 +599,7 @@ app
           'microphone',
           'appearance',
           'ui-zoom',
+          'installed-fonts',
           'speech-voices',
           'speech',
           'speech-listen',
@@ -996,6 +1000,10 @@ app
           await rememberUiZoom(zoom);
           return true;
         }
+        case 'installed-fonts':
+          return (installedFonts ||= createFonts()).forList(payload?.listed, (families) =>
+            familiesThatShow(families, BrowserWindow),
+          );
         case 'ai-history':
           return workspace.aiHistory(payload);
         case 'ai-pairs':

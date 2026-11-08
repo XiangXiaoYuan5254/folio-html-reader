@@ -1,7 +1,9 @@
 // The interface's own font and size (设置 › 外观与阅读), in the real Electron app: the size
 // zooms the interface but not the document, a font from the computer replaces the theme's,
-// both are kept after a restart, and one click brings the defaults back.
+// both are kept after a restart, and one click brings the defaults back. Installed font files
+// give their Chinese names, read again each time the list opens.
 import { _electron as electron } from 'playwright';
+import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -12,6 +14,21 @@ const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'folio-ui-type-'));
 const project = path.join(temp, '项目');
 const userData = path.join(temp, 'user-data');
 const evidence = process.env.FOLIO_QA_DIR || path.join(os.tmpdir(), 'folio-ui-type-qa');
+// Installed font files: one gives Courier New a Chinese name; one is a family the system
+// doesn't have, which isn't offered.
+const fontDir = path.join(temp, 'fonts');
+const { face } = createRequire(import.meta.url)('./font-file.cjs');
+await fs.mkdir(fontDir, { recursive: true });
+const fontFile = (family, chinese) =>
+  face([
+    { id: 1, value: family },
+    { id: 1, value: chinese, lang: 0x804 },
+  ]);
+await fs.writeFile(path.join(fontDir, 'cour.ttf'), fontFile('Courier New', '测试等宽体'));
+await fs.writeFile(
+  path.join(fontDir, 'missing.ttf'),
+  fontFile('Folio Missing Font', '不存在的字体'),
+);
 await fs.mkdir(project, { recursive: true });
 await fs.mkdir(evidence, { recursive: true });
 await fs.writeFile(
@@ -29,6 +46,7 @@ async function launch() {
       ELECTRON_RUN_AS_NODE: undefined,
       FOLIO_USER_DATA: userData,
       FOLIO_WORKSPACE: project,
+      FOLIO_FONT_DIRS: fontDir,
     },
   });
   page = await app.firstWindow();
@@ -79,15 +97,29 @@ try {
     'document keeps its size',
   );
 
-  // A font from this computer.
-  await settings().getByRole('button', { name: '界面字体' }).click();
+  // A font from this computer, found by the Chinese name in its file.
+  const fontButton = settings().getByRole('button', { name: '界面字体' });
+  await fontButton.click();
   const fonts = settings().getByRole('listbox', { name: '这台电脑上的字体' });
-  await settings().getByLabel('搜索字体').fill('Courier New');
-  await fonts.getByRole('option', { name: 'Courier New' }).first().click();
+  await settings().getByLabel('搜索字体').fill('不存在的');
+  await fonts.getByText('没有找到“不存在的”').waitFor();
+  await settings().getByLabel('搜索字体').fill('测试等宽');
+  const courier = fonts.getByRole('option', { name: '测试等宽体' });
+  await courier.waitFor();
+  assert.equal(await courier.locator('small').textContent(), 'Courier New');
+  assert.equal(await fonts.getByRole('option').count(), 1);
+  await courier.click();
   await waitFor(async () => (await bodyFont()).startsWith('"Courier New"'), 'interface font');
   // The list stays open while used, and closes on a click anywhere else.
   await settings().getByLabel('搜索字体').click();
   assert.ok(await fonts.isVisible());
+  await settings().getByRole('heading', { name: '外观与阅读', exact: true }).click();
+  await fonts.waitFor({ state: 'hidden' });
+  // A font file added meanwhile shows the next time the list opens.
+  await fs.writeFile(path.join(fontDir, 'georgia.ttf'), fontFile('Georgia', '测试衬线体'));
+  await fontButton.click();
+  await settings().getByLabel('搜索字体').fill('测试衬线');
+  await fonts.getByRole('option', { name: '测试衬线体' }).waitFor();
   await settings().getByRole('heading', { name: '外观与阅读', exact: true }).click();
   await fonts.waitFor({ state: 'hidden' });
   assert.equal(
