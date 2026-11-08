@@ -44,6 +44,7 @@ import { DiffView } from './DiffView';
 import { ModelMenu } from './ModelMenu';
 import { IconButton } from './IconButton';
 import { RegionCapture } from './RegionCapture';
+import { ReplySelection } from './ReplySelection';
 import { ImageViewer } from './ImageViewer';
 import { isImageFile, maxImages, prepareImage, refusesImages } from '../ai/images';
 import { loadedModelOptions } from '../ai/levels';
@@ -114,9 +115,17 @@ export function AssistantPanel(p: {
     history?.threads.find((t) => t.id === history.active) || history?.threads[0] || undefined;
   const running = !!thread && !!state.running[thread.id];
   const draft = state.drafts[scope] || '';
+  const noDocument = p.mode === 'doc' && !p.reading;
   const [attach, setAttach] = useState(true);
-  useEffect(() => setAttach(true), [p.selection]);
-  const attached = p.mode === 'doc' && attach && p.selection.trim() ? p.selection.trim() : '';
+  // A passage of a reply quoted with 引用; text selected in the document after it takes over.
+  const [quote, setQuote] = useState('');
+  useEffect(() => {
+    setAttach(true);
+    if (p.selection.trim()) setQuote('');
+  }, [p.selection]);
+  useEffect(() => setQuote(''), [scope, thread?.id]);
+  const attached =
+    quote || (p.mode === 'doc' && attach && p.selection.trim() ? p.selection.trim() : '');
   const provider = activeProvider(config);
   const ready = providerReady(provider, config);
   const list = useRef<HTMLDivElement>(null);
@@ -168,11 +177,22 @@ export function AssistantPanel(p: {
     const text = draft.trim();
     if ((!text && !images.length) || blocked || running || !scope) return;
     stick.current = true;
-    if (p.mode === 'project') void p.store.agent(text, images);
+    if (p.mode === 'project') void p.store.agent(text, images, { quote });
     else if (p.reading) {
-      void p.store.ask(p.reading, text, attached || undefined, images);
-      if (attached) p.onClearSelection();
+      void p.store.ask(p.reading, text, attached || undefined, images, { fromReply: !!quote });
+      if (attached && !quote) p.onClearSelection();
     }
+    setQuote('');
+  }
+  const canAsk = !running && ready && !!scope && !noDocument;
+  // 解释 on text selected in a reply: asked in the conversation, leaving what's being typed.
+  function explain(text: string) {
+    if (!canAsk) return;
+    stick.current = true;
+    const asked = '解释一下这段话';
+    if (p.mode === 'project') void p.store.agent(asked, [], { quote: text, keepDraft: true });
+    else if (p.reading)
+      void p.store.ask(p.reading, asked, text, [], { fromReply: true, keepDraft: true });
   }
   function task(t: Task) {
     if (!p.reading || running) return;
@@ -188,7 +208,6 @@ export function AssistantPanel(p: {
     'translate',
   ];
   if ((p.reading?.docs.length || 0) > 1) tasks.push('compare');
-  const noDocument = p.mode === 'doc' && !p.reading;
   return (
     <div
       className={`assistant-panel${dropping ? ' dropping' : ''}`}
@@ -364,6 +383,18 @@ export function AssistantPanel(p: {
           )
         )}
       </div>
+      <ReplySelection
+        list={list}
+        store={p.store}
+        conversation={`${scope}:${thread?.id || ''}`}
+        canAsk={canAsk}
+        onQuote={(text) => {
+          setQuote(text);
+          setAttach(false);
+          input.current?.focus();
+        }}
+        onExplain={explain}
+      />
       {p.mode === 'project' && plugins.length ? (
         <div className="assistant-chips assistant-plugins" aria-label="插件">
           {plugins.map((plugin) =>
@@ -441,7 +472,10 @@ export function AssistantPanel(p: {
           <div className="assistant-attached">
             <Quote size={12} />
             <span>{attached}</span>
-            <button aria-label="不引用选中的文字" onClick={() => setAttach(false)}>
+            <button
+              aria-label="不引用选中的文字"
+              onClick={() => (quote ? setQuote('') : setAttach(false))}
+            >
               <X size={12} />
             </button>
           </div>
@@ -832,7 +866,10 @@ function AnswerMessage(p: {
                     !!question.label?.startsWith(`${taskLabels[t]} · `),
                 );
                 if (task) void p.store.runTask(reading, task);
-                else void p.store.ask(reading, question.text, question.selection, question.images);
+                else
+                  void p.store.ask(reading, question.text, question.selection, question.images, {
+                    fromReply: question.fromReply,
+                  });
               }}
             >
               <RotateCcw size={12} />

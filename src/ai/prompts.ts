@@ -80,8 +80,11 @@ export function compactPrompt(previous: string, transcript: string) {
     .filter((line) => line !== '')
     .join('\n');
 }
-export function selectionPrompt(selection: string, question: string, from = '') {
-  return `我${from ? `在《${from}》里` : ''}选中了这段原文：\n<selection>\n${selection}\n</selection>\n\n${question}`;
+export function selectionPrompt(selection: string, question: string, from = '', fromReply = false) {
+  const picked = fromReply
+    ? '我引用你前面回答里的这段话'
+    : `我${from ? `在《${from}》里` : ''}选中了这段原文`;
+  return `${picked}：\n<selection>\n${selection}\n</selection>\n\n${question}`;
 }
 
 export function explainTask(selection: string, context: string) {
@@ -96,8 +99,10 @@ export function explainTask(selection: string, context: string) {
     prompt: `上下文：\n<context>\n${context}\n</context>\n\n请解释这段选中的文字：\n<selection>\n${selection}\n</selection>`,
   };
 }
+// Chinese goes into English, anything else into Chinese.
+export const translationTarget = (text: string) => (mostlyChinese(text) ? '英文' : '简体中文');
 export function translateTask(selection: string) {
-  const target = mostlyChinese(selection) ? '英文' : '简体中文';
+  const target = translationTarget(selection);
   return {
     system: [
       `你是专业译者，把用户给出的文字翻译成${target}。`,

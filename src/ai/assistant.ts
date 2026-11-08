@@ -645,30 +645,42 @@ export class Assistant {
     return pending;
   }
 
-  // A question about the open document(s), possibly with pictures.
-  async ask(ctx: ReadingContext, text: string, selection = ctx.selection, images: string[] = []) {
+  // A question about the open document(s), possibly with pictures. `fromReply`: the selection
+  // is a passage of an earlier reply. `keepDraft`: asked from the chat's own selection
+  // toolbar, which leaves what's being typed alone.
+  async ask(
+    ctx: ReadingContext,
+    text: string,
+    selection = ctx.selection,
+    images: string[] = [],
+    how: { fromReply?: boolean; keepDraft?: boolean } = {},
+  ) {
     const question = text.trim();
     if (!question && !images.length) return;
     await this.load(ctx.scope);
     const notes =
       !images.length && !selection && continuing.test(question) && this.notesToGoOn(ctx.scope);
     if (notes) return this.continueNotes(ctx, question, notes);
+    const fromReply = !!selection && !!how.fromReply;
     const selectionFrom =
-      selection && ctx.docs.length > 1 ? fileName(activeDoc(ctx).path) : undefined;
+      selection && !fromReply && ctx.docs.length > 1 ? fileName(activeDoc(ctx).path) : undefined;
     const started = this.begin(
       ctx.scope,
       {
         text: question,
         selection,
         ...(selectionFrom ? { selectionFrom } : {}),
+        ...(fromReply ? { fromReply } : {}),
         ...(images.length ? { images } : {}),
       },
       { docs: ctx.docs },
     );
     if (!started) return;
     const { threadId, answerId, history, signal } = started;
-    this.setDraft(ctx.scope, '');
-    this.setAttachments(ctx.scope, []);
+    if (!how.keepDraft) {
+      this.setDraft(ctx.scope, '');
+      this.setAttachments(ctx.scope, []);
+    }
     await this.stream(ctx, threadId, answerId, signal, async (provider, config, how) => {
       const vision = !refusesImages(provider, loadedModelOptions(provider.id));
       const { system, partial } = await this.readingContext(
@@ -694,7 +706,7 @@ export class Assistant {
         messages: [
           ...fitted.messages,
           userTurn(
-            selection ? selectionPrompt(selection, asked, selectionFrom) : asked,
+            selection ? selectionPrompt(selection, asked, selectionFrom, fromReply) : asked,
             images,
             vision,
           ),
@@ -774,7 +786,7 @@ export class Assistant {
     if (m.role === 'user') {
       const asked = m.text || (agent ? imageRequest : imageQuestion);
       return userTurn(
-        m.selection ? selectionPrompt(m.selection, asked, m.selectionFrom) : asked,
+        m.selection ? selectionPrompt(m.selection, asked, m.selectionFrom, m.fromReply) : asked,
         m.images,
         vision,
       );
@@ -1188,6 +1200,17 @@ export class Assistant {
   // Keeps a selection card's result as part of the document's conversation.
   keepExchange(scope: Scope, docs: CiteDoc[], user: Partial<ChatMessage>, answer: string) {
     this.add(scope, user, { docs, text: answer, status: 'done' });
+  }
+
+  // A passage picked in a reply, translated beside it and not kept in the conversation.
+  async translateSnippet(text: string, signal: AbortSignal, onText: (delta: string) => void) {
+    await this.provider('translate');
+    const task = translateTask(text);
+    const result = await chat(
+      { system: task.system, messages: [{ role: 'user', content: task.prompt }], use: 'translate' },
+      { signal, onText },
+    );
+    return { text: result.text, target: task.target };
   }
 
   private cardController: AbortController | null = null;
@@ -2133,20 +2156,32 @@ export class Assistant {
 
   // The project agent: the model reads, searches and proposes changes through tools; every
   // change waits for the user's approval unless they chose to apply the rest automatically.
-  async agent(text: string, images: string[] = []) {
+  // `quote`: a passage of an earlier reply the request is about. `keepDraft` as for ask.
+  async agent(
+    text: string,
+    images: string[] = [],
+    how: { quote?: string; keepDraft?: boolean } = {},
+  ) {
     const scope = 'project';
     const request = text.trim();
     if (!request && !images.length) return;
     await this.load(scope);
+    const quote = how.quote?.trim();
     const started = this.begin(
       scope,
-      { text: request, ...(images.length ? { images } : {}) },
+      {
+        text: request,
+        ...(quote ? { selection: quote, fromReply: true } : {}),
+        ...(images.length ? { images } : {}),
+      },
       { parts: [] },
     );
     if (!started) return;
     const { threadId, answerId, history, signal } = started;
-    this.setDraft(scope, '');
-    this.setAttachments(scope, []);
+    if (!how.keepDraft) {
+      this.setDraft(scope, '');
+      this.setAttachments(scope, []);
+    }
     const patch = (fn: (m: ChatMessage) => ChatMessage) =>
       this.patchMessage(scope, threadId, answerId, fn);
     const setParts = (fn: (parts: MessagePart[]) => MessagePart[]) =>
@@ -2176,9 +2211,10 @@ export class Assistant {
         signal,
         () => {},
       );
+      const asked = request || imageRequest;
       const wire: WireMessage[] = [
         ...fitted.messages,
-        userTurn(request || imageRequest, images, vision),
+        userTurn(quote ? selectionPrompt(quote, asked, '', true) : asked, images, vision),
       ];
       const done = await this.loop({
         threadId,

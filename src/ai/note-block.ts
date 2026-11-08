@@ -11,7 +11,7 @@ const quote = (text: string) =>
 export const answerLabel = '**AI 回答：**';
 
 export function answerNote(p: {
-  question?: { text: string; label?: string; selection?: string };
+  question?: { text: string; label?: string; selection?: string; fromReply?: boolean };
   // The question's pictures, already kept as note images (their names).
   pictures?: string[];
   answer: string;
@@ -31,7 +31,12 @@ export function answerNote(p: {
     `## ${title}（${p.date}）`,
     ...(asked && asked !== title ? ['', quote(`问：${asked}`)] : []),
     ...(selection
-      ? ['', quote(`原文：${selection.length > 1000 ? `${selection.slice(0, 1000)}…` : selection}`)]
+      ? [
+          '',
+          quote(
+            `${p.question?.fromReply ? '引用' : '原文'}：${selection.length > 1000 ? `${selection.slice(0, 1000)}…` : selection}`,
+          ),
+        ]
       : []),
     ...(p.pictures || []).flatMap((name) => ['', `![提问附的图片](note-image:${name})`]),
     // Without a question the heading already says “AI 回答”.

@@ -9,12 +9,14 @@ export type ToolbarSide = 'below' | 'above';
 // prefers that, on the other side when there is no room, and stays inside the reading area
 // while the page scrolls. Without a box it falls back to the bottom of the pane. When the
 // reader moves it to the other side it slides there; otherwise it keeps up with the page at once.
+// `area`: the part of its pane it stays inside, the document unless said otherwise.
 export function SelectionToolbar({
   box,
   side = 'below',
+  area: within = '.reader-surface',
   className,
   ...props
-}: HTMLAttributes<HTMLDivElement> & { box: ScreenBox | null; side?: ToolbarSide }) {
+}: HTMLAttributes<HTMLDivElement> & { box: ScreenBox | null; side?: ToolbarSide; area?: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const shownSide = useRef(side);
   const sliding = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -38,7 +40,7 @@ export function SelectionToolbar({
     const place = () => {
       const p = pane.getBoundingClientRect();
       // The document itself, below a two-column header or the source preview caption.
-      const area = pane.querySelector('.reader-surface')?.getBoundingClientRect() || p;
+      const area = pane.querySelector(within)?.getBoundingClientRect() || p;
       const width = el.offsetWidth,
         height = el.offsetHeight,
         gap = 10,
@@ -62,7 +64,7 @@ export function SelectionToolbar({
     const observer = new ResizeObserver(place);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [box, side]);
+  }, [box, side, within]);
   return (
     <div
       ref={ref}

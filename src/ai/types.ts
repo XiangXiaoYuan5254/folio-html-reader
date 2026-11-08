@@ -252,6 +252,8 @@ export type ChatMessage = {
   selection?: string;
   // With two documents open, the one the selection is from (its file name).
   selectionFrom?: string;
+  // The selection is a passage of an earlier reply, picked in the chat, not of a document.
+  fromReply?: boolean;
   // Pictures sent with a question (pasted, dropped, or a region of the page), as data: URLs.
   images?: string[];
   reasoning?: string;
