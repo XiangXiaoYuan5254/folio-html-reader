@@ -8,13 +8,15 @@ const path = require('path');
 /** The folders installed fonts go to, for this user and for everyone on the computer. */
 function fontDirs(env = process.env, platform = process.platform, home = os.homedir()) {
   if (env.FOLIO_FONT_DIRS) return env.FOLIO_FONT_DIRS.split(path.delimiter).filter(Boolean);
-  if (platform === 'darwin') return [path.join(home, 'Library/Fonts'), '/Library/Fonts'];
+  // Joined the way that platform writes paths, whichever one this runs on.
+  const { join } = platform === 'win32' ? path.win32 : path.posix;
+  if (platform === 'darwin') return [join(home, 'Library/Fonts'), '/Library/Fonts'];
   if (platform === 'win32')
     return [
-      env.LOCALAPPDATA && path.join(env.LOCALAPPDATA, 'Microsoft/Windows/Fonts'),
-      path.join(env.WINDIR || env.SystemRoot || 'C:\\Windows', 'Fonts'),
+      env.LOCALAPPDATA && join(env.LOCALAPPDATA, 'Microsoft/Windows/Fonts'),
+      join(env.WINDIR || env.SystemRoot || 'C:\\Windows', 'Fonts'),
     ].filter(Boolean);
-  return [path.join(home, '.local/share/fonts'), path.join(home, '.fonts'), '/usr/share/fonts'];
+  return [join(home, '.local/share/fonts'), join(home, '.fonts'), '/usr/share/fonts'];
 }
 
 // Name IDs: 1 family, 16 typographic family, 21 WWS family; the system calls a family by one.
