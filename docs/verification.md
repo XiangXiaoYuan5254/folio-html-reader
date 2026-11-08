@@ -32,6 +32,7 @@ macOS 版使用 Developer ID 签名并经过 Apple 公证，公证票据已贴�
 - Mac arm64 包在虚拟机本机磁盘打包，Developer ID 签名、Apple 公证（`source=Notarized Developer ID`）、票据和 DMG 完整性检查通过。打包好的应用在独立用户目录启动：版本 0.31.0，Markdown 文件按排版显示、「源码」可用，无界面脚本错误。
 - 更新检查：已发布的 0.30.5 Mac 版放在临时文件夹，从本地服务器读 0.31.0 的更新文件，提示卡片显示 0.31.0 的说明，「立即重启」后装上 0.31.0，签名完整。
 - Windows 安装包在同一台机器交叉构建，只带 Windows 版语音模块，未签名。
+- [Windows 完整流水线](https://github.com/XiangXiaoYuan5254/folio-html-reader/actions/runs/42495770002)通过。第一轮失败在字体文件夹的单元测试：`fontDirs` 用运行它的系统拼路径，在 Windows 上测 Mac 的情况得到反斜杠；应用本身不受影响，改成按传入的平台拼路径后通过。白板任务的论文搜索有一次没搜到结果，重跑通过。
 
 ## 0.30.5 发布验证（2026-11-08）
 
