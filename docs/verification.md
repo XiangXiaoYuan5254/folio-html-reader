@@ -32,6 +32,7 @@ macOS 版使用 Developer ID 签名并经过 Apple 公证，公证票据已贴�
 - Mac arm64 包在虚拟机本机磁盘打包，Developer ID 签名、Apple 公证（`source=Notarized Developer ID`）、票据和 DMG 完整性检查通过。打包好的应用在独立用户目录启动：版本 0.30.5，AI 助手面板正常打开，无界面脚本错误。
 - 更新检查：已发布的 0.30.4 Mac 版放在临时文件夹，从本地服务器读 0.30.5 的更新文件，提示卡片显示 0.30.5 的说明，「立即重启」后装上 0.30.5，签名完整。
 - Windows 安装包在同一台机器交叉构建，只带 Windows 版语音模块，未签名。打包时 GitHub 的 Electron 校验文件下载一直返回 504，改用本机缓存的 Electron 42.11.2 Windows 包（`-c.electronDist`），它的 SHA-256 与 `electron` 包自带的 `checksums.json` 一致。
+- [Windows 完整流水线](https://github.com/XiangXiaoYuan5254/folio-html-reader/actions/runs/42470136809)通过（前几轮都失败在 GitHub 下载 Electron 返回 504，测试本身没有失败；下载恢复后重跑通过）。
 
 ## 0.30.4 发布验证（2026-11-07）
 
