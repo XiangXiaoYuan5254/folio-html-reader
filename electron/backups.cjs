@@ -10,7 +10,8 @@ const interval = 10 * minute;
 // each day for 30 days. The first one is the version from when that stretch of editing
 // began. Newer backups are kept first until a document's backups reach the size budget.
 const policy = { recent: 2 * hour, hourly: day, daily: 30 * day, maxBytes: 200 * 1024 * 1024 };
-const pattern = /^(\d{13})-[0-9a-f]{8}(-restore)?\.html$/;
+// Named for what they hold: .html, or .md for a Markdown file.
+const pattern = /^(\d{13})-[0-9a-f]{8}(-restore)?\.(?:html|md)$/;
 function parse(name) {
   const m = typeof name === 'string' ? pattern.exec(name) : null;
   return m ? { name, time: Number(m[1]), restore: !!m[2] } : null;
@@ -73,7 +74,12 @@ async function pruneAll(root, now = Date.now()) {
 }
 // Saves `content` as a backup unless one was taken within the interval. `force` always
 // saves (unless the newest backup already holds this content), for replacing a file on purpose.
-async function snapshot(dir, content, atomicWrite, { force = false, restore = false } = {}) {
+async function snapshot(
+  dir,
+  content,
+  atomicWrite,
+  { force = false, restore = false, ext = 'html' } = {},
+) {
   const [latest] = await list(dir);
   const now = Date.now();
   if (latest) {
@@ -85,7 +91,7 @@ async function snapshot(dir, content, atomicWrite, { force = false, restore = fa
     )
       return;
   }
-  const name = `${now}-${crypto.randomUUID().slice(0, 8)}${restore ? '-restore' : ''}.html`;
+  const name = `${now}-${crypto.randomUUID().slice(0, 8)}${restore ? '-restore' : ''}.${ext === 'md' ? 'md' : 'html'}`;
   await atomicWrite(path.join(dir, name), content);
   await prune(dir, now);
 }

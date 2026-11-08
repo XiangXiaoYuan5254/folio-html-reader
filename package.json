@@ -2,7 +2,7 @@
   "name": "folio-html-reader",
   "productName": "页间",
   "version": "0.30.5",
-  "description": "本地 HTML / PDF 阅读、批注与项目管理",
+  "description": "本地 HTML / PDF / Markdown / 图片阅读、批注与项目管理",
   "type": "module",
   "main": "electron/main.cjs",
   "author": "XiangXiaoYuan5254",
@@ -13,7 +13,7 @@
     "build": "tsc -b && vite build",
     "start": "electron .",
     "test": "node --test tests/*.test.cjs",
-    "test:e2e": "npm run build && node tests/layout.e2e.mjs && node tests/e2e.mjs && node tests/annotations.e2e.mjs && node tests/reading-interactions.e2e.mjs && node tests/zoom.e2e.mjs && node tests/pdf.e2e.mjs && node tests/tabs.e2e.mjs && node tests/text-width.e2e.mjs && node tests/source.e2e.mjs && node tests/open-file.e2e.mjs && node tests/ai.e2e.mjs && node tests/reply-selection.e2e.mjs && node tests/settings.e2e.mjs && node tests/plugins.e2e.mjs && node tests/plugin-dev.e2e.mjs",
+    "test:e2e": "npm run build && node tests/layout.e2e.mjs && node tests/e2e.mjs && node tests/annotations.e2e.mjs && node tests/reading-interactions.e2e.mjs && node tests/zoom.e2e.mjs && node tests/pdf.e2e.mjs && node tests/tabs.e2e.mjs && node tests/text-width.e2e.mjs && node tests/source.e2e.mjs && node tests/open-file.e2e.mjs && node tests/markdown-edit.e2e.mjs && node tests/ai.e2e.mjs && node tests/reply-selection.e2e.mjs && node tests/settings.e2e.mjs && node tests/plugins.e2e.mjs && node tests/plugin-dev.e2e.mjs",
     "test:annotations": "npm run build && node tests/annotations.e2e.mjs",
     "pack": "npm run build && node scripts/build-speech.mjs && electron-builder --mac dir",
     "format": "prettier --write src electron scripts tests vite.config.ts",
@@ -26,6 +26,7 @@
     "test:text-width": "npm run build && node tests/text-width.e2e.mjs",
     "test:source": "npm run build && node tests/source.e2e.mjs && node tests/open-file.e2e.mjs",
     "test:open-file": "npm run build && node tests/open-file.e2e.mjs",
+    "test:markdown": "npm run build && node tests/markdown-edit.e2e.mjs",
     "test:ai": "npm run build && node tests/ai.e2e.mjs",
     "test:reply-selection": "npm run build && node tests/reply-selection.e2e.mjs",
     "test:plugins": "npm run build && node tests/plugins.e2e.mjs",
@@ -65,6 +66,7 @@
     "electron-updater": "6.8.9",
     "katex": "^0.16.47",
     "lucide-react": "^0.468.0",
+    "markdown-it": "^15.0.3",
     "mpg123-decoder": "1.0.3",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
@@ -148,6 +150,38 @@
           ],
           "name": "HTML 文档",
           "role": "Editor",
+          "rank": "Alternate"
+        },
+        {
+          "ext": [
+            "pdf"
+          ],
+          "name": "PDF 文档",
+          "role": "Viewer",
+          "rank": "Alternate"
+        },
+        {
+          "ext": [
+            "md",
+            "markdown"
+          ],
+          "name": "Markdown 文档",
+          "role": "Viewer",
+          "rank": "Alternate"
+        },
+        {
+          "ext": [
+            "png",
+            "jpg",
+            "jpeg",
+            "gif",
+            "webp",
+            "avif",
+            "bmp",
+            "svg"
+          ],
+          "name": "图片",
+          "role": "Viewer",
           "rank": "Alternate"
         }
       ],

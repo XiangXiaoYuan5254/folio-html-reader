@@ -38,7 +38,7 @@ test('不在当前项目时，选包含它的最内层最近项目，否则用�
     relative: 'c.html',
   });
 });
-test('隐藏文件夹里的文件不算在项目内，非 HTML/PDF 文件被拒绝', async (t) => {
+test('隐藏文件夹里的文件不算在项目内，不支持的文件被拒绝', async (t) => {
   const root = await tree(t);
   const current = path.join(root, '当前');
   const hidden = path.join(current, '.html-reader/d.html');
@@ -49,7 +49,7 @@ test('隐藏文件夹里的文件不算在项目内，非 HTML/PDF 文件被拒�
   await fs.writeFile(path.join(root, 'notes.txt'), 'x');
   await assert.rejects(
     projectFor(path.join(root, 'notes.txt'), current, []),
-    /只能打开 HTML 或 PDF/,
+    /只能打开 HTML、PDF、Markdown 或图片/,
   );
 });
 test('通过符号链接打开时按真实路径归属项目', async (t) => {
@@ -61,7 +61,7 @@ test('通过符号链接打开时按真实路径归属项目', async (t) => {
     relative: '章节/a.html',
   });
 });
-test('命令行参数只取出 HTML / PDF 文档，并按工作目录解析相对路径', () => {
+test('命令行参数只取出能打开的文档，并按工作目录解析相对路径', () => {
   const { filesFromArgv } = require('../electron/open-file.cjs');
   const cwd = path.resolve('/工作目录');
   assert.deepEqual(
@@ -72,11 +72,28 @@ test('命令行参数只取出 HTML / PDF 文档，并按工作目录解析相�
         '.',
         '笔记.HTML',
         path.resolve('/资料/论文.pdf'),
+        '读书笔记.md',
+        '截图.JPG',
         'x.txt',
       ],
       cwd,
     ),
-    [path.join(cwd, '笔记.HTML'), path.resolve('/资料/论文.pdf')],
+    [
+      path.join(cwd, '笔记.HTML'),
+      path.resolve('/资料/论文.pdf'),
+      path.join(cwd, '读书笔记.md'),
+      path.join(cwd, '截图.JPG'),
+    ],
   );
   assert.deepEqual(filesFromArgv([path.resolve('/资料/a.html')], cwd), []);
+});
+test('Markdown 和图片也能从访达打开', async (t) => {
+  const root = await tree(t);
+  for (const name of ['笔记.md', '图.webp']) {
+    await fs.writeFile(path.join(root, '当前', name), 'x');
+    assert.deepEqual(await projectFor(path.join(root, '当前', name), path.join(root, '当前'), []), {
+      root: path.join(root, '当前'),
+      relative: name,
+    });
+  }
 });

@@ -1,10 +1,12 @@
+import type { DocKind } from '../doc-kind';
+
 // Loads a document that isn't on screen in an offscreen reader, so the AI can read it and
 // place highlights with exactly the code the visible reader uses. One document at a time.
 let queue: Promise<unknown> = Promise.resolve();
 
 export function withHiddenReader<T>(
   url: string,
-  kind: 'html' | 'pdf',
+  kind: DocKind,
   work: (
     request: <R>(type: string, payload?: Record<string, unknown>, ms?: number) => Promise<R>,
   ) => Promise<T>,
@@ -16,7 +18,7 @@ export function withHiddenReader<T>(
 
 async function load<T>(
   url: string,
-  kind: 'html' | 'pdf',
+  kind: DocKind,
   work: (
     request: <R>(type: string, payload?: Record<string, unknown>, ms?: number) => Promise<R>,
   ) => Promise<T>,

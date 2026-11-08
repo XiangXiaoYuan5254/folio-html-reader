@@ -11,6 +11,7 @@ import {
 import type { Range } from '@codemirror/state';
 import { basicSetup } from 'codemirror';
 import { html } from '@codemirror/lang-html';
+import { markdown } from '@codemirror/lang-markdown';
 import { indentWithTab } from '@codemirror/commands';
 import {
   ensureSyntaxTree,
@@ -57,6 +58,7 @@ const themedHighlight = HighlightStyle.define([
   { tag: t.emphasis, fontStyle: 'italic' },
   { tag: t.strong, fontWeight: 'bold' },
   { tag: t.strikethrough, textDecoration: 'line-through' },
+  { tag: t.monospace, color: 'var(--syn-string)' },
   { tag: t.keyword, color: 'var(--syn-keyword)' },
   { tag: [t.atom, t.bool, t.url, t.contentSeparator, t.labelName], color: 'var(--syn-atom)' },
   { tag: [t.literal, t.inserted], color: 'var(--syn-literal)' },
@@ -128,10 +130,34 @@ function locate(state: EditorState, offset: number, tag: string): Target | null 
   return { from: at, to: end, tagFrom: at, tagTo: end };
 }
 
+// A Markdown block from where the preview says it starts: a heading or list item is its
+// line, a fenced code block runs to its closing fence, anything else to the next blank line.
+function locateMarkdown(state: EditorState, offset: number, tag: string): Target | null {
+  const doc = state.doc;
+  if (offset < 0 || offset > doc.length) return null;
+  const first = doc.lineAt(offset);
+  let last = first;
+  const fence = /^\s*(`{3,}|~{3,})/.exec(first.text)?.[1];
+  if (fence) {
+    for (let n = first.number + 1; n <= doc.lines; n++) {
+      last = doc.line(n);
+      if (last.text.trim().startsWith(fence)) break;
+    }
+  } else if (!/^(li|h[1-6])$/.test(tag))
+    for (let n = first.number + 1; n <= doc.lines && doc.line(n).text.trim(); n++)
+      last = doc.line(n);
+  return { from: first.from, to: last.to, tagFrom: first.from, tagTo: first.to };
+}
+
 export default forwardRef<
   SourceEditorHandle,
-  { value: string; onChange: (v: string) => void; onSave: () => void }
->(function SourceEditor({ value, onChange, onSave }, ref) {
+  {
+    value: string;
+    onChange: (v: string) => void;
+    onSave: () => void;
+    language?: 'html' | 'markdown';
+  }
+>(function SourceEditor({ value, onChange, onSave, language = 'html' }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | null>(null);
   const { active } = useTheme();
@@ -153,7 +179,10 @@ export default forwardRef<
     reveal(offset, tag, select) {
       const view = editor.current;
       if (!view) return;
-      const target = locate(view.state, offset, tag);
+      const target =
+        language === 'markdown'
+          ? locateMarkdown(view.state, offset, tag)
+          : locate(view.state, offset, tag);
       if (!target) return;
       // Only scroll when the tag is off screen, so small pointer moves don't jump around.
       const coords = view.coordsAtPos(target.tagFrom);
@@ -180,7 +209,7 @@ export default forwardRef<
         doc: value,
         extensions: [
           basicSetup,
-          html(),
+          language === 'markdown' ? markdown() : html(),
           phrases,
           targetField,
           keymap.of([

@@ -5,7 +5,7 @@ const documentStore = require('./document-store.cjs');
 const backups = require('./backups.cjs');
 const hash = (text) => crypto.createHash('sha256').update(text).digest('hex');
 const hidden = new Set(['node_modules', 'dist', 'release', 'build', 'coverage']);
-const isHtml = (p) => /\.html?$/i.test(p);
+const { isHtml, isPdf, isMarkdown, kindOf, isDocument, isEditable } = require('./formats.cjs');
 // The k-th name to try in place of one already taken, numbered before a file's extension:
 // 未命名.html → 未命名2.html, 未命名3.html…; a name ending in a number goes on from it, in as
 // many digits: 未命名2.html → 未命名3.html, 文档09.html → 文档10.html. A name that is only a
@@ -22,9 +22,8 @@ function numbered(relative, k, folder) {
     : `${stem}${/^\d+$/.test(stem) ? '-' : ''}${k + 1}`;
   return `${relative.slice(0, slash)}${next}${ext}`;
 }
-const isPdf = (p) => /\.pdf$/i.test(p);
-const isDocument = (p) => isHtml(p) || isPdf(p);
 const clone = (x) => JSON.parse(JSON.stringify(x));
+const backupExt = (relative) => (isMarkdown(relative) ? 'md' : 'html');
 // Normalize legacy comments at the storage boundary so every UI uses the same types.
 // Reading leaves the original file intact; the next normal save persists the conversion.
 function mergeLegacyComments(data) {
@@ -202,7 +201,7 @@ class Workspace {
               kind: 'folder',
               children: await this.tree(p, depth + 1),
             };
-          return { name: e.name, path: p, kind: isHtml(p) ? 'html' : isPdf(p) ? 'pdf' : 'asset' };
+          return { name: e.name, path: p, kind: kindOf(p) || 'asset' };
         }),
     );
     return rows.sort(
@@ -249,11 +248,11 @@ class Workspace {
   }
   async document(relative) {
     return this.serial(async () => {
-      if (!isDocument(relative)) throw Error('请选择 HTML 或 PDF 文件');
+      const kind = kindOf(relative);
+      if (!kind) throw Error('请选择 HTML、PDF、Markdown 或图片文件');
       const full = await this.resolve(relative);
       const bytes = await fs.readFile(full);
-      const kind = isPdf(relative) ? 'pdf' : 'html';
-      const source = kind === 'pdf' ? '' : bytes.toString('utf8');
+      const source = kind === 'html' || kind === 'markdown' ? bytes.toString('utf8') : '';
       const version = hash(bytes);
       const store = await documentStore.locate(this, full, version, atomicWrite);
       const entry = store.entry;
@@ -445,7 +444,8 @@ class Workspace {
   }
   async saveSource({ path: relative, source, version }) {
     return this.serial(async () => {
-      if (!isHtml(relative) || typeof source !== 'string') throw Error('无效的 HTML 文档');
+      if (!isEditable(relative) || typeof source !== 'string')
+        throw Error('只能编辑 HTML 或 Markdown 文档');
       const full = await this.resolve(relative);
       const current = await fs.readFile(full, 'utf8');
       if (hash(current) !== version)
@@ -453,7 +453,9 @@ class Workspace {
           '文件已被外部程序修改。你的编辑仍保留在源码区，请复制保留后重新载入文件，再合并修改。',
         );
       // Keep the version before editing, then at most one copy per 10 minutes.
-      await backups.snapshot(this.backupDir(relative), current, atomicWrite);
+      await backups.snapshot(this.backupDir(relative), current, atomicWrite, {
+        ext: backupExt(relative),
+      });
       await atomicWrite(full, source);
       this.index.files[relative].hash = hash(source);
       await this.persistIndex();
@@ -467,7 +469,7 @@ class Workspace {
   }
   async backups({ path: relative }) {
     return this.serial(async () => {
-      if (!isHtml(relative)) throw Error('无效的 HTML 文档');
+      if (!isEditable(relative)) throw Error('只能编辑 HTML 或 Markdown 文档');
       await this.resolve(relative);
       const dir = this.backupDir(relative);
       await backups.prune(dir);
@@ -481,14 +483,14 @@ class Workspace {
   }
   async backup({ path: relative, name }) {
     return this.serial(async () => {
-      if (!isHtml(relative)) throw Error('无效的 HTML 文档');
+      if (!isEditable(relative)) throw Error('只能编辑 HTML 或 Markdown 文档');
       await this.resolve(relative);
       return backups.read(this.backupDir(relative), name);
     });
   }
   async restoreBackup({ path: relative, name, version }) {
     return this.serial(async () => {
-      if (!isHtml(relative)) throw Error('无效的 HTML 文档');
+      if (!isEditable(relative)) throw Error('只能编辑 HTML 或 Markdown 文档');
       const full = await this.resolve(relative);
       const dir = this.backupDir(relative);
       const source = await backups.read(dir, name);
@@ -497,7 +499,11 @@ class Workspace {
         throw Error('文件已被外部程序修改，请先重新载入文件，再恢复历史版本。');
       if (source !== current) {
         // Back up what is being replaced, so a restore can itself be undone.
-        await backups.snapshot(dir, current, atomicWrite, { force: true, restore: true });
+        await backups.snapshot(dir, current, atomicWrite, {
+          force: true,
+          restore: true,
+          ext: backupExt(relative),
+        });
         await atomicWrite(full, source);
         this.index.files[relative].hash = hash(source);
         await this.persistIndex();
@@ -511,7 +517,7 @@ class Workspace {
   async create({ path: relative, kind, content, unique = false, parents = false }) {
     return this.serial(async () => {
       if (kind !== 'folder') {
-        if (!isHtml(relative)) throw Error('文件名须以 .html 或 .htm 结尾');
+        if (!isEditable(relative)) throw Error('文件名须以 .html、.htm 或 .md 结尾');
         if (typeof content === 'string' && content.length > 20_000_000) throw Error('文件过大');
       }
       if (parents && typeof relative === 'string') {
@@ -533,7 +539,9 @@ class Workspace {
               full,
               typeof content === 'string'
                 ? content
-                : '<!doctype html>\n<html lang="zh-CN">\n<head><meta charset="UTF-8"><title>新文档</title><style>body{max-width:800px;margin:64px auto;padding:0 32px;font:18px/1.8 system-ui;color:#243240}h1{font-size:36px}</style></head>\n<body><h1>新文档</h1><p>从这里开始记录你的想法。</p></body>\n</html>\n',
+                : isMarkdown(candidate)
+                  ? '# 新文档\n\n从这里开始记录你的想法。\n'
+                  : '<!doctype html>\n<html lang="zh-CN">\n<head><meta charset="UTF-8"><title>新文档</title><style>body{max-width:800px;margin:64px auto;padding:0 32px;font:18px/1.8 system-ui;color:#243240}h1{font-size:36px}</style></head>\n<body><h1>新文档</h1><p>从这里开始记录你的想法。</p></body>\n</html>\n',
               { flag: 'wx' },
             );
           return { ...(await this.summary()), created: candidate };
@@ -570,6 +578,8 @@ class Workspace {
       if (await fs.stat(dst).catch(() => null)) throw Error('目标名称已存在');
       if (isHtml(from) && !isHtml(to)) throw Error('请保留 .html 或 .htm 扩展名');
       if (isPdf(from) && !isPdf(to)) throw Error('请保留 .pdf 扩展名');
+      if (isDocument(from) && kindOf(to) !== kindOf(from))
+        throw Error(`请保留 ${path.extname(from)} 扩展名`);
       const store = isDocument(from)
         ? await documentStore.locate(this, src, hash(await fs.readFile(src)), atomicWrite)
         : null;

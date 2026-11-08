@@ -129,7 +129,7 @@ test('打开文档过多时明确提示，而不是报无效会话', async (t) =
   const { w } = await setup(t);
   const paths = Array.from({ length: 101 }, (_, i) => `文档${i}.html`);
   await assert.rejects(w.saveSession({ paths, active: paths[0] }), /打开的文档过多/);
-  await assert.rejects(w.saveSession({ paths: ['笔记.md'], active: '' }), /无效的阅读会话/);
+  await assert.rejects(w.saveSession({ paths: ['笔记.txt'], active: '' }), /无效的阅读会话/);
 });
 test('阻止路径穿越、隐藏数据访问和外部符号链接', async (t) => {
   const { w, root } = await setup(t);
@@ -487,4 +487,82 @@ test('无用数据：删掉的文件留下的批注、对话、备份和没人�
   assert.deepEqual(await fs.readdir(path.join(meta, 'note-images')), ['ask-1.png']);
   assert.equal((await w.document('示例.html')).data.note, '![图片](note-image:ask-1.png)');
   assert.equal((await w.document('改名后.html')).data.note, '改名也要留着');
+});
+
+test('Markdown 和图片作为文档打开，批注随重启恢复，重命名须保留同类扩展名', async (t) => {
+  const { w, root } = await setup(t);
+  await fs.mkdir(path.join(root, '图'));
+  await fs.writeFile(path.join(root, '读书笔记.md'), '# 标题\n\n正文');
+  const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
+  await fs.writeFile(path.join(root, '图/封面.PNG'), png);
+  await fs.writeFile(path.join(root, '说明.txt'), 'x');
+  const info = await w.summary();
+  const kinds = (nodes) =>
+    nodes.flatMap((n) => (n.children ? kinds(n.children) : [[n.path, n.kind]]));
+  assert.deepEqual(Object.fromEntries(kinds(info.tree)), {
+    '图/封面.PNG': 'image',
+    '示例.html': 'html',
+    '说明.txt': 'asset',
+    '读书笔记.md': 'markdown',
+  });
+  const md = await w.document('读书笔记.md');
+  assert.equal(md.kind, 'markdown');
+  assert.equal(md.source, '# 标题\n\n正文');
+  const img = await w.document('图/封面.PNG');
+  assert.equal(img.kind, 'image');
+  assert.equal(img.source, '');
+  const data = { ...img.data, note: '图片笔记', annotations: [{ id: 'p', type: 'pen', note: '' }] };
+  await w.saveData({ id: img.id, data });
+  await w.saveSession({ paths: ['读书笔记.md', '图/封面.PNG'], active: '图/封面.PNG' });
+  const fresh = new Workspace();
+  assert.deepEqual((await fresh.open(root)).session.paths, ['读书笔记.md', '图/封面.PNG']);
+  assert.deepEqual((await fresh.document('图/封面.PNG')).data, data);
+  assert.deepEqual(await fs.readFile(path.join(root, '图/封面.PNG')), png);
+  await assert.rejects(fresh.move({ from: '读书笔记.md', to: '读书笔记.txt' }), /保留 \.md/);
+  await assert.rejects(fresh.document('说明.txt'), /HTML、PDF、Markdown 或图片/);
+  await fresh.move({ from: '图/封面.PNG', to: '图/封面2.png' });
+  assert.deepEqual((await fresh.document('图/封面2.png')).data, data);
+});
+
+test('Markdown 源码保存时自动备份为 .md，可以查看和恢复', async (t) => {
+  const { w, root } = await setup(t);
+  await fs.writeFile(path.join(root, '笔记.md'), '# 第一版\n');
+  const d = await w.document('笔记.md');
+  const saved = await w.saveSource({ path: '笔记.md', source: '# 第二版\n', version: d.version });
+  assert.equal(await fs.readFile(path.join(root, '笔记.md'), 'utf8'), '# 第二版\n');
+  const [backup] = await w.backups({ path: '笔记.md' });
+  assert.match(backup.name, /^\d{13}-[0-9a-f]{8}\.md$/);
+  assert.equal(await w.backup({ path: '笔记.md', name: backup.name }), '# 第一版\n');
+  const restored = await w.restoreBackup({
+    path: '笔记.md',
+    name: backup.name,
+    version: saved.version,
+  });
+  assert.equal(restored.source, '# 第一版\n');
+  assert.equal(await fs.readFile(path.join(root, '笔记.md'), 'utf8'), '# 第一版\n');
+  assert.ok((await w.backups({ path: '笔记.md' })).some((b) => /-restore\.md$/.test(b.name)));
+  await fs.writeFile(path.join(root, '图.png'), 'x');
+  await w.document('图.png');
+  await assert.rejects(
+    w.saveSource({ path: '图.png', source: 'y', version: '' }),
+    /只能编辑 HTML 或 Markdown/,
+  );
+});
+
+test('新建 Markdown 文件从一个标题开始，其他扩展名仍被拒绝', async (t) => {
+  const { w, root } = await setup(t);
+  const made = await w.create({ path: '笔记/未命名.md', kind: 'file', parents: true });
+  assert.equal(made.created, '笔记/未命名.md');
+  assert.equal(
+    await fs.readFile(path.join(root, '笔记/未命名.md'), 'utf8'),
+    '# 新文档\n\n从这里开始记录你的想法。\n',
+  );
+  assert.match(
+    await fs.readFile(
+      path.join(root, (await w.create({ path: '新.html', kind: 'file' })).created),
+      'utf8',
+    ),
+    /<h1>新文档<\/h1>/,
+  );
+  await assert.rejects(w.create({ path: '说明.txt', kind: 'file' }), /\.html、\.htm 或 \.md/);
 });

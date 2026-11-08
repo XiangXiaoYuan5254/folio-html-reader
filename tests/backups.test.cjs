@@ -103,5 +103,8 @@ test('恢复拒绝外部修改过的文件和非法的备份名称', async (t) =
   assert.equal(await fs.readFile(path.join(root, d.path), 'utf8'), '外部修改');
   for (const name of ['../workspace.json', '../../示例.html', 'x.html', original.name + '/..'])
     await assert.rejects(w.backup({ path: d.path, name }), /无效的历史版本/);
-  await assert.rejects(w.backups({ path: '.html-reader/workspace.json' }), /无效的 HTML/);
+  await assert.rejects(
+    w.backups({ path: '.html-reader/workspace.json' }),
+    /只能编辑 HTML 或 Markdown/,
+  );
 });

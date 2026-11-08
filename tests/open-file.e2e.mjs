@@ -15,6 +15,19 @@ await fs.writeFile(path.join(projectA, '首页.html'), page('首页'));
 await fs.writeFile(path.join(projectA, '章节/第二章.html'), page('第二章'));
 await fs.writeFile(path.join(elsewhere, '外部文章.html'), page('外部文章'));
 await fs.writeFile(path.join(elsewhere, '说明.txt'), '不是 HTML');
+await fs.mkdir(path.join(projectA, '图'), { recursive: true });
+await fs.writeFile(
+  path.join(projectA, '读书笔记.md'),
+  '---\ntags: [x]\n---\n# 读书笔记\n\n| 书 | 进度 |\n| --- | --- |\n| 甲 | 50% |\n\n![封面](图/封面.png)\n',
+);
+// A 4×3 red PNG.
+await fs.writeFile(
+  path.join(projectA, '图/封面.png'),
+  Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAAEElEQVR4nGP4z8AARww4OQD1MQv1NXv7ggAAAABJRU5ErkJggg==',
+    'base64',
+  ),
+);
 let app, win;
 const consoleErrors = [];
 async function waitFor(fn, label, ms = 10000) {
@@ -59,10 +72,46 @@ try {
   assert.ok(tree.includes('外部文章.html') && !tree.includes('首页.html'), 'switched project');
   console.log('PASS: file elsewhere opens its folder as the project');
 
+  // Markdown opens as a rendered page, with its pictures, and has source to edit.
+  await openFromFinder(path.join(projectA, '读书笔记.md'));
+  await waitFor(async () => (await activeTab()).trim() === '读书笔记.md', 'markdown tab');
+  await waitFor(async () => (await heading()) === '读书笔记', 'markdown rendered');
+  const doc = win.frameLocator('.document-frame');
+  assert.equal(await doc.locator('td').first().innerText(), '甲');
+  assert.equal(
+    await doc
+      .locator('body')
+      .innerText()
+      .then((t) => t.includes('tags:')),
+    false,
+  );
+  await waitFor(
+    () => doc.locator('img').evaluate((img) => img.complete && img.naturalWidth === 4),
+    'markdown picture loaded',
+  );
+  assert.equal(await win.getByRole('button', { name: '源码', exact: true }).isDisabled(), false);
+  console.log('PASS: Markdown opens rendered, with its pictures');
+
+  // A picture opens on a page of its own.
+  await openFromFinder(path.join(projectA, '图/封面.png'));
+  await waitFor(async () => (await activeTab()).trim() === '封面.png', 'image tab');
+  await waitFor(
+    () =>
+      win
+        .frameLocator('.document-frame')
+        .locator('.folio-image img')
+        .evaluate((img) => img.complete && img.naturalWidth === 4 && img.naturalHeight === 3),
+    'image shown',
+  );
+  assert.equal(await win.getByRole('button', { name: '源码', exact: true }).isDisabled(), true);
+  const files = await win.getByRole('navigation', { name: '项目文件' }).innerText();
+  assert.ok(files.includes('读书笔记.md') && files.includes('封面.png'), 'listed in the tree');
+  console.log('PASS: a picture opens in a tab');
+
   // Other file types are refused with a message.
   await openFromFinder(path.join(elsewhere, '说明.txt'));
   await win.getByRole('alert').waitFor();
-  assert.match(await win.getByRole('alert').innerText(), /只能打开 HTML 或 PDF/);
+  assert.match(await win.getByRole('alert').innerText(), /只能打开 HTML、PDF、Markdown 或图片/);
   assert.deepEqual(consoleErrors, []);
   console.log('OPEN FILE E2E PASS');
 } catch (error) {

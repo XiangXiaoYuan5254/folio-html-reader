@@ -1,3 +1,5 @@
+import type { DocKind } from '../doc-kind';
+
 export type AiKind = 'openai' | 'anthropic' | 'codex' | 'kimi';
 export type AiPreset = {
   id: string;
@@ -197,7 +199,7 @@ export type Paper = {
 // Text of a document as the AI sees it.
 export type DocText = {
   path: string;
-  kind: 'html' | 'pdf';
+  kind: DocKind;
   title: string;
   text: string;
   pages?: string[];

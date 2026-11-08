@@ -8,6 +8,12 @@ const require = createRequire(import.meta.url);
 const { Workspace } = require('./electron/workspace.cjs');
 const { renderDocument, markSourceOffsets, mime } = require('./electron/render.cjs');
 const { renderPDFDocument, pdfAssetPath } = require('./electron/pdf.cjs');
+const {
+  isImage,
+  isMarkdown,
+  renderImagePage,
+  renderMarkdownPage,
+} = require('./electron/formats.cjs');
 async function buildPDF(minify = false) {
   await bundle({
     entryPoints: ['src/pdf/pdf.ts'],
@@ -149,8 +155,10 @@ export default defineConfig({
             if (mode === '__preview') {
               const p = previews.get(relative);
               if (!p) throw Error('预览过期');
-              source = markSourceOffsets(p.source);
               docPath = p.path;
+              source = isMarkdown(docPath)
+                ? renderMarkdownPage(p.source, path.basename(docPath), { offsets: true })
+                : markSourceOffsets(p.source);
             } else {
               docPath = relative;
               if (/\.pdf$/i.test(relative)) {
@@ -166,7 +174,12 @@ export default defineConfig({
                 );
                 return;
               }
-              source = await fs.readFile(await w.asset(relative), 'utf8');
+              const file = await w.asset(relative);
+              source = isImage(relative)
+                ? renderImagePage(relative)
+                : isMarkdown(relative)
+                  ? renderMarkdownPage(await fs.readFile(file, 'utf8'), path.basename(relative))
+                  : await fs.readFile(file, 'utf8');
             }
             const dir = docPath.includes('/') ? docPath.slice(0, docPath.lastIndexOf('/') + 1) : '';
             const base = `http://${req.headers.host}/__asset/${w.token}/${dir.split('/').map(encodeURIComponent).join('/')}`;

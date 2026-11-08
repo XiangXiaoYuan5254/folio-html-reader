@@ -773,6 +773,28 @@ test('search/replace edits apply exactly, tolerate indentation, and report misse
   assert.equal(applyReply(source, '我不确定你想改什么').applied, 0);
 });
 
+test('Markdown 修改：查找替换照常，整篇重写时文件里的代码块不会截断它', () => {
+  const source = '# 笔记\n\n第一段\n\n```js\nx = 1\n```\n';
+  const edited = applyReply(
+    source,
+    '<<<<<<< SEARCH\n第一段\n=======\n第一段，补充一句。\n>>>>>>> REPLACE\n加了一句。',
+    'markdown',
+  );
+  assert.equal(edited.source, '# 笔记\n\n第一段，补充一句。\n\n```js\nx = 1\n```\n');
+  const whole = '# 新笔记\n\n```js\ny = 2\n```\n\n结尾\n';
+  for (const fence of ['```', '````']) {
+    const r = applyReply(
+      source,
+      `整篇重写：\n${fence}markdown\n${whole}${fence}\n改了标题。`,
+      'markdown',
+    );
+    assert.equal(r.source, whole);
+    assert.equal(r.explanation, '整篇重写：\n\n改了标题。');
+  }
+  // A code block that only shows Markdown is not taken for the whole file.
+  assert.equal(applyReply(source, '比如：\n```\n- 列表\n```', 'markdown').applied, 0);
+});
+
 test('line diff marks additions and removals with folded context', () => {
   const before = Array.from({ length: 30 }, (_, i) => `line ${i}`).join('\n');
   const after = before.replace('line 5', 'line five').replace('line 20\n', '') + '\nline 30';

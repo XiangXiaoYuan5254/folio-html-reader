@@ -85,6 +85,7 @@ import { checkSchedule, runningThread, runPluginNow } from './plugins/runner';
 import type { PluginHost } from './plugins/runner';
 import { currentPlugins } from './plugins/store';
 import { freeName } from './names';
+import { docKind, hasSource, isDocKind, kindName } from './doc-kind';
 import { Exit, objectKey, prefersReducedMotion } from './motion';
 import type { ScreenBox, ToolbarSide } from './components/SelectionToolbar';
 const SourceEditor = lazy(() => import('./components/SourceEditor'));
@@ -102,17 +103,17 @@ const toolHints: Record<Tool, string> = {
   rectangle: '拖动绘制矩形 · Esc 返回选择',
   eraser: '拖动擦除局部笔迹 · 一次拖动可一次撤销',
 };
+// The page a project opens on: its first HTML or PDF, else its first Markdown, else a
+// picture, so a folder of icons beside index.html doesn't open on one of them.
 function firstDocument(tree: WorkspaceInfo['tree']): string | undefined {
-  for (const n of tree) {
-    if (n.kind === 'html' || n.kind === 'pdf') return n.path;
-    const found = firstDocument(n.children || []);
+  const all = readableFiles(tree);
+  for (const kinds of [['html', 'pdf'], ['markdown'], ['image']]) {
+    const found = all.find((p) => kinds.includes(docKind(p) || ''));
     if (found) return found;
   }
 }
 function readableFiles(tree: WorkspaceInfo['tree']): string[] {
-  return tree.flatMap((n) =>
-    n.kind === 'html' || n.kind === 'pdf' ? [n.path] : readableFiles(n.children || []),
-  );
+  return tree.flatMap((n) => (isDocKind(n.kind) ? [n.path] : readableFiles(n.children || [])));
 }
 // A translation (全文翻译) or 精读笔记 page made from `of`: named after it, next to it, or
 // naming it itself (`pairOf`).
@@ -129,10 +130,9 @@ function companionOf(page: OpenDocument, of: OpenDocument, pairOf?: string) {
 }
 // What the reader's ai-text reply looks like for HTML and PDF.
 function docText(path: string, raw: { title?: string; text?: string; pages?: string[] }): DocText {
-  const kind = /\.pdf$/i.test(path) ? 'pdf' : 'html';
   return {
     path,
-    kind,
+    kind: docKind(path) || 'html',
     title: raw.title || path.split('/').at(-1) || path,
     text: raw.pages ? raw.pages.join('\n\n') : raw.text || '',
     pages: raw.pages,
@@ -227,7 +227,7 @@ export default function App() {
     }
   });
   const [htmlMode, setMode] = useState<'read' | 'source'>('read');
-  const mode = focus.enabled || doc?.kind === 'pdf' ? 'read' : htmlMode;
+  const mode = focus.enabled || (doc && !hasSource(doc.kind)) ? 'read' : htmlMode;
   const [tool, setTool] = useState<Tool>('select');
   const [pinnedTool, setPinnedTool] = useState<'sticky' | 'text' | null>(null);
   const recentTools = useRef<{ current: Tool; previous: Tool | null }>({
@@ -1120,14 +1120,28 @@ export default function App() {
     }
     const create = action.startsWith('create');
     const folder = action === 'create-folder';
+    const markdown = action === 'create-markdown';
     const rename = action === 'rename';
     const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/') + 1) : '';
     setDialog({
-      title: create ? (folder ? '新建文件夹' : '新建 HTML 文档') : rename ? '重命名' : '移动文件',
+      title: create
+        ? folder
+          ? '新建文件夹'
+          : markdown
+            ? '新建 Markdown 文档'
+            : '新建 HTML 文档'
+        : rename
+          ? '重命名'
+          : '移动文件',
       input: true,
       // A new file or folder starts with a name not taken there yet.
       initial: create
-        ? freeName(workspace?.tree || [], path, folder ? '新文件夹' : '未命名.html', folder)
+        ? freeName(
+            workspace?.tree || [],
+            path,
+            folder ? '新文件夹' : markdown ? '未命名.md' : '未命名.html',
+            folder,
+          )
         : rename
           ? path.split('/').at(-1)
           : path,
@@ -1531,9 +1545,9 @@ export default function App() {
             const find = hash.get('find') || '';
             if (/\.pdf$/i.test(path) && page > 0) await openSourceAt(path, id, page, find);
             else if (/\.html?$/i.test(path) && find) await openSourceAt(path, id, 0, find);
-            else if (/\.(html?|pdf)$/i.test(path))
+            else if (docKind(path))
               await openDocument(path, split?.right === id ? 'right' : 'left');
-            else notify('该链接不是 HTML 或 PDF 文档');
+            else notify('该链接不是页间能打开的文档');
           } else if (!isDesktop && url.pathname.startsWith('/__asset/')) {
             const path = url.pathname.split('/').slice(3).map(decodeURIComponent).join('/');
             await openDocument(path, split?.right === id ? 'right' : 'left');
@@ -1673,16 +1687,14 @@ export default function App() {
     payload: Record<string, unknown> = {},
     ms?: number,
   ) {
-    return withHiddenReader(
-      documentUrl(path, Date.now()),
-      /\.pdf$/i.test(path) ? 'pdf' : 'html',
-      (request) => request<T>(type, payload, ms),
+    return withHiddenReader(documentUrl(path, Date.now()), docKind(path) || 'html', (request) =>
+      request<T>(type, payload, ms),
     );
   }
   hostImpl.current = {
     projectName: () => workspace?.name || '',
     root: () => workspace?.root,
-    files: () => files.map((path) => ({ path, kind: /\.pdf$/i.test(path) ? 'pdf' : 'html' })),
+    files: () => files.map((path) => ({ path, kind: docKind(path) || 'html' })),
     activePath: () => doc?.path,
     async docText(path) {
       const reader = await readerFor(path);
@@ -1809,7 +1821,7 @@ export default function App() {
           active={model.active}
           onSelect={selectDocument}
           onClose={requestCloseDocument}
-          onNew={() => fileAction('create-file', '')}
+          onNew={(kind) => fileAction(kind === 'markdown' ? 'create-markdown' : 'create-file', '')}
           autosave={autosave}
         />
         <div className="titlebar-end">
@@ -1894,7 +1906,7 @@ export default function App() {
               themeOpen={themePickerOpen}
               onTheme={() => setThemePickerOpen((open) => !open)}
               onOpenSettings={() => openSettings()}
-              format={doc?.kind === 'pdf' ? 'PDF' : 'HTML'}
+              format={kindName[doc?.kind || 'html']}
               annotations={doc?.data.annotations.length || 0}
               progress={progress}
               hint={
@@ -1942,7 +1954,7 @@ export default function App() {
               onLeft={() => setLeft((v) => !v)}
               sidebarOpen={right}
               onSidebar={() => setRight((v) => !v)}
-              pdf={doc?.kind === 'pdf'}
+              format={doc?.kind || 'html'}
               mode={mode}
               onMode={setMode}
               tool={tool}
@@ -2069,6 +2081,7 @@ export default function App() {
                       ref={sourceEditor}
                       key={doc.id}
                       value={doc.draft}
+                      language={doc.kind === 'markdown' ? 'markdown' : 'html'}
                       onChange={(draft) => model.edit(doc.id, draft, autosave)}
                       onSave={save}
                     />
@@ -2213,7 +2226,7 @@ export default function App() {
                     <div className="reading-column-empty">
                       <BookOpen size={30} />
                       <strong>选择另一篇文档</strong>
-                      <span>从工作空间拖入 HTML 或 PDF，也可以在上方选择。</span>
+                      <span>从工作空间拖入文档，也可以在上方选择。</span>
                     </div>
                   )}
                   {paneDoc?.id === doc.id && selection && mode === 'read' ? (
@@ -2536,7 +2549,7 @@ export default function App() {
           />
         )}
       </Exit>
-      <Exit when={historyOpen && doc?.kind === 'html' && { doc, opened: historyOpen }}>
+      <Exit when={historyOpen && doc && hasSource(doc.kind) && { doc, opened: historyOpen }}>
         {({ doc, opened }) => (
           <HistoryPanel
             key={objectKey(opened)}

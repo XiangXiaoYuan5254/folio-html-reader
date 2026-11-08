@@ -2,7 +2,7 @@
 
 [中文](README.md) · English
 
-A local workspace for reading HTML and PDF. Open a folder like an IDE, highlight, annotate, draw and take notes like a PDF reader, edit the HTML source, and bring your own AI to explain, translate and teach what you read.
+A local workspace for reading HTML, PDF, Markdown and pictures. Open a folder like an IDE, highlight, annotate, draw and take notes like a PDF reader, edit the HTML source, and bring your own AI to explain, translate and teach what you read.
 
 Free and open source under the [MIT License](LICENSE). No account, and your files stay on your computer.
 

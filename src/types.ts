@@ -1,3 +1,4 @@
+import type { DocKind } from './doc-kind';
 export type Tool =
   | 'select'
   | 'highlight'
@@ -50,7 +51,7 @@ export type DocumentData = {
 export type FileNode = {
   name: string;
   path: string;
-  kind: 'folder' | 'html' | 'pdf' | 'asset';
+  kind: 'folder' | DocKind | 'asset';
   children?: FileNode[];
 };
 export type WorkspaceInfo = {
@@ -61,7 +62,7 @@ export type WorkspaceInfo = {
   session?: { paths: string[]; active: string; split?: { left: string; right: string } } | null;
 };
 export type OpenDocument = {
-  kind: 'html' | 'pdf';
+  kind: DocKind;
   path: string;
   id: string;
   source: string;

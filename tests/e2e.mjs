@@ -435,7 +435,8 @@ try {
   );
   console.log('PASS: app restart restores saved notes in moved file');
 
-  await page.getByLabel('新建 HTML', { exact: true }).click();
+  await page.getByLabel('新建文件', { exact: true }).click();
+  await page.getByRole('menuitem', { name: '新建 HTML', exact: true }).click();
   await page.getByRole('dialog').getByRole('textbox').fill('新阅读文档.html');
   await page.getByRole('button', { name: '创建', exact: true }).click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });

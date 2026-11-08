@@ -20,6 +20,7 @@ const { Workspace, atomicWrite } = require('./workspace.cjs');
 const { renderDocument, markSourceOffsets, mime } = require('./render.cjs');
 const { renderPDFDocument, pdfAssetPath } = require('./pdf.cjs');
 const { projectFor, filesFromArgv } = require('./open-file.cjs');
+const { isImage, isMarkdown, renderImagePage, renderMarkdownPage } = require('./formats.cjs');
 const { createUpdates } = require('./updater.cjs');
 const { createAi } = require('./ai.cjs');
 const { createAnnouncements } = require('./announcements.cjs');
@@ -507,12 +508,23 @@ app
               },
             );
           }
-          source = await fs.readFile(await workspace.asset(relative), 'utf8');
+          const file = await workspace.asset(relative);
+          // Markdown and pictures become a page of their own, read and annotated like HTML.
+          source = isImage(relative)
+            ? renderImagePage(relative)
+            : isMarkdown(relative)
+              ? renderMarkdownPage(await fs.readFile(file, 'utf8'), path.basename(relative))
+              : await fs.readFile(file, 'utf8');
         } else return new Response('', { status: 404 });
         const dir = relative.includes('/') ? relative.slice(0, relative.lastIndexOf('/') + 1) : '';
         const base = `folio://asset/${workspace.token}/${dir.split('/').map(encodeURIComponent).join('/')}`;
         const runtime = await fs.readFile(path.join(__dirname, '../dist/reader.js'), 'utf8');
-        const html = url.host === 'preview' ? markSourceOffsets(source) : source;
+        const html =
+          url.host !== 'preview'
+            ? source
+            : isMarkdown(relative)
+              ? renderMarkdownPage(source, path.basename(relative), { offsets: true })
+              : markSourceOffsets(source);
         return new Response(renderDocument(html, base, runtime), {
           headers: {
             'Content-Type': 'text/html; charset=utf-8',
@@ -647,7 +659,7 @@ app
         case 'choose-folder': {
           const r = await dialog.showOpenDialog(win, {
             properties: ['openDirectory'],
-            title: '打开阅读项目（HTML / PDF）',
+            title: '打开阅读项目（HTML / PDF / Markdown / 图片）',
           });
           return r.canceled ? null : openWorkspace(r.filePaths[0]);
         }

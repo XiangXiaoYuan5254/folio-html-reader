@@ -27,6 +27,7 @@ import { DiffView } from './DiffView';
 import { IconButton } from './IconButton';
 import { ImageViewer } from './ImageViewer';
 import { ModelMenu } from './ModelMenu';
+import { kindName } from '../doc-kind';
 
 // Changes waiting for review: every round's reply so far, applied in order on top of `base`.
 type Proposal = {
@@ -45,18 +46,21 @@ const when = (time: number) => {
     ? d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
     : d.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
 };
-const examples = [
-  '改成深色配色',
-  '给表格加上斑马纹和表头底色',
-  '把正文字号调大一些，行距更宽松',
-  '在开头加一个目录',
-];
+const examples = {
+  html: [
+    '改成深色配色',
+    '给表格加上斑马纹和表头底色',
+    '把正文字号调大一些，行距更宽松',
+    '在开头加一个目录',
+  ],
+  markdown: ['在开头加一个目录', '把要点整理成表格', '修正错别字和标点', '把这篇改写得更简洁'],
+};
 
 // The source with each reply's edits applied in turn, or null once one no longer fits.
-function replay(source: string, replies: string[]) {
+function replay(source: string, replies: string[], kind: 'html' | 'markdown') {
   let next = source;
   for (const reply of replies) {
-    const edit = applyReply(next, reply);
+    const edit = applyReply(next, reply, kind);
     if (!edit.applied || edit.failed.length) return null;
     next = edit.source;
   }
@@ -74,6 +78,7 @@ export function AiSourceEdit(p: {
   onOpenSettings: () => void;
   onClose: () => void;
 }) {
+  const kind = p.doc.kind === 'markdown' ? 'markdown' : 'html';
   const [request, setRequest] = useState('');
   const [status, setStatus] = useState<'idle' | 'running' | 'error'>('idle');
   const [error, setError] = useState('');
@@ -322,7 +327,7 @@ export function AiSourceEdit(p: {
     // Feedback on changes still waiting: the next round works on top of them.
     let pending = proposal;
     if (pending && pending.base !== base) {
-      const source = replay(base, pending.replies);
+      const source = replay(base, pending.replies, kind);
       if (source === null) {
         discard();
         p.store.notify('源码在这期间改动过，刚才的修改已对不上，这次按现在的源码来改', true);
@@ -354,12 +359,12 @@ export function AiSourceEdit(p: {
       const tokens = estimateTokens(content) + images.length * imageTokens;
       if (tokens > documentBudget(provider, 0.6))
         throw Error(
-          `这个文件约 ${tokens.toLocaleString()} tokens，超出了当前模型一次能处理的长度。可以换用上下文更长的模型，或只选中一部分代码后再试。`,
+          `这个文件约 ${tokens.toLocaleString()} tokens，超出了当前模型一次能处理的长度。可以换用上下文更长的模型，或只选中一部分${kind === 'markdown' ? '内容' : '代码'}后再试。`,
         );
       let length = 0;
       const result = await chat(
         {
-          system: sourceEditSystem(),
+          system: sourceEditSystem(kind),
           use: 'edit',
           messages: [{ role: 'user', content, ...(images.length ? { images } : {}) }],
         },
@@ -371,7 +376,7 @@ export function AiSourceEdit(p: {
           },
         },
       );
-      const edit = applyReply(working, result.text);
+      const edit = applyReply(working, result.text, kind);
       if (!edit.applied || edit.source === working) {
         setStatus('error');
         setError(
@@ -411,7 +416,7 @@ export function AiSourceEdit(p: {
     if (!proposal) return;
     // Edited meanwhile: re-apply the same edits to the current source.
     const next =
-      p.doc.draft === proposal.base ? proposal.source : replay(p.doc.draft, proposal.replies);
+      p.doc.draft === proposal.base ? proposal.source : replay(p.doc.draft, proposal.replies, kind);
     if (next === null) {
       setStatus('error');
       setError('生成修改之后源码又被改动过，修改已对不上。请重新生成。');
@@ -427,7 +432,7 @@ export function AiSourceEdit(p: {
     <div
       className={`ai-source${dropping ? ' dropping' : ''}`}
       role="region"
-      aria-label="AI 修改 HTML"
+      aria-label={`AI 修改 ${kindName[kind]}`}
       onDragOver={(e) => {
         if (!e.dataTransfer.types.includes('Files')) return;
         e.preventDefault();
@@ -601,7 +606,9 @@ export function AiSourceEdit(p: {
               ? '哪里不满意？接着说，例如：颜色再深一点；按钮别加阴影；把表格那处改回去'
               : turns.length
                 ? '接着说下一处要改的地方，AI 记得刚才改过什么'
-                : '例如：把配色改成深色；给所有图片加圆角和阴影。选中一段代码可以只改那一部分，也可以粘贴截图。'
+                : kind === 'markdown'
+                  ? '例如：在开头加一个目录；把要点整理成表格。选中一段可以只改那一部分。'
+                  : '例如：把配色改成深色；给所有图片加圆角和阴影。选中一段代码可以只改那一部分，也可以粘贴截图。'
           }
           value={request}
           onChange={(e) => setRequest(e.target.value)}
@@ -667,7 +674,7 @@ export function AiSourceEdit(p: {
         </div>
       ) : !turns.length && !request && !images.length ? (
         <div className="ai-source-examples">
-          {examples.map((e) => (
+          {examples[kind].map((e) => (
             <button key={e} onClick={() => setRequest(e)}>
               {e}
             </button>

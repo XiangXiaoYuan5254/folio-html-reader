@@ -36,6 +36,7 @@ import { annotationColors as colors } from '../colors';
 import { ColorPicker } from './ColorPicker';
 import { zoomAfterWheel, zoomLabel, zoomPresets } from '../zoom';
 import { isMac, shortcut } from '../platform';
+import { hasSource, kindName, type DocKind } from '../doc-kind';
 import { PopupMenu, belowButton, type MenuAnchor } from './PopupMenu';
 const tools = [
   {
@@ -76,7 +77,8 @@ const tools = [
 ] as const;
 export function Toolbar(p: {
   mode: 'read' | 'source';
-  pdf?: boolean;
+  // What the open document is; HTML and Markdown have source to edit.
+  format?: DocKind;
   onMode: (v: 'read' | 'source') => void;
   tool: Tool;
   onTool: (v: Tool) => void;
@@ -124,6 +126,7 @@ export function Toolbar(p: {
   settingsOpen: boolean;
   onSettingsOpenChange: (open: boolean) => void;
 }) {
+  const format = p.format || 'html';
   const { settingsOpen: settings, onSettingsOpenChange: setSettings } = p;
   const settingsHost = useRef<HTMLDivElement>(null);
   const [settingsPosition, setSettingsPosition] = useState({ left: 8, top: 140 });
@@ -244,8 +247,12 @@ export function Toolbar(p: {
           阅读
         </button>
         <button
-          disabled={p.pdf}
-          title={p.pdf ? 'PDF 支持阅读和批注，源码编辑仅适用于 HTML' : '编辑 HTML 源码'}
+          disabled={!hasSource(format)}
+          title={
+            hasSource(format)
+              ? `编辑 ${kindName[format]} 源码`
+              : `${format === 'image' ? '图片' : `${kindName[format]} `}支持阅读和批注，源码编辑仅适用于 HTML 和 Markdown`
+          }
           className={p.mode === 'source' ? 'active' : ''}
           onClick={() => p.onMode('source')}
         >
@@ -444,7 +451,7 @@ export function Toolbar(p: {
         </>
       ) : (
         <>
-          <span className="source-hint">HTML 源码</span>
+          <span className="source-hint">{kindName[format]} 源码</span>
           <button
             className={`autosave-toggle ${p.autosave ? 'active' : ''}`}
             aria-pressed={p.autosave}

@@ -106,6 +106,7 @@ export { citations, citeKey, plainCites, plainText } from './plain';
 import { imageTokens, maxImages, refusesImages } from './images';
 import { loadedModelOptions } from './levels';
 import type { PreparedTool } from './agent-tools';
+import { docKind } from '../doc-kind';
 
 export type Scope = string; // a document id, or 'project' for the agent
 // The open document(s) and the conversation about them. Two documents side by side share one
@@ -1068,7 +1069,7 @@ export class Assistant {
         (d) =>
           this.host.files().find((f) => f.path === d.path) || {
             path: d.path,
-            kind: /\.pdf$/i.test(d.path) ? ('pdf' as const) : ('html' as const),
+            kind: docKind(d.path) || 'html',
           },
       );
     const host = new Proxy(this.host, {
@@ -2240,7 +2241,7 @@ export class Assistant {
     try {
       const { provider, config } = await this.provider();
       const files = this.host.files();
-      if (!files.length) throw Error('项目中还没有 HTML 或 PDF 文档');
+      if (!files.length) throw Error('项目中还没有文档');
       const system = agentSystem(
         config.prefs,
         this.host.projectName(),

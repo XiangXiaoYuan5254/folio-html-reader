@@ -325,7 +325,7 @@ export function AssistantPanel(p: {
         ) : p.mode === 'project' && !p.hasFiles && !thread?.messages.length ? (
           <div className="assistant-empty">
             <h3>项目里还没有文档</h3>
-            <p>把 HTML 或 PDF 放进项目文件夹后再试。</p>
+            <p>把文档放进项目文件夹后再试。</p>
           </div>
         ) : !thread?.messages.length ? (
           <div className="assistant-empty">

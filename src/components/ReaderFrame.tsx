@@ -12,6 +12,7 @@ import { useTheme } from '../theme';
 import { useUiType } from '../ui-type';
 import { invoke } from '../api';
 import { ImageViewer } from './ImageViewer';
+import { kindName, type DocKind } from '../doc-kind';
 export type ReaderHandle = {
   send: (type: string, payload?: Record<string, unknown>) => void;
   // Asks the document for something (AI text, anchors) and waits for its reply.
@@ -29,7 +30,7 @@ type Box = { left: number; top: number; right: number; bottom: number };
 type Pending = { resolve: (value: any) => void; reject: (e: Error) => void };
 export type ReaderProps = {
   url: string;
-  kind?: 'html' | 'pdf';
+  kind?: DocKind;
   annotations: Annotation[];
   selected: string | null;
   tool: Tool;
@@ -374,7 +375,7 @@ export const ReaderFrame = forwardRef<ReaderHandle, ReaderProps>(function Reader
           ref={frame}
           className="document-frame"
           // A label rather than a title: an iframe's title shows as a tooltip over the whole page.
-          aria-label={p.kind === 'pdf' ? 'PDF 阅读区' : 'HTML 阅读区'}
+          aria-label={`${kindName[p.kind || 'html']} 阅读区`}
           // Only our fixed PDF viewer gets an origin for its decoding worker.
           // It remains cross-origin from app://ui and has no filesystem bridge.
           // Arbitrary HTML keeps its opaque-origin script sandbox.

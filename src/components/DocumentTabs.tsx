@@ -1,5 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Check, ChevronDown, FileCode2, FileText, X, Plus } from 'lucide-react';
+import {
+  Check,
+  ChevronDown,
+  FileCode2,
+  FileImage,
+  FileText,
+  FileType,
+  X,
+  Plus,
+} from 'lucide-react';
 import type { OpenDocument } from '../types';
 import { IconButton } from './IconButton';
 import { belowButton, PopupMenu, type MenuAnchor } from './PopupMenu';
@@ -15,7 +24,7 @@ export function DocumentTabs({
   active: string;
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
-  onNew: () => void;
+  onNew: (kind: 'html' | 'markdown') => void;
   // Auto-saved edits are written at once, so only a failed save leaves a tab marked unsaved.
   autosave: boolean;
 }) {
@@ -25,6 +34,7 @@ export function DocumentTabs({
   // Whether tabs are hidden past either end of the strip, and the list of every tab.
   const [hidden, setHidden] = useState({ before: false, after: false });
   const [list, setList] = useState<MenuAnchor | null>(null);
+  const [newMenu, setNewMenu] = useState<MenuAnchor | null>(null);
   const measure = () => {
     const el = strip.current;
     if (!el) return;
@@ -70,7 +80,15 @@ export function DocumentTabs({
     );
   const name = (d: OpenDocument) => d.path.split('/').at(-1);
   const icon = (d: OpenDocument) =>
-    d.kind === 'pdf' ? <FileText className="tree-icon-pdf" size={14} /> : <FileCode2 size={14} />;
+    d.kind === 'pdf' ? (
+      <FileText className="tree-icon-pdf" size={14} />
+    ) : d.kind === 'markdown' ? (
+      <FileType size={14} />
+    ) : d.kind === 'image' ? (
+      <FileImage size={14} />
+    ) : (
+      <FileCode2 size={14} />
+    );
   return (
     <div className="document-tab-row">
       <div
@@ -105,7 +123,12 @@ export function DocumentTabs({
             </IconButton>
           </div>
         ))}
-        <IconButton label="新建文档" onClick={onNew}>
+        <IconButton
+          label="新建文档"
+          aria-haspopup="menu"
+          aria-expanded={!!newMenu}
+          onClick={(e) => setNewMenu(newMenu ? null : belowButton(e.currentTarget))}
+        >
           <Plus size={17} />
         </IconButton>
       </div>
@@ -140,6 +163,17 @@ export function DocumentTabs({
               reveal(d.id);
             },
           }))}
+        />
+      ) : null}
+      {newMenu ? (
+        <PopupMenu
+          at={newMenu}
+          label="新建文档"
+          onClose={() => setNewMenu(null)}
+          items={[
+            { label: '新建 HTML', onSelect: () => onNew('html') },
+            { label: '新建 Markdown', onSelect: () => onNew('markdown') },
+          ]}
         />
       ) : null}
     </div>

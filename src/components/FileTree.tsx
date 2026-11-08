@@ -5,7 +5,9 @@ import {
   Folder,
   ChevronRight,
   FileCode2,
+  FileImage,
   FileText,
+  FileType,
   File,
   Search,
   Plus,
@@ -16,6 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import type { FileNode, WorkspaceInfo } from '../types';
+import { isDocKind } from '../doc-kind';
 import { IconButton } from './IconButton';
 import { atPointer, belowButton, PopupMenu, type MenuAnchor, type MenuItem } from './PopupMenu';
 import { fileManager, isMac, shortcut, trashName } from '../platform';
@@ -46,7 +49,8 @@ function Unfold({ open, children }: { open: boolean; children: () => ReactNode }
     </div>
   );
 }
-export type FileAction = 'create-file' | 'create-folder' | 'rename' | 'move' | 'trash' | 'reveal';
+export type FileAction =
+  'create-file' | 'create-markdown' | 'create-folder' | 'rename' | 'move' | 'trash' | 'reveal';
 export function FileTree({
   workspace,
   active,
@@ -81,6 +85,8 @@ export function FileTree({
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   // The file or folder whose menu is open, or null for the project's root.
   const [menu, setMenu] = useState<{ node: FileNode | null; at: MenuAnchor } | null>(null);
+  // The + beside 项目文件: which kind of file to make at the project's top.
+  const [newMenu, setNewMenu] = useState<MenuAnchor | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
@@ -141,6 +147,7 @@ export function FileTree({
       ...(n.kind === 'folder'
         ? ([
             ['create-file', '新建 HTML'],
+            ['create-markdown', '新建 Markdown'],
             ['create-folder', '新建文件夹'],
           ] as [FileAction, string][])
         : []),
@@ -268,10 +275,9 @@ export function FileTree({
           draggable={!moving && !copying}
           onDragStart={(e) => {
             dragSource.current = n;
-            e.dataTransfer.effectAllowed =
-              n.kind === 'html' || n.kind === 'pdf' ? 'copyMove' : 'move';
+            e.dataTransfer.effectAllowed = isDocKind(n.kind) ? 'copyMove' : 'move';
             e.dataTransfer.setData('application/x-folio-file', n.path);
-            onReadingDrag(n.kind === 'html' || n.kind === 'pdf' ? n.path : null);
+            onReadingDrag(isDocKind(n.kind) ? n.path : null);
             setDragging(n.path);
             setMenu(null);
           }}
@@ -289,7 +295,7 @@ export function FileTree({
                     s.has(n.path) ? s.delete(n.path) : s.add(n.path);
                     return s;
                   })
-                : n.kind === 'html' || n.kind === 'pdf'
+                : isDocKind(n.kind)
                   ? onOpen(n.path)
                   : onAction('reveal', n.path)
             }
@@ -310,6 +316,10 @@ export function FileTree({
                   <FileText className="tree-icon-pdf" size={16} />
                 ) : n.kind === 'html' ? (
                   <FileCode2 className="tree-icon-html" size={16} />
+                ) : n.kind === 'markdown' ? (
+                  <FileType className="tree-icon-markdown" size={16} />
+                ) : n.kind === 'image' ? (
+                  <FileImage className="tree-icon-image" size={16} />
                 ) : (
                   <File size={16} />
                 )}
@@ -337,10 +347,7 @@ export function FileTree({
     ));
   }
   const count = (nodes: FileNode[]): number =>
-    nodes.reduce(
-      (n, f) => n + (f.kind === 'html' || f.kind === 'pdf' ? 1 : count(f.children || [])),
-      0,
-    );
+    nodes.reduce((n, f) => n + (isDocKind(f.kind) ? 1 : count(f.children || [])), 0);
   return (
     <aside className="file-sidebar" id="project-file-sidebar">
       <div className="sidebar-heading">
@@ -352,11 +359,7 @@ export function FileTree({
           <RefreshCw size={15} />
         </IconButton>
       </div>
-      <button
-        className="open-folder"
-        title={workspace?.root || '选择项目'}
-        onClick={onFolder}
-      >
+      <button className="open-folder" title={workspace?.root || '选择项目'} onClick={onFolder}>
         <FolderOpen size={17} />
         <span className="open-folder-name">{workspace?.name || '选择项目'}</span>
         <kbd>{shortcut('mod', 'O')}</kbd>
@@ -390,8 +393,10 @@ export function FileTree({
         <FolderOpen size={16} />
         <span title="项目根目录">项目文件</span>
         <IconButton
-          label="新建 HTML"
-          onClick={() => onAction('create-file', '')}
+          label="新建文件"
+          aria-haspopup="menu"
+          aria-expanded={!!newMenu}
+          onClick={(e) => setNewMenu(newMenu ? null : belowButton(e.currentTarget))}
           disabled={!workspace}
         >
           <Plus size={15} />
@@ -441,7 +446,7 @@ export function FileTree({
               ? '正在移动…'
               : dropTarget !== null
                 ? `${dragSource.current ? '移动' : '复制'}到：${dropTarget || '项目根目录'}`
-                : dragSource.current?.kind === 'html' || dragSource.current?.kind === 'pdf'
+                : isDocKind(dragSource.current?.kind || '')
                   ? '拖到阅读区并排打开，或拖到文件夹移动'
                   : '拖到文件夹或项目名称移动'}
         </div>
@@ -455,6 +460,17 @@ export function FileTree({
           onClose={() => setMenu(null)}
         />
       ) : null}
+      {newMenu ? (
+        <PopupMenu
+          at={newMenu}
+          label="新建文件"
+          items={[
+            { label: '新建 HTML', onSelect: () => onAction('create-file', '') },
+            { label: '新建 Markdown', onSelect: () => onAction('create-markdown', '') },
+          ]}
+          onClose={() => setNewMenu(null)}
+        />
+      ) : null}
       <div className="sidebar-footer">
         <div>
           <HardDrive size={16} />
@@ -463,7 +479,7 @@ export function FileTree({
         </div>
         <p>
           <BookOpen size={13} />
-          {workspace ? count(workspace.tree) : 0} 份文档（HTML / PDF）
+          {workspace ? count(workspace.tree) : 0} 份文档
         </p>
       </div>
       <SidebarResizer />

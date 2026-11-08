@@ -625,7 +625,13 @@ button.brand {
 .tree-icon-html {
   color: var(--file-html);
 }
-.tree-row.selected .tree-icon-html {
+.tree-icon-markdown {
+  color: var(--file-html);
+}
+.tree-icon-image {
+  color: var(--diff-add);
+}
+.tree-row.selected :is(.tree-icon-html, .tree-icon-markdown, .tree-icon-image) {
   color: var(--accent-text);
 }
 .tree-row.dragging {

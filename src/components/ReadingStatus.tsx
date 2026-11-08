@@ -100,7 +100,11 @@ export function ReadingStatus(p: {
           <p className="reading-help-stats">
             {p.annotations} 条批注 · 阅读进度 {p.progress}%
           </p>
-          {p.format === 'PDF' ? <p>PDF 批注自动保存在项目中，原 PDF 保持不变。</p> : null}
+          {p.format === '图片' ? (
+            <p>图片批注自动保存在项目中，原图保持不变。</p>
+          ) : p.format !== 'HTML' ? (
+            <p>{`${p.format} 批注自动保存在项目中，原 ${p.format} 保持不变。`}</p>
+          ) : null}
         </div>
       ) : null}
     </footer>

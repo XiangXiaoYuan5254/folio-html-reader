@@ -40,7 +40,7 @@ npm run dist:win
 
 Windows 的语音对话用到 sherpa-onnx 的原生模块，npm 在 Mac 上只装 Mac 版。`dist:win` 先运行 `scripts/win-native.mjs`，按 `package-lock.json` 锁定的版本和校验值把 `sherpa-onnx-win-x64` 放进 `node_modules`，Mac 和 Linux 版不打进 Windows 安装包。打包后可以确认 `release/win-unpacked/resources/app.asar.unpacked/node_modules/` 下只有 `sherpa-onnx-node` 和 `sherpa-onnx-win-x64`。
 
-安装程序通过 `build/installer.nsh`，在资源管理器的“打开方式”中加入页间（`.html` / `.htm`），不改变用户的默认浏览器；卸载时移除这些注册表项。该文件须保持纯 ASCII。
+安装程序通过 `build/installer.nsh`，在资源管理器的“打开方式”中加入页间（HTML、PDF、Markdown 和图片），不改变这些文件的默认打开程序；卸载时移除这些注册表项。该文件须保持纯 ASCII。
 
 与 Mac 版的差异：
 

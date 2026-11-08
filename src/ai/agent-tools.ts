@@ -107,7 +107,7 @@ export const agentTools: ToolDef[] = [
   {
     name: 'edit_html',
     description:
-      '修改一个 HTML 文件（需要用户确认）。edits 中每项的 find 必须从文件逐字复制且只出现一次，replace 是替换后的内容。修改前先用 read_html_source 查看源码。',
+      '修改一个 HTML 或 Markdown 文件（需要用户确认）。edits 中每项的 find 必须从文件逐字复制且只出现一次，replace 是替换后的内容。修改前先用 read_html_source 查看源码。',
     parameters: {
       type: 'object',
       properties: {
@@ -129,7 +129,8 @@ export const agentTools: ToolDef[] = [
   },
   {
     name: 'read_html_source',
-    description: '读取 HTML 文件的源码（含标签），用于修改前查看。offset/length 同 read_document。',
+    description:
+      '读取 HTML 或 Markdown 文件的源码（HTML 含标签，Markdown 是原文），用于修改前查看。offset/length 同 read_document。',
     parameters: {
       type: 'object',
       properties: {
@@ -335,7 +336,7 @@ export function prepareTool(name: string, input: any, ctx: Context): PreparedToo
           return {
             content: files.length
               ? files.map((f) => `${f.path}（${f.kind.toUpperCase()}）`).join('\n')
-              : '项目中没有 HTML 或 PDF 文档。',
+              : '项目中没有文档。',
             detail: `${files.length} 篇文档`,
           };
         },
@@ -411,7 +412,8 @@ export function prepareTool(name: string, input: any, ctx: Context): PreparedToo
         title: `查看${title(cleanPath(input?.path))}的源码`,
         run: async () => {
           const file = existing(host, input?.path);
-          if (file.kind !== 'html') return fail('只有 HTML 文件有源码。');
+          if (file.kind !== 'html' && file.kind !== 'markdown')
+            return fail('只有 HTML 和 Markdown 文件有源码。');
           const { source } = await host.documentData(file.path);
           const offset = Math.max(0, Number(input?.offset) || 0);
           const length = Math.min(40_000, Math.max(500, Number(input?.length) || 20_000));
@@ -636,8 +638,8 @@ function prepareEdit(input: any, ctx: Context): Deferred {
   };
   tool.prepare = async () => {
     const file = existing(ctx.host, path);
-    if (file.kind !== 'html') {
-      tool.run = async () => fail('只能修改 HTML 文件。');
+    if (file.kind !== 'html' && file.kind !== 'markdown') {
+      tool.run = async () => fail('只能修改 HTML 或 Markdown 文件。');
       return;
     }
     const { source } = await ctx.host.documentData(file.path);

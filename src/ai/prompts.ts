@@ -36,7 +36,7 @@ export function documentBlock(
   partial: boolean,
   lookup = false,
 ) {
-  const kind = doc.kind === 'pdf' ? 'PDF' : 'HTML';
+  const kind = doc.kind === 'markdown' ? 'Markdown' : doc.kind.toUpperCase();
   const note = !partial
     ? ''
     : lookup
@@ -241,9 +241,12 @@ export function agentSystem(
     .join('\n');
 }
 
-export function sourceEditSystem() {
+export function sourceEditSystem(kind: 'html' | 'markdown' = 'html') {
+  const md = kind === 'markdown';
   return [
-    '你是 HTML 编辑助手，按用户的要求修改一个 HTML 文件。',
+    md
+      ? '你是 Markdown 编辑助手，按用户的要求修改一个 Markdown 文件。'
+      : '你是 HTML 编辑助手，按用户的要求修改一个 HTML 文件。',
     '用“查找/替换”块输出修改，每块格式如下：',
     '',
     '<<<<<<< SEARCH',
@@ -255,9 +258,13 @@ export function sourceEditSystem() {
     '规则：',
     '- SEARCH 部分必须与原文件逐字一致，包括缩进和空格；尽量短，但要唯一。',
     '- 可以输出多个块，按在文件中出现的顺序排列。新增内容时，用插入位置附近的原文作为 SEARCH，并在 REPLACE 中保留它。',
-    '- 如果改动涉及大半个文件，可以改为输出完整的新文件，放在 ```html 代码块中。',
+    md
+      ? '- 如果改动涉及大半个文件，可以改为输出完整的新文件，放在 ````markdown 代码块中（四个反引号，文件里的代码块照常用三个）。'
+      : '- 如果改动涉及大半个文件，可以改为输出完整的新文件，放在 ```html 代码块中。',
     '- 块之外用一两句中文说明改了什么，不要输出其他内容。',
-    '- 保持页面能直接打开：不要引入外部脚本；保留原有的内容，除非用户要求删除。',
+    md
+      ? '- 保持标准 Markdown 写法，沿用文件原有的格式习惯；保留原有的内容，除非用户要求删除。'
+      : '- 保持页面能直接打开：不要引入外部脚本；保留原有的内容，除非用户要求删除。',
     '- 用户可能对你之前的修改不满意，接着提意见。这时按意见在给出的文件上继续改；要撤回之前的某处修改，就把它改回去。',
   ].join('\n');
 }
@@ -286,13 +293,17 @@ export function sourceEditPrompt(
     const said = t.explanation.replace(/\s+/g, ' ').slice(0, 400) || '（只给出了修改）';
     return `${i + 1}. 用户：${t.request || '按图片修改'}\n   你：${said}（${outcomes[t.outcome]}）`;
   });
+  // A fence longer than any in the file, so a Markdown file's own code blocks stay inside.
+  const lang = /\.(md|markdown)$/i.test(path) ? 'markdown' : 'html';
+  const longest = Math.max(2, ...[...source.matchAll(/`{3,}/g)].map((m) => m[0].length));
+  const fence = '`'.repeat(longest + 1);
   return [
     `文件：${path}`,
-    '```html',
+    fence + lang,
     source,
-    '```',
+    fence,
     selection
-      ? `\n用户在编辑器中选中了这段代码，修改应围绕它：\n\`\`\`html\n${selection}\n\`\`\``
+      ? `\n用户在编辑器中选中了这段${lang === 'markdown' ? '内容' : '代码'}，修改应围绕它：\n${fence}${lang}\n${selection}\n${fence}`
       : '',
     images ? `\n用户附了 ${images} 张图片（可能是页面截图，或想要的样子），修改时参照图片。` : '',
     rounds.length ? `\n之前关于这个文件的对话（从早到晚）：\n${rounds.join('\n')}` : '',
