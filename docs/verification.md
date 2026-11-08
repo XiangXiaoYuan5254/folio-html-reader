@@ -32,6 +32,7 @@ macOS 版使用 Developer ID 签名并经过 Apple 公证，公证票据已贴�
 - Mac arm64 包在虚拟机本机磁盘打包，Developer ID 签名、Apple 公证（`source=Notarized Developer ID`）、票据和 DMG 完整性检查通过。打包好的应用在独立用户目录启动：版本 0.30.4，AI 助手面板正常打开，无界面脚本错误。
 - 更新检查：已发布的 0.30.3 Mac 版放在临时文件夹，从本地服务器读 0.30.4 的更新文件，提示卡片显示 0.30.4 的说明，「立即重启」后装上 0.30.4，签名完整。
 - Windows 安装包在同一台机器交叉构建，只带 Windows 版语音模块，未签名。
+- [Windows 完整流水线](https://github.com/XiangXiaoYuan5254/folio-html-reader/actions/runs/42454161253)通过（0.30.3 那一轮失败在 PDF 跨页高亮的等待超时，这一轮没有复现）。
 
 ## 0.30.3 发布验证（2026-11-07）
 
