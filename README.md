@@ -256,6 +256,8 @@ AI 请求诊断保存在应用数据目录的 `logs/ai.jsonl`（macOS：`~/Libra
 
 应用的最近工作空间设置保存在系统的应用数据目录中（macOS 为 `~/Library/Application Support/页间`，Windows 为 `%APPDATA%\页间`）。AI 服务的设置和 API Key 保存在同一目录的 `ai.json`。应用本身不上传文档；只有使用 AI 功能时，相关的文字才会发送给你选择的服务商。检查更新和读取 AI 服务公告时会连接 helloxxy.com，只下载更新清单和公告，不上传任何内容。HTML 里原本引用的远程字体、脚本、图片仍会从对应网站加载。随包演示文档完全离线可用；用户自己的 HTML 若依赖 MathJax 等远程脚本，仍需网络。
 
+使用统计：页间每次打开和开着时每 4 小时告诉 helloxxy.com 一次，用来统计有多少台电脑在用、用的哪个版本。发送的是第一次打开时随机生成的编号（存在同一目录的 `usage.json`，跟电脑硬件无关，升级不变）、版本号、系统，以及这台电脑之前是否用过页间。不包含文档、文件名、设置或问 AI 的内容。不想发送的话，把 `usage.json` 里的 `"off": false` 改成 `"off": true`，或者设置环境变量 `FOLIO_NO_USAGE=1`。代码在 `electron/usage.cjs`。
+
 ## 开发与验证
 
 需要 Node.js 22.13+，推荐使用 Node.js 22。项目包含 `.nvmrc`。

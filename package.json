@@ -43,6 +43,7 @@
     "test:voice": "npm run build && node tests/voice.e2e.mjs",
     "test:voice-recovery": "npm run build && node tests/voice-recovery.e2e.mjs",
     "test:update": "npm run build && node tests/update.e2e.mjs",
+    "test:usage": "node --test tests/usage.test.cjs && npm run build && node tests/usage.e2e.mjs",
     "website:shots": "npm run build && node scripts/website-shots/shoot.mjs",
     "website:downloads": "node scripts/website-downloads.mjs",
     "website:plugins": "node scripts/website-plugins.mjs",

@@ -25,6 +25,7 @@ const { createUpdates } = require('./updater.cjs');
 const { createAi } = require('./ai.cjs');
 const { createAnnouncements } = require('./announcements.cjs');
 const { createCommunity } = require('./community.cjs');
+const { createUsage } = require('./usage.cjs');
 const { createFonts, familiesThatShow } = require('./fonts.cjs');
 const { createSpeech } = require('./speech.cjs');
 const { createSpeechLog } = require('./speech-log.cjs');
@@ -51,6 +52,7 @@ const previews = new Map();
 let ai;
 let announcements;
 let community;
+let usage;
 let plugins;
 // The teacher's sentences said by a speech service, two at a time.
 const voiceQueue = limiter(2);
@@ -389,6 +391,19 @@ function keyProtection() {
 app
   .whenReady()
   .then(async () => {
+    // Made before the project's settings are written: settings already there mean 页间 ran here
+    // before (electron/usage.cjs).
+    usage = createUsage({
+      file: path.join(app.getPath('userData'), 'usage.json'),
+      earlierFile: settingsFile(),
+      // What 0.29 and older kept about the membership.
+      memberFile: path.join(app.getPath('userData'), 'license.json'),
+      version: app.getVersion(),
+      fetch: (url, init) => net.fetch(url, init),
+      write: atomicWrite,
+      ...(process.env.FOLIO_USAGE_SERVER ? { server: process.env.FOLIO_USAGE_SERVER } : {}),
+    });
+    await usage.load();
     await initialWorkspace();
     const saved = await readSettings();
     appearance = appearanceColors(saved.appearance);
@@ -1111,6 +1126,10 @@ app
     createMainWindow = createWindow;
     createWindow();
     updates.start();
+    // Only the installed app reports. Tests and scripts give 页间 a data folder of their own
+    // (FOLIO_USER_DATA), so they aren't counted; FOLIO_USAGE_SERVER is for testing this.
+    if ((app.isPackaged && !process.env.FOLIO_USER_DATA) || process.env.FOLIO_USAGE_SERVER)
+      usage.start();
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });

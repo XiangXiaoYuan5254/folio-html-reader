@@ -52,7 +52,7 @@ The code changes every week. [Open the community page for the latest one](https:
 
 ## Privacy
 
-Folio does not upload your documents and needs no account. Text is sent only to the AI provider you configure, when you use an AI feature, and you are asked before a provider is used for the first time. API keys stay in the app's data folder on your computer. Folio contacts helloxxy.com only to check for updates and read AI service announcements.
+Folio does not upload your documents and needs no account. Text is sent only to the AI provider you configure, when you use an AI feature, and you are asked before a provider is used for the first time. API keys stay in the app's data folder on your computer. Folio contacts helloxxy.com to check for updates, read AI service announcements and report usage. When it opens and every 4 hours while open, it sends a random number made on first launch (kept in `usage.json` in the app's data folder, unrelated to the hardware, the same after updates), the version, the system, and whether Folio had been used on that computer before. No documents, file names, settings or AI prompts are sent. To turn it off, change `"off": false` to `"off": true` in `usage.json`, or set the environment variable `FOLIO_NO_USAGE=1`. The code is in `electron/usage.cjs`.
 
 ## Build from source
 
