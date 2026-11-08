@@ -26,6 +26,13 @@
 
 macOS 版使用 Developer ID 签名并经过 Apple 公证，公证票据已贴进应用。`npm run dist:mac` 用 `spctl` 确认应用来自已公证的 Developer ID（`source=Notarized Developer ID`），否则不出包；开发机关掉了 Gatekeeper，所以只看这一项，不看 accepted。
 
+## 0.31.0 发布验证（2026-11-08）
+
+- 单元测试 195 项，194 项通过，1 项 Windows 专属测试跳过；AI 桌面回归 14 项、`tests/e2e.mjs` 通过。`tests/markdown-edit.e2e.mjs`：「源码」打开 Markdown，编辑后预览随之更新，保存时留下 `.md` 备份，在预览里点一段能定位到原文。`tests/open-file.e2e.mjs`：从访达打开的 Markdown 按排版显示（表格、图片，不显示 front matter），可以编辑源码；图片单独占一个标签页、没有源码；其他类型的文件提示打不开。`tests/new-file.e2e.mjs`：文件树和标签栏的 ＋ 可以新建 Markdown，重名时换一个空闲的名字。`tests/ui-type.e2e.mjs`：字体文件里的中文名可以搜索，系统画不出来的字体不列出，每次打开列表重新读取。`tests/usage.e2e.mjs` 通过。
+- Mac arm64 包在虚拟机本机磁盘打包，Developer ID 签名、Apple 公证（`source=Notarized Developer ID`）、票据和 DMG 完整性检查通过。打包好的应用在独立用户目录启动：版本 0.31.0，Markdown 文件按排版显示、「源码」可用，无界面脚本错误。
+- 更新检查：已发布的 0.30.5 Mac 版放在临时文件夹，从本地服务器读 0.31.0 的更新文件，提示卡片显示 0.31.0 的说明，「立即重启」后装上 0.31.0，签名完整。
+- Windows 安装包在同一台机器交叉构建，只带 Windows 版语音模块，未签名。
+
 ## 0.30.5 发布验证（2026-11-08）
 
 - 单元测试 176 项，175 项通过，1 项 Windows 专属测试跳过；AI 桌面回归 14 项通过。`tests/reply-selection.e2e.mjs` 9 项通过：AI 回答里选中文字自动引用到输入框，工具栏只有解释、翻译、提问；在对话底部引用出现和撤掉时聊天内容不动；解释、翻译、提问在小窗里回答、不写进对话，解释和提问带上所在的回答和它回答的问题；「继续追问」把这一轮放进对话且不重复请求，下一个问题会带上它；提问框拿走选区时原文保持标记，关闭后重新选中、引用还在；✕ 和点击聊天空白处会取消选中和引用；「整个项目」里同样可用。
