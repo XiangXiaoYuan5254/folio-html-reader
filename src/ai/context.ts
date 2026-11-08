@@ -131,7 +131,10 @@ export function documentContext(doc: DocText, budget: number, query = ''): DocCo
 }
 // Text around a selection, for explaining it in context without sending the whole document.
 export function surrounding(doc: DocText, selection: string, chars = 2_400) {
-  const body = docBody(doc);
+  return around(docBody(doc), selection, chars);
+}
+// The part of a text around a passage of it, whitespace folded.
+export function around(body: string, selection: string, chars = 2_400) {
   const probe = selection.replace(/\s+/g, ' ').trim().slice(0, 40);
   const flat = body.replace(/\s+/g, ' ');
   const at = probe ? flat.indexOf(probe) : -1;
@@ -179,8 +182,7 @@ export function spotContext(doc: DocText, where: Where, budget = 6_000) {
     return probe.length >= 6 ? flat.indexOf(probe) : -1;
   };
   const at = [where.inside, where.visible].map(find).find((i) => i !== -1) ?? -1;
-  if (at === -1)
-    return { opening, around: where.visible ? cut(where.visible, room) : '' };
+  if (at === -1) return { opening, around: where.visible ? cut(where.visible, room) : '' };
   // Characters for the room, centered a little ahead of the spot: definitions come before.
   const chars = Math.floor((flat.length * room) / estimateTokens(flat));
   const start = Math.max(0, at - Math.floor(chars * 0.6));
@@ -201,7 +203,8 @@ export function related(doc: DocText, question: string, budget: number, sent = '
   const weight = new Map<string, number>();
   for (const t of q) {
     const df = chunks.filter((x) => x.text.includes(t)).length;
-    if (df && df <= Math.max(1, chunks.length / 3)) weight.set(t, Math.log(chunks.length / df) + 0.5);
+    if (df && df <= Math.max(1, chunks.length / 3))
+      weight.set(t, Math.log(chunks.length / df) + 0.5);
   }
   if (!weight.size) return [];
   const seen = sent.replace(/\s+/g, ' ');

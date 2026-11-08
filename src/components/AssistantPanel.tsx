@@ -117,8 +117,11 @@ export function AssistantPanel(p: {
   const draft = state.drafts[scope] || '';
   const noDocument = p.mode === 'doc' && !p.reading;
   const [attach, setAttach] = useState(true);
-  // A passage of a reply quoted with 引用; text selected in the document after it takes over.
+  // A passage selected in a reply, quoted in the next question as text selected in the
+  // document is. Let go when the selection is, unless the input was gone to since; text
+  // selected in the document after it takes over.
   const [quote, setQuote] = useState('');
+  const quoteHeld = useRef(false);
   useEffect(() => {
     setAttach(true);
     if (p.selection.trim()) setQuote('');
@@ -163,9 +166,14 @@ export function AssistantPanel(p: {
     input.current?.focus();
   }
   const blocked = images.length > 0 && refusesImages(provider, loadedModelOptions(provider?.id));
+  // Read at its end, the conversation follows what's added to it. The input growing or
+  // shrinking, as a quote comes and goes, leaves it where it is.
+  const followed = useRef(0);
   useLayoutEffect(() => {
     const el = list.current;
-    if (el && stick.current) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    if (stick.current && el.scrollHeight !== followed.current) el.scrollTop = el.scrollHeight;
+    followed.current = el.scrollHeight;
   });
   useLayoutEffect(() => {
     const el = input.current;
@@ -185,14 +193,13 @@ export function AssistantPanel(p: {
     setQuote('');
   }
   const canAsk = !running && ready && !!scope && !noDocument;
-  // 解释 on text selected in a reply: asked in the conversation, leaving what's being typed.
-  function explain(text: string) {
-    if (!canAsk) return;
-    stick.current = true;
-    const asked = '解释一下这段话';
-    if (p.mode === 'project') void p.store.agent(asked, [], { quote: text, keepDraft: true });
-    else if (p.reading)
-      void p.store.ask(p.reading, asked, text, [], { fromReply: true, keepDraft: true });
+  // A passage of a reply is let go of with its selection, which would quote it again.
+  function unquote() {
+    if (!quote) return setAttach(false);
+    setQuote('');
+    const selection = document.getSelection();
+    if (selection?.anchorNode && list.current?.contains(selection.anchorNode))
+      selection.removeAllRanges();
   }
   function task(t: Task) {
     if (!p.reading || running) return;
@@ -386,14 +393,24 @@ export function AssistantPanel(p: {
       <ReplySelection
         list={list}
         store={p.store}
+        scope={scope}
         conversation={`${scope}:${thread?.id || ''}`}
         canAsk={canAsk}
-        onQuote={(text) => {
+        onPick={(text) => {
           setQuote(text);
-          setAttach(false);
+          quoteHeld.current = false;
+        }}
+        onDrop={() => {
+          if (!quoteHeld.current && document.activeElement !== input.current) setQuote('');
+        }}
+        onContinue={(about, answer) => {
+          if (!canAsk) return;
+          stick.current = true;
+          const docs = p.mode === 'doc' ? p.reading?.docs || [] : [];
+          p.store.keepAboutReply(scope, docs, about, answer);
+          setQuote('');
           input.current?.focus();
         }}
-        onExplain={explain}
       />
       {p.mode === 'project' && plugins.length ? (
         <div className="assistant-chips assistant-plugins" aria-label="插件">
@@ -472,10 +489,7 @@ export function AssistantPanel(p: {
           <div className="assistant-attached">
             <Quote size={12} />
             <span>{attached}</span>
-            <button
-              aria-label="不引用选中的文字"
-              onClick={() => (quote ? setQuote('') : setAttach(false))}
-            >
+            <button aria-label="不引用选中的文字" onClick={unquote}>
               <X size={12} />
             </button>
           </div>
@@ -493,6 +507,7 @@ export function AssistantPanel(p: {
                 : '就这篇文档提问…'
           }
           value={draft}
+          onFocus={() => (quoteHeld.current = true)}
           onChange={(e) => scope && p.store.setDraft(scope, e.target.value)}
           onPaste={(e) => {
             const files = Array.from(e.clipboardData.files).filter(isImageFile);
@@ -797,7 +812,7 @@ function AnswerMessage(p: {
   const question = p.thread.messages[index - 1];
   const resume = p.store.canResume(m.id);
   return (
-    <div className={`chat-answer ${m.status || ''}`}>
+    <div className={`chat-answer ${m.status || ''}`} data-message={m.id}>
       {m.reasoning ? (
         <details className="chat-reasoning">
           <summary>

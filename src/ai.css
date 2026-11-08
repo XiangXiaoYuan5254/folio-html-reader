@@ -40,15 +40,24 @@
   color: var(--ai-text);
 }
 
-/* Text selected in a reply, translated where the toolbar was. */
-.selection-toolbar.reply-selection.translating {
+/* Text selected in a reply, still marked while a card about it has the focus. */
+::highlight(reply-picked) {
+  background-color: Highlight;
+}
+:root[data-theme='terminal'] ::highlight(reply-picked) {
+  background-color: #33ff66;
+  color: #021405;
+}
+
+/* Text selected in a reply, explained, translated or asked about where the toolbar was. */
+.selection-toolbar.reply-selection.with-card {
   flex-direction: column;
   align-items: stretch;
   width: min(340px, calc(100% - 12px));
   padding: 0;
   white-space: normal;
 }
-.reply-translation-head {
+.reply-card-head {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -57,22 +66,20 @@
   color: var(--ai-text);
   font-size: 12px;
 }
-.reply-translation-head > span {
+.reply-card-head > span {
   flex: 1;
 }
-.reply-translation-copy {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 6px;
-  border-radius: 4px;
-  color: var(--text-4);
-  font-size: 11.5px;
+.reply-card .ai-card-ask {
+  padding: 8px 10px 0;
 }
-.reply-translation-copy:hover {
-  color: var(--accent);
+.reply-card .ai-card-ask:last-child {
+  padding-bottom: 10px;
 }
-.reply-translation-body {
+.reply-card .ai-card-ask input {
+  min-width: 0;
+  font-size: 13px;
+}
+.reply-card-body {
   max-height: 240px;
   overflow: auto;
   padding: 8px 12px 10px;
@@ -81,6 +88,29 @@
   line-height: 1.7;
   scrollbar-width: thin;
   cursor: text;
+}
+.reply-card-actions {
+  display: flex;
+  gap: 2px;
+  padding: 3px 6px 5px;
+  border-top: 1px solid var(--line-soft);
+}
+.reply-card-actions button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  color: var(--text-4);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.reply-card-actions button:hover:not(:disabled) {
+  color: var(--accent);
+}
+.reply-card-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .ai-toolbar-button {

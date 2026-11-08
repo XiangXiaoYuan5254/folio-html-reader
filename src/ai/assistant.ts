@@ -33,6 +33,7 @@ import {
   savePrefs,
 } from './client';
 import {
+  around,
   chunkDocument,
   docBody,
   documentBudget,
@@ -146,6 +147,8 @@ export type SelectionCard = {
   saved?: boolean;
 };
 export const cardLabels = { explain: '解释', translate: '翻译', ask: '提问' };
+// What's asked about a passage picked in a reply.
+export type ReplyAsk = { mode: SelectionCard['mode']; selection: string; question?: string };
 type State = {
   card: SelectionCard | null;
   histories: Record<Scope, ChatHistory | undefined>;
@@ -646,14 +649,13 @@ export class Assistant {
   }
 
   // A question about the open document(s), possibly with pictures. `fromReply`: the selection
-  // is a passage of an earlier reply. `keepDraft`: asked from the chat's own selection
-  // toolbar, which leaves what's being typed alone.
+  // is a passage of an earlier reply.
   async ask(
     ctx: ReadingContext,
     text: string,
     selection = ctx.selection,
     images: string[] = [],
-    how: { fromReply?: boolean; keepDraft?: boolean } = {},
+    how: { fromReply?: boolean } = {},
   ) {
     const question = text.trim();
     if (!question && !images.length) return;
@@ -677,10 +679,8 @@ export class Assistant {
     );
     if (!started) return;
     const { threadId, answerId, history, signal } = started;
-    if (!how.keepDraft) {
-      this.setDraft(ctx.scope, '');
-      this.setAttachments(ctx.scope, []);
-    }
+    this.setDraft(ctx.scope, '');
+    this.setAttachments(ctx.scope, []);
     await this.stream(ctx, threadId, answerId, signal, async (provider, config, how) => {
       const vision = !refusesImages(provider, loadedModelOptions(provider.id));
       const { system, partial } = await this.readingContext(
@@ -1202,15 +1202,68 @@ export class Assistant {
     this.add(scope, user, { docs, text: answer, status: 'done' });
   }
 
-  // A passage picked in a reply, translated beside it and not kept in the conversation.
-  async translateSnippet(text: string, signal: AbortSignal, onText: (delta: string) => void) {
-    await this.provider('translate');
-    const task = translateTask(text);
+  // A passage picked in a reply, explained, translated or asked about beside it and not kept
+  // in the conversation. 解释 and 提问 read it in the reply and the question it answered.
+  async aboutReply(
+    scope: Scope,
+    answerId: string,
+    about: ReplyAsk,
+    signal: AbortSignal,
+    onText: (delta: string) => void,
+  ) {
+    const use = about.mode === 'translate' ? 'translate' : 'explain';
+    await this.provider(use);
+    const { selection } = about;
+    const context = () => this.replyContext(scope, answerId, selection);
+    const task: { system: string; prompt: string } =
+      about.mode === 'translate'
+        ? translateTask(selection)
+        : about.mode === 'explain'
+          ? explainTask(selection, context())
+          : askSelectionTask(selection, about.question || '', context());
     const result = await chat(
-      { system: task.system, messages: [{ role: 'user', content: task.prompt }], use: 'translate' },
+      { system: task.system, messages: [{ role: 'user', content: task.prompt }], use },
       { signal, onText },
     );
-    return { text: result.text, target: task.target };
+    return result.text;
+  }
+  private replyContext(scope: Scope, answerId: string, text: string) {
+    const messages = this.thread(scope)?.messages || [];
+    const at = messages.findIndex((m) => m.id === answerId);
+    if (at === -1) return '';
+    const reply = messages[at];
+    const question = messages
+      .slice(0, at)
+      .reverse()
+      .find((m) => m.role === 'user');
+    const answer = plainText(
+      reply.parts
+        ? reply.parts.map((part) => (part.type === 'text' ? part.text : '')).join('\n\n')
+        : reply.text,
+    );
+    const asked = question ? question.label || question.text : '';
+    return [
+      asked ? `用户的问题：${asked}` : '',
+      question?.selection ? `问题针对的文字：${question.selection}` : '',
+      `AI 助手的回答：\n${around(answer, text)}`,
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+  }
+  // What was said beside a reply, kept in the conversation to ask on.
+  keepAboutReply(scope: Scope, docs: CiteDoc[], about: ReplyAsk, answer: string) {
+    const label = about.mode === 'ask' ? '' : `${cardLabels[about.mode]}选中的文字`;
+    this.keepExchange(
+      scope,
+      docs,
+      {
+        text: label || about.question || '',
+        ...(label ? { label } : {}),
+        selection: about.selection,
+        fromReply: true,
+      },
+      answer,
+    );
   }
 
   private cardController: AbortController | null = null;
@@ -2156,12 +2209,8 @@ export class Assistant {
 
   // The project agent: the model reads, searches and proposes changes through tools; every
   // change waits for the user's approval unless they chose to apply the rest automatically.
-  // `quote`: a passage of an earlier reply the request is about. `keepDraft` as for ask.
-  async agent(
-    text: string,
-    images: string[] = [],
-    how: { quote?: string; keepDraft?: boolean } = {},
-  ) {
+  // `quote`: a passage of an earlier reply the request is about.
+  async agent(text: string, images: string[] = [], how: { quote?: string } = {}) {
     const scope = 'project';
     const request = text.trim();
     if (!request && !images.length) return;
@@ -2178,10 +2227,8 @@ export class Assistant {
     );
     if (!started) return;
     const { threadId, answerId, history, signal } = started;
-    if (!how.keepDraft) {
-      this.setDraft(scope, '');
-      this.setAttachments(scope, []);
-    }
+    this.setDraft(scope, '');
+    this.setAttachments(scope, []);
     const patch = (fn: (m: ChatMessage) => ChatMessage) =>
       this.patchMessage(scope, threadId, answerId, fn);
     const setParts = (fn: (parts: MessagePart[]) => MessagePart[]) =>
