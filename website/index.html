@@ -142,7 +142,7 @@
             </a>
           </div>
           <p class="hero-meta">
-            <span data-release="version">0.31.0</span> 版 · macOS 12+（Apple 芯片）· Windows 10 / 11
+            <span data-release="version">0.32.0</span> 版 · macOS 12+（Apple 芯片）· Windows 10 / 11
             <span data-other-download hidden>· <a href="#download"></a></span>
           </p>
           <p class="platform-hint" data-platform-hint hidden>
@@ -386,7 +386,7 @@
           <div class="section-head center reveal">
             <p class="eyebrow">接入 AI</p>
             <h2><span class="nb">用你自己的 AI，</span><span class="nb">国内外模型随你选。</span></h2>
-            <p class="lead">在 AI 设置里填上从服务商官网申请的 API Key，就能用；也可以用 ChatGPT 账号或 Kimi 会员，或者干脆在本机跑模型。</p>
+            <p class="lead">在 AI 设置里填上从服务商官网申请的 API Key，就能用；也可以用 ChatGPT 账号、Google 账号、Kimi 会员，或在本机运行模型。</p>
           </div>
           <div class="model-grid">
             <article class="model-card reveal">
@@ -399,9 +399,9 @@
             </article>
             <article class="model-card reveal">
               <span class="model-icon"><svg class="icon" aria-hidden="true"><use href="#i-chat" /></svg></span>
-              <h3>ChatGPT 账号 · Kimi 会员</h3>
-              <p>选 Codex 用 ChatGPT 套餐里的额度，选 Kimi Code 用 Kimi 会员里的额度，都不需要 API Key。通过这台电脑上的 Codex 或 Kimi Code 登录。</p>
-              <ul class="providers"><li>Codex</li><li>Kimi Code</li></ul>
+              <h3>用账号登录</h3>
+              <p>通过 Codex 使用 ChatGPT 套餐额度，通过 Antigravity 使用 Google 账号额度，通过 Kimi Code 使用 Kimi 会员额度。</p>
+              <ul class="providers"><li>Codex</li><li>Google Antigravity</li><li>Kimi Code</li></ul>
             </article>
             <article class="model-card reveal">
               <span class="model-icon"><svg class="icon" aria-hidden="true"><use href="#i-cpu" /></svg></span>
@@ -664,8 +664,8 @@
               </div>
             </div>
             <dl class="specs">
-              <div><dt>版本</dt><dd data-release="version">0.31.0</dd></div>
-              <div><dt>更新于</dt><dd data-release="date">2026.11.08</dd></div>
+              <div><dt>版本</dt><dd data-release="version">0.32.0</dd></div>
+              <div><dt>更新于</dt><dd data-release="date">2026.11.11</dd></div>
               <div><dt>macOS</dt><dd>12+ · Apple 芯片</dd></div>
               <div><dt>Windows</dt><dd>10 / 11 · 64 位</dd></div>
             </dl>
@@ -741,6 +741,7 @@
                 最近更新
               </h3>
               <ul class="changes">
+                <li><strong>0.32.0</strong>在 AI 设置中用 Google 账号登录，即可使用 Antigravity 额度和账号可用的模型。</li>
                 <li><strong>0.31.0</strong>支持打开 Markdown 和图片，Markdown 可以边改边看预览；界面字体显示中文名，新装的字体不用重启就能选。</li>
                 <li><strong>0.30.5</strong>AI 回答里划词可以直接提问，解释和提问都在小窗里回答，不打断对话。</li>
                 <li><strong>0.30.4</strong>AI 回答里选中文字，可以直接引用、解释或翻译。</li>
@@ -782,7 +783,7 @@
             </details>
             <details>
               <summary>AI 用的是谁的服务？</summary>
-              <p>你自己选的服务：在 AI 设置里填上云端服务商的 API Key，或者用 ChatGPT 账号（Codex）、Kimi 会员（Kimi Code），也可以用本机运行的模型。不配置 AI，阅读和批注照常使用。</p>
+              <p>你自己选的服务：在 AI 设置里填上云端服务商的 API Key，或者用 ChatGPT 账号（Codex）、Google 账号（Antigravity）、Kimi 会员（Kimi Code），也可以用本机运行的模型。不配置 AI，阅读和批注照常使用。</p>
             </details>
             <details>
               <summary>能打开哪些文件？</summary>
@@ -866,6 +867,6 @@
     </footer>
 
     <div class="toast" role="status" aria-live="polite" data-toast></div>
-    <script src="app.js?v=0.30.3" defer></script>
+    <script src="app.js?v=0.32.0" defer></script>
   </body>
 </html>

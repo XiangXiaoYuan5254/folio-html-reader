@@ -602,7 +602,7 @@ function SetupCard({ onOpen }: { onOpen: () => void }) {
       <h3>接入你自己的 AI</h3>
       <p>
         填入 API Key 即可使用 DeepSeek、通义千问、Kimi、智谱、豆包、Claude、OpenAI、Gemini；也可以用
-        ChatGPT 账号（通过 Codex 登录）、Kimi 会员（通过 Kimi Code 登录），或在本机运行的 Ollama。
+        ChatGPT 账号、Google 账号、Kimi 会员，或在本机运行的 Ollama。
       </p>
       <button className="primary-button" onClick={onOpen}>
         配置 AI 服务

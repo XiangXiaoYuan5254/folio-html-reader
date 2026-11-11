@@ -20,7 +20,7 @@ const loaded = new Map<string, ModelOption[]>();
 export function modelOptions(providerId: string, refresh = false) {
   let pending = cache.get(providerId);
   if (!pending || refresh) {
-    pending = invoke<ModelOption[]>('ai-models', { id: providerId });
+    pending = invoke<ModelOption[]>('ai-models', { id: providerId, refresh });
     cache.set(providerId, pending);
     pending.then(
       (list) => cache.get(providerId) === pending && loaded.set(providerId, list),
