@@ -353,14 +353,16 @@ class Turn {
               reject(Error('Google 没有返回回答'));
             else {
               const u = response?.usage;
+              const cached = u?.cachedReadTokens || 0;
               resolve(
                 this.result(
                   reason === 'max_tokens' ? 'max_tokens' : 'stop',
                   u
                     ? {
-                        input: u.inputTokens || 0,
+                        // Antigravity reports cache reads separately from uncached input.
+                        input: (u.inputTokens || 0) + cached,
                         output: u.outputTokens || 0,
-                        cached: u.cachedReadTokens || 0,
+                        cached,
                       }
                     : null,
                 ),

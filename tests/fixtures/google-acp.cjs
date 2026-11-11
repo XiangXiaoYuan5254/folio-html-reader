@@ -26,7 +26,7 @@ const options = (session) => [
     options: [{ value: 'low' }, { value: 'extra_high' }],
   },
 ];
-const usage = { inputTokens: 17, outputTokens: 4, cachedReadTokens: 6 };
+const usage = { inputTokens: 2407, outputTokens: 1532, cachedReadTokens: 24527 };
 function update(sessionId, sessionUpdate, text) {
   out({
     method: 'session/update',

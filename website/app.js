@@ -3,15 +3,15 @@
 // ============================================================
 
 const RELEASE = {
-  version: '0.32.0',
+  version: '0.32.1',
   date: '2026.11.11',
 };
 
 // 各平台安装包的下载地址和大小。安装包放在 website/downloads/，随官网一起部署到自己的服务器。
 // url 留空时，对应的下载按钮显示为“即将开放下载”且不可点击，不会给访客死链。
 const DOWNLOADS = {
-  mac: { url: 'downloads/Folio-0.32.0-mac-arm64.dmg', size: '119 MB' },
-  win: { url: 'downloads/Folio-0.32.0-win-x64-setup.exe', size: '109 MB' },
+  mac: { url: 'downloads/Folio-0.32.1-mac-arm64.dmg', size: '119 MB' },
+  win: { url: 'downloads/Folio-0.32.1-win-x64-setup.exe', size: '109 MB' },
 };
 
 // 页脚的“意见反馈”邮箱。留空则不显示。

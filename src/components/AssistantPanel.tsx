@@ -1041,12 +1041,19 @@ function usageText(m: ChatMessage) {
   const lines = [m.model || ''];
   if (m.usage) {
     const { input, output, cached } = m.usage;
-    // How much of the input the service had cached, as a share of it.
-    const share = input ? Math.round((cached / input) * 100) : 0;
-    lines.push(
-      `输入 ${input.toLocaleString()} tokens${cached ? `（缓存命中 ${share || '<1'}%）` : ''}`,
-      `输出 ${output.toLocaleString()} tokens`,
-    );
+    if (cached > input) {
+      // Older replies can have a cache count without a comparable input total.
+      lines.push(
+        `输入记录 ${input.toLocaleString()} tokens`,
+        `缓存读取 ${cached.toLocaleString()} tokens`,
+      );
+    } else {
+      const share = input ? Math.round((cached / input) * 100) : 0;
+      lines.push(
+        `输入 ${input.toLocaleString()} tokens${cached ? `（缓存命中 ${share || '<1'}%）` : ''}`,
+      );
+    }
+    lines.push(`输出 ${output.toLocaleString()} tokens`);
   }
   if (m.quota) {
     const hours =

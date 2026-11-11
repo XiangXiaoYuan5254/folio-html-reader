@@ -62,7 +62,7 @@ test(
       const first = await ask([user('你好')], { session: 'doc-a' }, (d) => deltas.push(d));
       assert.equal(first.text, 'gemini-pro/extra_high 第 1 问：你好');
       assert.equal(deltas[0].reasoning, '思考');
-      assert.deepEqual(first.usage, { input: 17, output: 4, cached: 6 });
+      assert.deepEqual(first.usage, { input: 26934, output: 1532, cached: 24527 });
       const second = await ask(
         [user('你好'), { role: 'assistant', content: first.text }, user('继续')],
         { session: 'doc-a' },
