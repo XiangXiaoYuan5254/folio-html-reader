@@ -602,7 +602,7 @@ function SetupCard({ onOpen }: { onOpen: () => void }) {
       <h3>接入你自己的 AI</h3>
       <p>
         填入 API Key 即可使用 DeepSeek、通义千问、Kimi、智谱、豆包、Claude、OpenAI、Gemini；也可以用
-        ChatGPT 账号（通过 Codex 登录）、Kimi 会员（通过 Kimi Code 登录），或在本机运行的 Ollama。
+        ChatGPT 账号、Google 账号、Kimi 会员，或在本机运行的 Ollama。
       </p>
       <button className="primary-button" onClick={onOpen}>
         配置 AI 服务
@@ -1041,10 +1041,11 @@ function usageText(m: ChatMessage) {
   const lines = [m.model || ''];
   if (m.usage) {
     const { input, output, cached } = m.usage;
-    // How much of the input the service had cached, as a share of it.
-    const share = input ? Math.round((cached / input) * 100) : 0;
+    // A legacy usage record can store uncached input and cache reads separately.
+    const total = cached > input ? input + cached : input;
+    const share = total ? Math.round((cached / total) * 100) : 0;
     lines.push(
-      `输入 ${input.toLocaleString()} tokens${cached ? `（缓存命中 ${share || '<1'}%）` : ''}`,
+      `输入 ${total.toLocaleString()} tokens${cached ? `（缓存命中 ${share || '<1'}%）` : ''}`,
       `输出 ${output.toLocaleString()} tokens`,
     );
   }

@@ -1,6 +1,7 @@
 // AI settings and requests. Keys never leave the main process: the window gets a masked
 // hint, and requests are made here with the key attached.
 const fs = require('node:fs/promises');
+const path = require('node:path');
 const crypto = require('node:crypto');
 const {
   presets,
@@ -13,6 +14,7 @@ const {
 } = require('./ai-providers.cjs');
 const codex = require('./ai-codex.cjs');
 const kimi = require('./ai-kimi.cjs');
+const { createGoogle } = require('./ai-google.cjs');
 const speechServices = require('./cloud-voice.cjs');
 
 const efforts = ['', 'off', 'on', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
@@ -35,12 +37,20 @@ function createAi({
   protect,
   unprotect,
   fetch,
+  resolveGoogleProxy,
   atomicWrite,
   version = '',
   openUrl,
   speechLog,
   diagnosticLog,
 }) {
+  const google = createGoogle({
+    home: path.join(path.dirname(file), 'google'),
+    version,
+    fetch,
+    resolveProxy: resolveGoogleProxy,
+    atomicWrite,
+  });
   let cache = null;
   const running = new Map();
   async function read() {
@@ -193,10 +203,10 @@ function createAi({
   // Fields from the settings form, checked as if they came from anywhere.
   function sanitize(input, previous) {
     const preset = presetFor(clean(input.preset) || previous?.preset);
-    const baseUrl =
-      preset.kind === 'codex' || preset.kind === 'kimi'
-        ? ''
-        : clean(input.baseUrl ?? previous?.baseUrl ?? preset.baseUrl, 500);
+    const accountService = ['codex', 'kimi', 'google'].includes(preset.kind);
+    const baseUrl = accountService
+      ? ''
+      : clean(input.baseUrl ?? previous?.baseUrl ?? preset.baseUrl, 500);
     if (baseUrl && !/^https?:\/\/[^\s]+$/i.test(baseUrl))
       throw new AiError('接口地址需以 http:// 或 https:// 开头');
     return {
@@ -216,14 +226,13 @@ function createAi({
       key: previous?.key || '',
       vision: previous?.vision || {},
       // The models picked to show in the model menu; none shows the service's whole list.
-      picks:
-        preset.kind === 'codex' || preset.kind === 'kimi'
-          ? []
-          : Array.isArray(input.picks)
-            ? [...new Set(input.picks.map((m) => clean(m, 200)).filter(Boolean))]
-                .sort((a, b) => a.localeCompare(b))
-                .slice(0, 500)
-            : previous?.picks || [],
+      picks: accountService
+        ? []
+        : Array.isArray(input.picks)
+          ? [...new Set(input.picks.map((m) => clean(m, 200)).filter(Boolean))]
+              .sort((a, b) => a.localeCompare(b))
+              .slice(0, 500)
+          : previous?.picks || [],
     };
   }
   async function saveProvider(input) {
@@ -317,8 +326,7 @@ function createAi({
     const provider = draft ? { ...sanitize(draft, stored), id: stored?.id || '' } : stored;
     return { provider, key: typeof key === 'string' && key.trim() ? key.trim() : keyOf(stored) };
   }
-  // Chat requests go to the provider's protocol; ChatGPT plans go through Codex, Kimi
-  // memberships through the Kimi Code CLI.
+  // Account services run their local agent. The other providers make API requests here.
   async function stream({
     provider,
     key,
@@ -361,6 +369,14 @@ function createAi({
           home: kimiHome,
           version,
         });
+      else if (provider.kind === 'google')
+        result = await google.stream({
+          provider,
+          request,
+          signal,
+          onDelta: delta,
+          onDiagnostic: record,
+        });
       else
         result = await streamChat({
           provider,
@@ -401,6 +417,12 @@ function createAi({
     const { provider, key } = await resolve(payload || {});
     if (provider.kind === 'codex') return codex.listModels(version);
     if (provider.kind === 'kimi') return kimi.listModels(kimiHome);
+    if (provider.kind === 'google') {
+      const options = await google.listModels(payload?.refresh === true);
+      return !options.length && !payload?.refresh && provider.model
+        ? [{ id: provider.model, efforts: [], defaultEffort: '' }]
+        : options;
+    }
     const preset = presetFor(provider.preset);
     const option = (id) => {
       const { efforts, effort } = modelLevels(preset, id);
@@ -504,6 +526,8 @@ function createAi({
     const choice = choiceFor(await read(), payload.use);
     const resolved = await resolve({ id: choice?.provider });
     const { key } = resolved;
+    if (resolved.provider.kind === 'google' && clean(payload.use).startsWith('plugin:'))
+      throw new AiError('Google 账号额度用于交互使用。请在插件的「用哪个 AI」中选择 API 服务。');
     // A part following chat uses chat's level.
     const provider = choice
       ? {
@@ -562,6 +586,7 @@ function createAi({
     cancelAll();
     codex.stop();
     kimi.stop();
+    google.stop();
   }
   const codexStatus = () => codex.status(version);
   const codexLogin = () => codex.login(version, openUrl);
@@ -589,6 +614,10 @@ function createAi({
     kimiStatus,
     kimiLogin,
     kimiLogout,
+    googleStatus: google.status,
+    googleInstall: google.install,
+    googleLogin: google.signIn,
+    googleLogout: google.signOut,
     saveSpeechKey,
     savePaperKey,
     paperKeys,
