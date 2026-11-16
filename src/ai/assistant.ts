@@ -620,6 +620,8 @@ export class Assistant {
   ): Promise<{ provider: AiProvider; config: AiConfig }> {
     const config = await loadAiConfig();
     const provider = providerFor(config, use);
+    if (provider?.kind === 'google' && use.startsWith('plugin:'))
+      throw Error('Google 账号额度用于交互使用。请在插件的「用哪个 AI」中选择 API 服务。');
     if (!config || !providerReady(provider, config)) {
       if (!quiet) this.host.openSettings();
       throw Error('请先在 AI 设置中添加服务、填写 API Key 并选择模型');
@@ -2013,7 +2015,7 @@ export class Assistant {
       // The first part goes alone, as the others follow its terms; then several at once
       // through an API, while Codex and Kimi Code take one at a time.
       if (todo[0] === 0) await attempt(todo.shift()!);
-      const lanes = provider.kind === 'codex' || provider.kind === 'kimi' ? 1 : 3;
+      const lanes = ['codex', 'kimi', 'google'].includes(provider.kind) ? 1 : 3;
       let failure: unknown = null;
       await Promise.all(
         Array.from({ length: Math.min(lanes, todo.length) }, async () => {

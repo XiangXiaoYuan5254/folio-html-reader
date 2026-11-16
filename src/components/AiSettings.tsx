@@ -30,6 +30,7 @@ import type {
   AiUse,
   CodexStatus,
   KimiStatus,
+  GoogleStatus,
   ModelOption,
   SpeechService,
 } from '../ai/types';
@@ -59,7 +60,8 @@ const blurbs: Record<string, string> = {
   siliconflow: '多种开源模型',
   anthropic: 'Anthropic',
   openai: 'GPT 系列',
-  gemini: 'Google AI Studio',
+  gemini: 'Google AI Studio · API Key',
+  google: '使用 Google 套餐额度，浏览器登录',
   openrouter: '海外多模型聚合',
   ollama: '在本机运行，文档不出电脑',
   lmstudio: '在本机运行，文档不出电脑',
@@ -176,6 +178,7 @@ export function AiSettings({
   }, [presetRequest, !!config]);
   const preset = config?.presets.find((p) => p.id === form?.preset);
   const stored = config?.providers.find((p) => p.id === form?.id);
+  const accountService = preset && ['codex', 'kimi', 'google'].includes(preset.kind);
   const dirty = useMemo(() => {
     if (!form) return false;
     if (!stored) return true;
@@ -310,6 +313,7 @@ export function AiSettings({
         id: form.id,
         draft: draft(),
         all: true,
+        refresh: !quiet,
         ...(form.key ? { key: form.key } : {}),
       });
       if (request !== modelRequest.current) return;
@@ -418,7 +422,7 @@ export function AiSettings({
             <Sparkle size={17} />
             AI 设置
           </h2>
-          <span>用自己的 API Key、ChatGPT 账号或 Kimi 会员，接入国内外主流模型或本机模型</span>
+          <span>用 API Key、ChatGPT 账号、Google 账号或 Kimi 会员接入模型，也支持本机模型</span>
           <button type="button" className="icon-button" aria-label="关闭 AI 设置" onClick={onClose}>
             <X size={18} />
           </button>
@@ -647,6 +651,14 @@ export function AiSettings({
                         if (!models) void fetchModels(true);
                       }}
                     />
+                  ) : preset?.kind === 'google' ? (
+                    <GoogleAccount
+                      onReady={() => void fetchModels(true)}
+                      onLogout={() => {
+                        if (form.id) forgetModelOptions(form.id);
+                        setModelInfo(null);
+                      }}
+                    />
                   ) : (
                     <p className="ai-local-hint">
                       本机模型不需要 API Key。请先启动 {preset?.name.replace(/（.*）/, '')}{' '}
@@ -730,7 +742,7 @@ export function AiSettings({
                       </em>
                     ) : null}
                   </label>
-                  {preset?.kind !== 'codex' && preset?.kind !== 'kimi' ? (
+                  {!accountService ? (
                     // Not a <label>: it holds buttons and a list of checkboxes.
                     <div className="ai-field ai-picks">
                       <span>
@@ -859,13 +871,13 @@ export function AiSettings({
                   >
                     {advanced
                       ? '收起高级设置'
-                      : preset?.kind === 'codex' || preset?.kind === 'kimi'
+                      : accountService
                         ? '高级设置：上下文长度'
                         : '高级设置：接口地址、上下文长度'}
                   </button>
                   {advanced ? (
                     <div className="ai-advanced">
-                      {preset?.kind === 'codex' || preset?.kind === 'kimi' ? null : (
+                      {accountService ? null : (
                         <label>
                           <span>接口地址</span>
                           <input
@@ -957,7 +969,10 @@ export function AiSettings({
                     )}
                     测试连接
                   </button>
-                  <button className="primary-button" disabled={!!busy || !dirty}>
+                  <button
+                    className="primary-button"
+                    disabled={!!busy || !dirty || (preset?.kind === 'google' && !form.model)}
+                  >
                     {busy === 'save' ? '保存中…' : form.id ? '保存' : '添加'}
                   </button>
                 </div>
@@ -1701,6 +1716,130 @@ function KimiAccount({ onReady }: { onReady: () => void }) {
         使用 Kimi 会员里的 Kimi Code 额度，不需要 API Key，也不另外付费。页间单独登录，和你自己用的
         Kimi Code 互不影响；Kimi Code 自带的命令、读写文件和联网工具都不会启用。额度有 5
         小时和每周上限；每次回答会比直接用 API 慢几秒。
+      </p>
+    </div>
+  );
+}
+
+function GoogleAccount({ onReady, onLogout }: { onReady: () => void; onLogout: () => void }) {
+  const [state, setState] = useState<GoogleStatus | null>(null);
+  const [busy, setBusy] = useState<'' | 'install' | 'login' | 'logout'>('');
+  const [error, setError] = useState('');
+  async function check() {
+    setState(null);
+    setError('');
+    try {
+      const next = await invoke<GoogleStatus>('ai-google-status');
+      setState(next);
+      if (next.signedIn) onReady();
+    } catch (e) {
+      setState({ found: false, supported: true });
+      setError(errorText(e));
+    }
+  }
+  useEffect(() => {
+    void check();
+  }, []);
+
+  async function login() {
+    setError('');
+    try {
+      if (!state?.found) {
+        setBusy('install');
+        await invoke('ai-google-install');
+        setState({ found: true, supported: true });
+      }
+      setBusy('login');
+      const next = await invoke<GoogleStatus>('ai-google-login');
+      setState(next);
+      if (next.signedIn) onReady();
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy('');
+    }
+  }
+  async function logout() {
+    setBusy('logout');
+    setError('');
+    try {
+      setState(await invoke<GoogleStatus>('ai-google-logout'));
+      onLogout();
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy('');
+    }
+  }
+  return (
+    <div className="ai-codex">
+      {!state ? (
+        <p className="ai-codex-line">
+          <LoaderCircle className="spin" size={14} /> 正在读取 Google 登录状态…
+        </p>
+      ) : !state.supported ? (
+        <p className="ai-codex-line warn">这台电脑暂时没有可用的 Google 登录组件。</p>
+      ) : state.signedIn ? (
+        <>
+          <p className="ai-codex-line ok">
+            <Check size={14} /> 已登录 Google 账号{state.plan ? `（${state.plan}）` : ''}
+          </p>
+          <div className="ai-codex-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={!!busy}
+              onClick={() => void logout()}
+            >
+              {busy === 'logout' ? '正在退出…' : '退出登录'}
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="ai-codex-actions">
+            <button
+              type="button"
+              className="primary-button"
+              disabled={!!busy}
+              onClick={() => void login()}
+            >
+              {busy === 'install'
+                ? '正在下载 Google 登录组件…'
+                : busy === 'login'
+                  ? '请在浏览器中完成登录…'
+                  : '用 Google 账号登录'}
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={!!busy}
+              onClick={() => void check()}
+            >
+              重新检测
+            </button>
+          </div>
+          {!state.found ? (
+            <p className="ai-codex-note">
+              首次登录会下载 Google 官方 Antigravity 组件，然后在浏览器中授权。
+              <button
+                type="button"
+                className="ai-link"
+                onClick={() => void invoke('external', { url: 'https://antigravity.google/terms' })}
+              >
+                Google 服务条款
+              </button>
+            </p>
+          ) : null}
+        </>
+      )}
+      {error || state?.error ? (
+        <p className="ai-codex-line warn" role="status">
+          {error || state?.error}
+        </p>
+      ) : null}
+      <p className="ai-codex-note">
+        使用 Google 账号的 Antigravity 额度，无需 API Key。插件使用独立的 API 服务。
       </p>
     </div>
   );

@@ -424,6 +424,7 @@ app
       file: path.join(app.getPath('userData'), 'ai.json'),
       kimiHome: path.join(app.getPath('userData'), 'kimi-code'),
       fetch: (url, init) => net.fetch(url, init),
+      resolveGoogleProxy: (url) => session.defaultSession.resolveProxy(url),
       atomicWrite,
       version: app.getVersion(),
       openUrl: (url) => shell.openExternal(url),
@@ -610,6 +611,10 @@ app
           'ai-kimi-status',
           'ai-kimi-login',
           'ai-kimi-logout',
+          'ai-google-status',
+          'ai-google-install',
+          'ai-google-login',
+          'ai-google-logout',
           'codex-voice',
           'microphone',
           'appearance',
@@ -940,6 +945,14 @@ app
           return ai.kimiLogin();
         case 'ai-kimi-logout':
           return ai.kimiLogout();
+        case 'ai-google-status':
+          return ai.googleStatus();
+        case 'ai-google-install':
+          return ai.googleInstall();
+        case 'ai-google-login':
+          return ai.googleLogin();
+        case 'ai-google-logout':
+          return ai.googleLogout();
         case 'microphone':
           return microphoneAccess();
         case 'codex-voice': {

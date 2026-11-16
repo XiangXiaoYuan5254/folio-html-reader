@@ -1,6 +1,6 @@
 import type { DocKind } from '../doc-kind';
 
-export type AiKind = 'openai' | 'anthropic' | 'codex' | 'kimi';
+export type AiKind = 'openai' | 'anthropic' | 'codex' | 'kimi' | 'google';
 export type AiPreset = {
   id: string;
   name: string;
@@ -124,6 +124,13 @@ export type CodexStatus = {
 };
 // The Kimi Code CLI on this computer: found? signed in to a Kimi account? how much of the
 // membership is used? `error` also says when the account has no membership.
+export type GoogleStatus = {
+  found: boolean;
+  supported: boolean;
+  signedIn?: boolean;
+  plan?: string;
+  error?: string;
+};
 export type KimiStatus = {
   found: boolean;
   path?: string;

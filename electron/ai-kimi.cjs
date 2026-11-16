@@ -12,14 +12,16 @@
 const { execFile, spawn } = require('node:child_process');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
-const http = require('node:http');
 const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
 const { levelFor } = require('./ai-providers.cjs');
 const { transcript, unseenTail, seen, stale } = require('./ai-codex.cjs');
 
+const { createToolServer } = require('./ai-acp-tools.cjs');
+
 class KimiError extends Error {}
+const toolServer = createToolServer();
 
 // Where the CLI usually lives: its installer's folder, then Homebrew's and the PATH. Apps
 // opened from Finder don't inherit the shell's PATH.
@@ -504,88 +506,6 @@ async function logout(home, version, fetch) {
   return status(home, version, fetch);
 }
 
-// 页间's tools for the sessions that have them, as an MCP server on this computer only. Each
-// session has a path of its own, which only the CLI is told. A call is answered as an event
-// stream that pings while the user decides, so the CLI doesn't give up on a slow answer.
-let mcp = null;
-const routes = new Map();
-function mcpServer(version) {
-  if (mcp) return mcp;
-  mcp = new Promise((resolve, reject) => {
-    const httpServer = http.createServer((req, res) => void serveMcp(req, res, version));
-    httpServer.on('error', reject);
-    httpServer.listen(0, '127.0.0.1', () =>
-      resolve({ httpServer, url: `http://127.0.0.1:${httpServer.address().port}/mcp/` }),
-    );
-  });
-  mcp.catch(() => (mcp = null));
-  return mcp;
-}
-async function serveMcp(req, res, version) {
-  const session = routes.get(String(req.url).replace(/^\/mcp\//, ''));
-  if (!session) return void res.writeHead(404).end();
-  if (req.method !== 'POST') return void res.writeHead(405).end();
-  let body = '';
-  for await (const chunk of req) {
-    body += chunk;
-    if (body.length > 4_000_000) return void res.writeHead(413).end();
-  }
-  let m;
-  try {
-    m = JSON.parse(body);
-  } catch {
-    return void res.writeHead(400).end();
-  }
-  // Notifications, such as a call the CLI has stopped waiting for.
-  if (m?.id === undefined) return void res.writeHead(202).end();
-  const json = (message) => {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ jsonrpc: '2.0', id: m.id, ...message }));
-  };
-  switch (m.method) {
-    case 'initialize':
-      return json({
-        result: {
-          protocolVersion: m.params?.protocolVersion || '2025-06-18',
-          capabilities: { tools: {} },
-          serverInfo: { name: 'folio', title: '页间 Folio', version },
-        },
-      });
-    case 'ping':
-      return json({ result: {} });
-    case 'tools/list':
-      return json({
-        result: {
-          tools: session.tools.map((t) => ({
-            name: t.name,
-            description: t.description,
-            inputSchema: t.parameters,
-          })),
-        },
-      });
-    case 'tools/call': {
-      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
-      const ping = setInterval(() => res.write(': ping\n\n'), 15_000);
-      const respond = (r) => {
-        clearInterval(ping);
-        if (res.writableEnded) return;
-        const result = { content: [{ type: 'text', text: r.content }], isError: !!r.isError };
-        res.end(
-          `event: message\ndata: ${JSON.stringify({ jsonrpc: '2.0', id: m.id, result })}\n\n`,
-        );
-      };
-      res.on('close', () => clearInterval(ping));
-      session.toolCall(
-        { name: String(m.params?.name || ''), input: m.params?.arguments ?? {} },
-        respond,
-      );
-      return;
-    }
-    default:
-      return json({ error: { code: -32601, message: 'Method not found' } });
-  }
-}
-
 function friendly(message) {
   const detail = String(message || '')
     .replace(/^Authentication required:?\s*/i, '')
@@ -729,7 +649,7 @@ class Session {
     if (this.closed) return;
     this.closed = true;
     this.answer(new Map());
-    routes.delete(this.route);
+    toolServer.disconnect(this.route);
     if (!this.id) return;
     this.s.sessions.delete(this.id);
     // With the CLI gone, a kept session stays written down for the next start to delete.
@@ -855,16 +775,13 @@ async function streamKimi({ provider, request, signal, onDelta, home, version })
   } else {
     // The CLI connects to 页间's tools while it creates the session.
     session = new Session(s, request.tools || [], !!key);
-    const url = session.tools.length ? (await mcpServer(version)).url : '';
-    if (url) routes.set(session.route, session);
     let started;
     try {
+      const mcpServers = await toolServer.connect(session, version);
       started = await s.serial(() =>
         s.call('session/new', {
           cwd: path.join(home, 'work'),
-          mcpServers: url
-            ? [{ type: 'http', name: 'folio', url: url + session.route, headers: [] }]
-            : [],
+          mcpServers,
         }),
       );
       if (!started?.sessionId) throw new KimiError('Kimi Code 没有创建对话');
@@ -918,9 +835,7 @@ function stop() {
   // Kept sessions are deleted the next time the CLI starts: there's no waiting for it now.
   for (const session of server?.sessions.values() || []) if (!session.kept) session.close();
   restart();
-  routes.clear();
-  mcp?.then(({ httpServer }) => httpServer.close()).catch(() => {});
-  mcp = null;
+  toolServer.stop();
 }
 
 module.exports = {

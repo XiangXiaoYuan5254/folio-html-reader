@@ -34,7 +34,7 @@ Get the latest version from [Releases](https://github.com/XiangXiaoYuan5254/foli
 - An assistant that answers questions about the document or the whole project, with citations that jump back to the source.
 - Explain or translate a selection, translate a whole document, let AI highlight the key sentences, write close-reading notes, find papers (arXiv, OpenAlex, PubMed, Europe PMC) and edit the HTML source.
 - **Whiteboard lessons**: select a passage, formula or figure and a teacher explains it on a whiteboard, with optional voice and a spoken conversation.
-- Works with OpenAI-compatible APIs and Claude (DeepSeek, Kimi, Qwen, Doubao, GLM, MiniMax, Gemini, OpenRouter, SiliconFlow and more), a ChatGPT plan through Codex, a Kimi membership through Kimi Code, or local models with Ollama and LM Studio. You pay your provider directly; Folio is not in between.
+- Works with OpenAI-compatible APIs and Claude (DeepSeek, Kimi, Qwen, Doubao, GLM, MiniMax, Gemini, OpenRouter, SiliconFlow and more), a ChatGPT plan through Codex, a Google account through Antigravity, a Kimi membership through Kimi Code, or local models with Ollama and LM Studio. You pay your provider directly; Folio is not in between.
 
 **Make it yours**
 - Ten interface themes, light and dark, optionally following the system.

@@ -308,7 +308,7 @@ export function ModelMenu({
                           ) : null}
                           {Array.isArray(list) &&
                           i === 0 &&
-                          (shown.kind === 'codex' || shown.kind === 'kimi') ? (
+                          ['codex', 'kimi', 'google'].includes(shown.kind) ? (
                             <em>默认</em>
                           ) : null}
                           {current ? <Check size={13} /> : null}

@@ -274,6 +274,20 @@ const presets = [
     keyUrl: 'https://aistudio.google.com/apikey',
     region: 'global',
   },
+  // Personal Google sign-in through Google's official Antigravity ACP server.
+  {
+    id: 'google',
+    name: 'Google 账号',
+    kind: 'google',
+    baseUrl: '',
+    model: '',
+    models: [],
+    context: 128_000,
+    thinking: 'google',
+    efforts: [],
+    noKey: true,
+    region: 'global',
+  },
   {
     id: 'openrouter',
     name: 'OpenRouter',
