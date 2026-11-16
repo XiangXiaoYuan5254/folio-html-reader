@@ -71,6 +71,10 @@ const hearing = createHearing({
   send: toWindow,
 });
 if (process.env.FOLIO_USER_DATA) app.setPath('userData', process.env.FOLIO_USER_DATA);
+// Sandboxed frames (a plugin's script, a widget) each run in a process of their own, so one
+// stuck in a loop freezes neither the window nor another widget (tests/widget.e2e.mjs checks
+// it). Grouped by site, as by default, every widget at app://widget would share one.
+app.commandLine.appendSwitch('enable-features', 'IsolateSandboxedIframes:grouping/per-document');
 app.setName('页间');
 // Matches the Start menu shortcut the Windows installer creates, for taskbar grouping.
 if (process.platform === 'win32') app.setAppUserModelId('com.folio.htmlreader');
@@ -467,6 +471,23 @@ app
           return new Response(String(e.message), { status: 403 });
         }
       }
+      // A widget: its page and the files its folio-plugin.json lists (electron/plugins.cjs).
+      if (url.host === 'widget') {
+        try {
+          const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
+          const id = parts.shift() || '';
+          const { data, type, csp } = await plugins.widget(id, parts.join('/'));
+          return new Response(data, {
+            headers: {
+              'Content-Type': type,
+              'Cache-Control': 'no-store',
+              ...(csp ? { 'Content-Security-Policy': csp } : {}),
+            },
+          });
+        } catch (e) {
+          return new Response(String(e.message), { status: 403 });
+        }
+      }
       if (url.host !== 'ui') return new Response('', { status: 404 });
       const rel =
         decodeURIComponent(url.pathname) === '/'
@@ -642,6 +663,7 @@ app
           'plugin-pick-local',
           'plugin-log',
           'plugin-directory',
+          'plugin-widget-storage',
         ].includes(action) &&
         token !== workspace.token
       )
@@ -863,6 +885,8 @@ app
           return plugins.log(payload || {});
         case 'plugin-directory':
           return plugins.directory(payload || {});
+        case 'plugin-widget-storage':
+          return plugins.widgetStorage(payload || {});
         // A folder a plugin writes into, picked (or made) in Finder / Explorer: the open
         // project or a folder in it, given relative to it ('.' for the project itself).
         case 'choose-plugin-folder': {

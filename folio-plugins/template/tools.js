@@ -1,4 +1,4 @@
-// 插件脚本：在一个看不见的沙箱里运行，不能自己联网、读写文件或访问页间界面。
+// 插件脚本：在一个看不见的沙箱里运行，读写不了文件，也看不到页间界面；可以自己联网。
 // 用全局对象 folio 给 AI 增加工具；类型说明见
 // https://github.com/XiangXiaoYuan5254/folio-plugins/blob/main/types/folio.d.ts
 /// <reference path="./folio.d.ts" />

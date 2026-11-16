@@ -4,11 +4,13 @@ import type { ToolDef } from '../ai/types';
 import { pluginFetch } from './web-tools';
 
 // A plugin's script, run for the length of one plugin run in a page of its own:
-// app://plugin/<id> is an iframe with sandbox="allow-scripts" (no same-origin rights) whose
-// content security policy lets it reach nothing (electron/plugins.cjs). It talks to the app
-// only through postMessage: it says which tools it has, runs them when the model calls them,
-// asks the app to fetch pages from the sites its folio-plugin.json names, and writes to its run
-// log (folio.log / warn / error, and what it throws).
+// app://plugin/<id> is an iframe with sandbox="allow-scripts" (no same-origin rights): it can't
+// see Folio's interface, the reader's files or API keys. It may reach any website itself, but
+// loads no code from anywhere (electron/plugins.cjs, tests/plugin-sandbox.e2e.mjs). It talks to
+// the app only through postMessage: it says which tools it has, runs them when the model calls
+// them, asks the app to fetch pages from the sites its folio-plugin.json names (free of the
+// browser's cross-origin rules), and writes to its run log (folio.log / warn / error, and what it
+// throws).
 export type ScriptSandbox = {
   tools: ToolDef[];
   call: (name: string, input: unknown) => Promise<ToolOutcome>;

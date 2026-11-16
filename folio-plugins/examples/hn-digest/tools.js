@@ -3,7 +3,7 @@
 //
 // 为什么用脚本而不是让 AI 直接 fetch_url：Hacker News 的接口要先取一串 id，再一条条取详情，
 // 二十多次请求让 AI 自己做又慢又费额度。脚本把这件事做完，只把整理好的结果交给 AI。
-// 脚本自己不能联网，folio.fetch 由页间转交，只能访问 permissions.network 里的网站。
+// 用 folio.fetch 而不是脚本自己的 fetch：页间转交的请求不受跨域限制，只能访问 permissions.network 里的网站。
 
 const API = 'https://hacker-news.firebaseio.com/v0';
 const number = (value, fallback, max) => {

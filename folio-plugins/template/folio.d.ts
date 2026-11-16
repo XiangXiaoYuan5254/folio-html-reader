@@ -2,8 +2,9 @@
 //
 // 插件脚本（folio-plugin.json 里的 run.script）在一个看不见的沙箱页面里运行：
 // - 是普通脚本，不是 ES module：不能 import / export，需要第三方库就先打包成一个文件；
-// - 不能自己联网（fetch、XMLHttpRequest、WebSocket 都被禁止），只能用 folio.fetch，
-//   而且只能访问 permissions.network 里写明的网站；
+// - 可以自己联网（fetch、XMLHttpRequest、WebSocket……），但受浏览器的跨域规则限制：很多网站
+//   不让网页直接读取。folio.fetch 由页间转交，不受跨域限制，只能访问 permissions.network 里的网站；
+// - 不能从网上加载代码：脚本就是插件包里的这一个文件；
 // - 拿不到 localStorage、Cookie、页间的界面和你的 API Key；
 // - 每次运行开一个新沙箱，运行结束就关掉，两次运行之间不保留任何状态。
 //

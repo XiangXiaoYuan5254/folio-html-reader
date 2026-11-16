@@ -113,11 +113,7 @@ test('official plugins come from a signed list on the website, and need no commu
     assert.match((await plugins.load({ id: 'ai-daily' })).prompt, /AI/);
     await plugins.setThirdParty({ on: true });
     await plugins.setThirdParty({ on: false });
-    assert.equal(
-      (await plugins.list()).plugins[0].enabled,
-      true,
-      'the community switch is not its',
-    );
+    assert.equal((await plugins.list()).plugins[0].enabled, true, 'the community switch is not its');
     await plugins.remove({ id: 'ai-daily' });
     list = await plugins.list();
     assert.deepEqual(list.plugins, []);

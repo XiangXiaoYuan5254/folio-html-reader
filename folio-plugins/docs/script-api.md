@@ -14,8 +14,9 @@
 
 脚本在一个看不见的沙箱页面里运行：
 
-- **普通脚本，不是 ES module**：不能 `import` / `export`。要用第三方库，先用 esbuild、Rollup 等打包成一个文件（总大小不超过 1 MB）。
-- **不能自己联网**：`fetch`、`XMLHttpRequest`、`WebSocket`、加载图片都被禁止。只能用 `folio.fetch`，而且只能访问 `permissions.network` 里的网站。
+- **普通脚本，不是 ES module**：不能 `import` / `export`。要用第三方库，先用 esbuild、Rollup 等打包成一个文件（总大小不超过 1 MB）。代码不能从网上加载（`<script src>`、动态 `import()`、运行时拼出来的 `<script>`、`eval` 和 `new Function` 都不行），收录时看到的就是运行的。
+- **可以自己联网**：`fetch`、`XMLHttpRequest`、`WebSocket`、图片都能用，但受浏览器的跨域规则限制，很多网站不让网页直接读取。读这些网站用 `folio.fetch`：它由页间转交，不受跨域限制，只能访问 `permissions.network` 里的网站。用户安装时会看到“脚本可以自己访问任何网站”，请在 README 里写清楚脚本会连哪些网站、发什么。
+- 有 `document`、`DOMParser`，可以把拿到的 HTML 解析成网页结构再取内容。
 - **拿不到**：`localStorage`、Cookie、页间的界面、用户的文件、API Key。
 - **每次运行一个新沙箱**：运行开始时打开，结束时关掉，两次运行之间不保留任何状态。需要“记住”什么，让 AI 读之前写过的文件（比如用 `list_files` + `read_document` 看上一期）。
 - 有 `setTimeout`、`Promise`、`JSON`、`URL`、`TextEncoder`、`crypto.getRandomValues` 等浏览器里的常用对象。
