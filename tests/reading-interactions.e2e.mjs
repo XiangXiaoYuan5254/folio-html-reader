@@ -111,15 +111,14 @@ async function dragFile(name, side = 'right', cancel = false) {
   await page.mouse.move(x + 1, y + 1);
   await page.locator('.reading-drop-preview.hovered').waitFor();
   if ((await page.locator('.document-frame').count()) === 1) {
-    const preview = await page.locator('.reading-drop-preview').boundingBox();
-    const center = preview.x + preview.width / 2;
+    const expectedLabel = `松开，在${side === 'left' ? '左' : '右'}栏打开`;
+    const preview = page.locator('.reading-drop-preview.hovered').filter({ hasText: expectedLabel });
+    await preview.waitFor();
+    const bounds = await preview.boundingBox();
+    const center = bounds.x + bounds.width / 2;
     assert.ok(
       side === 'left' ? center < target.x + target.width / 2 : center > target.x + target.width / 2,
       'preview matches initial drop side',
-    );
-    assert.equal(
-      await page.locator('.reading-drop-preview strong').textContent(),
-      `松开，在${side === 'left' ? '左' : '右'}栏打开`,
     );
   }
   if (cancel) await page.keyboard.press('Escape');

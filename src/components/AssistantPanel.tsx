@@ -1041,13 +1041,19 @@ function usageText(m: ChatMessage) {
   const lines = [m.model || ''];
   if (m.usage) {
     const { input, output, cached } = m.usage;
-    // A legacy usage record can store uncached input and cache reads separately.
-    const total = cached > input ? input + cached : input;
-    const share = total ? Math.round((cached / total) * 100) : 0;
-    lines.push(
-      `输入 ${total.toLocaleString()} tokens${cached ? `（缓存命中 ${share || '<1'}%）` : ''}`,
-      `输出 ${output.toLocaleString()} tokens`,
-    );
+    if (cached > input) {
+      // Older replies can have a cache count without a comparable input total.
+      lines.push(
+        `输入记录 ${input.toLocaleString()} tokens`,
+        `缓存读取 ${cached.toLocaleString()} tokens`,
+      );
+    } else {
+      const share = input ? Math.round((cached / input) * 100) : 0;
+      lines.push(
+        `输入 ${input.toLocaleString()} tokens${cached ? `（缓存命中 ${share || '<1'}%）` : ''}`,
+      );
+    }
+    lines.push(`输出 ${output.toLocaleString()} tokens`);
   }
   if (m.quota) {
     const hours =

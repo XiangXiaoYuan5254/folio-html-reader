@@ -122,8 +122,6 @@ export type CodexStatus = {
   windows?: Quota[];
   error?: string;
 };
-// The Kimi Code CLI on this computer: found? signed in to a Kimi account? how much of the
-// membership is used? `error` also says when the account has no membership.
 export type GoogleStatus = {
   found: boolean;
   supported: boolean;
@@ -131,6 +129,8 @@ export type GoogleStatus = {
   plan?: string;
   error?: string;
 };
+// The Kimi Code CLI on this computer: found? signed in to a Kimi account? how much of the
+// membership is used? `error` also says when the account has no membership.
 export type KimiStatus = {
   found: boolean;
   path?: string;
