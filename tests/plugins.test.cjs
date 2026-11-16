@@ -1153,13 +1153,14 @@ test('a page: its manifest, what it asks of the library, and code only its own',
   const { readPluginDir } = require('../electron/plugin-manifest.cjs');
   for (const id of ['paper-dashboard', 'paper-companion', 'literature-review']) {
     const read = await readPluginDir(path.join(__dirname, '..', 'plugins', id), {
-      appVersion: '0.32.0',
+      appVersion: '0.33.0',
     });
     assert.equal(read.manifest.id, id);
     assert.deepEqual(read.warnings, []);
+    // 0.32.1, the last release without the library, is told to update.
     await assert.rejects(
-      readPluginDir(path.join(__dirname, '..', 'plugins', id), { appVersion: '0.31.0' }),
-      /需要页间 >=0\.32\.0/,
+      readPluginDir(path.join(__dirname, '..', 'plugins', id), { appVersion: '0.32.1' }),
+      /需要页间 >=0\.33\.0/,
     );
   }
 });

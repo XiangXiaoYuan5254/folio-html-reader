@@ -6,7 +6,7 @@
   "author": "页间",
   "description": "把文献库画成一张仪表盘：总体进度、书墙、阅读日历，按类别、发表渠道与 CCF 等级、年份看读了多少，还有能多选筛选的论文浏览器。点一篇先看自己的总结和划的重点，再打开原文。",
   "engines": {
-    "folio": ">=0.32.0"
+    "folio": ">=0.33.0"
   },
   "icon": "icon.svg",
   "files": ["index.html", "app.js", "adapter.js", "venues.js", "icon.svg"],

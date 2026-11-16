@@ -15,7 +15,7 @@
   "name": "阅读统计",
   "version": "0.1.0",
   "description": "按月统计读了几篇论文。",
-  "engines": { "folio": ">=0.32.0" },
+  "engines": { "folio": ">=0.33.0" },
   "files": ["index.html", "page.js"],
   "page": {
     "entry": "index.html",

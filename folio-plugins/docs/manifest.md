@@ -109,7 +109,7 @@
 - 用了任何写入工具，就必须写 `permissions.write`。
 - 聊天时 AI 写文件要用户确认；插件运行时不问，改为只允许写进 `permissions.write` 列出的文件夹，写到别处会被拒绝。
 
-`update_library` 改的是文献库，不是文件夹，所以不用写 `permissions.write`；安装时用户会看到“修改文献库”。这两个工具需要页间 0.32.0 或更新的版本，记得写 `engines.folio`。
+`update_library` 改的是文献库，不是文件夹，所以不用写 `permissions.write`；安装时用户会看到“修改文献库”。这两个工具需要页间 0.33.0 或更新的版本，记得写 `engines.folio`。
 
 ### page：页面
 
