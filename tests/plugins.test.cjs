@@ -1001,10 +1001,13 @@ test('a widget plugin needs folio 2, may leave out run, and has no button or sch
   assert.throws(() => validateManifest(widgetPlugin({ anchor: 'middle' })), /widget\.anchor/);
   assert.throws(() => validateManifest(widgetPlugin({ events: ['selection'] })), /selection/);
   // Sizes are kept within reason.
-  assert.deepEqual(validateManifest(widgetPlugin({ size: { width: 5, height: 9000 } })).widget.size, {
-    width: 24,
-    height: 1200,
-  });
+  assert.deepEqual(
+    validateManifest(widgetPlugin({ size: { width: 5, height: 9000 } })).widget.size,
+    {
+      width: 24,
+      height: 1200,
+    },
+  );
   // Its scripts may be any number of files; without a widget only run.script may be one.
   assert.ok(validateManifest(widgetPlugin()).files.includes('more.js'));
   const plain = base();
@@ -1045,13 +1048,118 @@ test("pages run only the inline scripts Folio served: no 'unsafe-inline', no eva
     events: ['ai'],
   });
   // The bootstrap comes first in <head>, before anything of the widget's own.
-  assert.ok(page.indexOf('<head><script>') > 0 && page.indexOf('<head><script>') < page.indexOf('<title>'));
+  assert.ok(
+    page.indexOf('<head><script>') > 0 && page.indexOf('<head><script>') < page.indexOf('<title>'),
+  );
   assert.equal(inlineScriptHashes(page).length, 2, 'the bootstrap and the widget’s own, not src');
   const wcsp = widgetCspFor('pet', page);
   assert.match(wcsp, /script-src app:\/\/widget\/pet\/ 'sha256-/);
-  assert.doesNotMatch(wcsp.split('; ').find((d) => d.startsWith('script-src')), /unsafe|https?:|blob:/);
+  assert.doesNotMatch(
+    wcsp.split('; ').find((d) => d.startsWith('script-src')),
+    /unsafe|https?:|blob:/,
+  );
   assert.match(wcsp, /connect-src [^;]*https:/);
   // Without <head> it still goes after the doctype, never before it.
   const bare = widgetPage({ html: '<!DOCTYPE html><p>hi</p>', settings: {}, events: [] });
   assert.ok(bare.startsWith('<!DOCTYPE html><script>'));
+});
+
+test('a page: its manifest, what it asks of the library, and code only its own', async () => {
+  const { pageCspFor } = require('../electron/plugins.cjs');
+  const base = {
+    folio: 2,
+    id: 'reading-stats',
+    name: '阅读统计',
+    version: '0.1.0',
+    files: ['index.html', 'page.js', 'chart.js', 'logo.png'],
+    page: { entry: 'index.html', library: 'read' },
+  };
+  const m = validateManifest(base);
+  // A page alone needs no task for the AI; its title is the plugin's name unless given.
+  assert.deepEqual(m.page, { entry: 'index.html', title: '阅读统计', library: 'read' });
+  assert.deepEqual([m.run.prompt, m.triggers, m.widget], ['', [], null]);
+  assert.equal(
+    validateManifest({ ...base, page: { entry: 'index.html', title: '概览' } }).page.library,
+    '',
+  );
+  assert.throws(() => validateManifest({ ...base, folio: 1 }), /要写 "folio": 2/);
+  assert.throws(() => validateManifest({ ...base, page: { entry: 'page.js' } }), /page\.entry/);
+  assert.throws(
+    () => validateManifest({ ...base, page: { entry: 'missing.html' } }),
+    /page\.entry/,
+  );
+  assert.throws(
+    () => validateManifest({ ...base, page: { entry: 'index.html', library: 'all' } }),
+    /page\.library/,
+  );
+  assert.throws(
+    () => validateManifest({ folio: 2, id: 'x-y', name: 'x', version: '1.0.0', files: [] }),
+    /run（交给 AI 的任务）、widget（挂件）或 page（页面）/,
+  );
+  // The library's tools are a plugin's to ask for; changing the library needs no folder.
+  const task = validateManifest({
+    folio: 1,
+    id: 'tidy',
+    name: '整理',
+    version: '1.0.0',
+    files: ['prompt.md'],
+    run: { prompt: 'prompt.md', tools: ['list_library', 'update_library'] },
+  });
+  assert.deepEqual(task.run.tools, ['list_library', 'update_library']);
+  assert.deepEqual(task.permissions.write, []);
+  assert.throws(
+    () =>
+      validateManifest({
+        folio: 1,
+        id: 'own',
+        name: 'own',
+        version: '1.0.0',
+        files: ['prompt.md'],
+        run: { prompt: 'prompt.md', tools: ['list_library'], where: 'folder' },
+        permissions: { write: ['{{out}}'] },
+        settings: [{ key: 'out', type: 'folder', label: 'x' }],
+      }),
+    /在自己文件夹里运行的插件不能用 list_library/,
+  );
+  // An update that adds a page, or widens its hold on the library, says so.
+  const none = validateManifest({ ...base, page: { entry: 'index.html' } });
+  const write = validateManifest({ ...base, page: { entry: 'index.html', library: 'write' } });
+  assert.equal(newPermissions(task, m).page, true);
+  assert.equal(newPermissions(none, m).library, 'read');
+  assert.equal(newPermissions(m, write).library, 'write');
+  assert.equal(newPermissions(write, m), null, 'asking for less is nothing new');
+
+  // Its page: Folio's folio.library ahead of its own code. Like a widget it may reach any
+  // website, and runs no code but its own files and the inline scripts served.
+  const html = widgetPage({
+    html: '<!doctype html><html><head></head><body><script src="page.js"></script></body></html>',
+    settings: {},
+    page: m.page,
+  });
+  assert.match(html, /library: Object\.freeze\(\{/);
+  assert.match(html, /"library":"read"/);
+  const without = widgetPage({ html: '<html></html>', settings: {}, events: ['ai'] });
+  assert.match(without, /const page = null;/);
+  const csp = pageCspFor('reading-stats', html);
+  assert.match(csp, /script-src app:\/\/page\/reading-stats\/ 'sha256-/);
+  assert.doesNotMatch(
+    csp.split('; ').find((d) => d.startsWith('script-src')),
+    /unsafe|https?:|blob:/,
+  );
+  assert.match(csp, /connect-src app:\/\/page\/reading-stats\/ http: https: ws: wss:/);
+  assert.match(csp, /img-src app:\/\/page\/reading-stats\/ http: https:/);
+
+  // The official page plugin is a plugin like any other: it reads as one.
+  const { readPluginDir } = require('../electron/plugin-manifest.cjs');
+  for (const id of ['paper-dashboard', 'paper-companion', 'literature-review']) {
+    const read = await readPluginDir(path.join(__dirname, '..', 'plugins', id), {
+      appVersion: '0.32.0',
+    });
+    assert.equal(read.manifest.id, id);
+    assert.deepEqual(read.warnings, []);
+    await assert.rejects(
+      readPluginDir(path.join(__dirname, '..', 'plugins', id), { appVersion: '0.31.0' }),
+      /需要页间 >=0\.32\.0/,
+    );
+  }
 });

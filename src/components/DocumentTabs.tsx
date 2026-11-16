@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   Check,
   ChevronDown,
@@ -19,6 +20,10 @@ export function DocumentTabs({
   onClose,
   onNew,
   autosave,
+  pages = [],
+  activePage = null,
+  onSelectPage,
+  onClosePage,
 }: {
   docs: OpenDocument[];
   active: string;
@@ -27,6 +32,12 @@ export function DocumentTabs({
   onNew: (kind: 'html' | 'markdown') => void;
   // Auto-saved edits are written at once, so only a failed save leaves a tab marked unsaved.
   autosave: boolean;
+  // Pages open beside the documents (the library, a plugin's page); the one showing, if any,
+  // is the selected tab in place of the active document's.
+  pages?: { id: string; title: string; icon: ReactNode }[];
+  activePage?: string | null;
+  onSelectPage?: (id: string) => void;
+  onClosePage?: (id: string) => void;
 }) {
   const strip = useRef<HTMLDivElement>(null);
   // A tab opens up in the strip once, when its document is opened.
@@ -51,7 +62,7 @@ export function DocumentTabs({
     const observer = new ResizeObserver(showActive);
     if (strip.current) observer.observe(strip.current);
     return () => observer.disconnect();
-  }, [active, docs.length]);
+  }, [active, docs.length, activePage, pages.length]);
   useLayoutEffect(measure);
   useEffect(() => {
     const el = strip.current!;
@@ -99,7 +110,7 @@ export function DocumentTabs({
       >
         {docs.map((d) => (
           <div
-            className={`document-tab${d.id === active ? ' selected' : ''}${arrived.current.has(d.id) ? '' : ' fresh'}`}
+            className={`document-tab${d.id === active && !activePage ? ' selected' : ''}${arrived.current.has(d.id) ? '' : ' fresh'}`}
             key={d.id}
             data-id={d.id}
             onAnimationEnd={(e) => {
@@ -108,7 +119,7 @@ export function DocumentTabs({
           >
             <button
               role="tab"
-              aria-selected={d.id === active}
+              aria-selected={d.id === active && !activePage}
               title={d.path}
               onClick={() => onSelect(d.id)}
             >
@@ -119,6 +130,29 @@ export function DocumentTabs({
               ) : null}
             </button>
             <IconButton label={`关闭 ${name(d)}`} onClick={() => onClose(d.id)}>
+              <X size={13} />
+            </IconButton>
+          </div>
+        ))}
+        {pages.map((page) => (
+          <div
+            className={`document-tab page-tab${page.id === activePage ? ' selected' : ''}${arrived.current.has(page.id) ? '' : ' fresh'}`}
+            key={page.id}
+            data-id={page.id}
+            onAnimationEnd={(e) => {
+              if (e.target === e.currentTarget) arrived.current.add(page.id);
+            }}
+          >
+            <button
+              role="tab"
+              aria-selected={page.id === activePage}
+              title={page.title}
+              onClick={() => onSelectPage?.(page.id)}
+            >
+              {page.icon}
+              <span>{page.title}</span>
+            </button>
+            <IconButton label={`关闭 ${page.title}`} onClick={() => onClosePage?.(page.id)}>
               <X size={13} />
             </IconButton>
           </div>
@@ -136,7 +170,7 @@ export function DocumentTabs({
         // Tabs past the ends of the strip are a click away here.
         <IconButton
           className="document-tabs-all"
-          label={`全部 ${docs.length} 个标签`}
+          label={`全部 ${docs.length + pages.length} 个标签`}
           active={!!list}
           onClick={(e) => setList(list ? null : belowButton(e.currentTarget))}
         >
@@ -149,20 +183,39 @@ export function DocumentTabs({
           label="全部标签"
           className="document-tab-list"
           onClose={() => setList(null)}
-          items={docs.map((d) => ({
-            label: (
-              <span className={`document-tab-list-item${d.id === active ? ' active' : ''}`}>
-                {icon(d)}
-                <span>{name(d)}</span>
-                {d.id === active ? <Check size={13} /> : null}
-              </span>
-            ),
-            help: d.path,
-            onSelect: () => {
-              onSelect(d.id);
-              reveal(d.id);
-            },
-          }))}
+          items={[
+            ...docs.map((d) => ({
+              label: (
+                <span
+                  className={`document-tab-list-item${d.id === active && !activePage ? ' active' : ''}`}
+                >
+                  {icon(d)}
+                  <span>{name(d)}</span>
+                  {d.id === active && !activePage ? <Check size={13} /> : null}
+                </span>
+              ),
+              help: d.path,
+              onSelect: () => {
+                onSelect(d.id);
+                reveal(d.id);
+              },
+            })),
+            ...pages.map((page) => ({
+              label: (
+                <span
+                  className={`document-tab-list-item${page.id === activePage ? ' active' : ''}`}
+                >
+                  {page.icon}
+                  <span>{page.title}</span>
+                  {page.id === activePage ? <Check size={13} /> : null}
+                </span>
+              ),
+              onSelect: () => {
+                onSelectPage?.(page.id);
+                reveal(page.id);
+              },
+            })),
+          ]}
         />
       ) : null}
       {newMenu ? (

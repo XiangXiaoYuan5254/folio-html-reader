@@ -2633,7 +2633,8 @@ export class Assistant {
     try {
       await tool.prepare?.();
       if (policy && writeTools.has(name) && tool.preview) {
-        const verdict = policy.writable(tool.preview.path);
+        // The library isn't a folder: a plugin given update_library may change it.
+        const verdict = tool.preview.kind === 'library' ? true : policy.writable(tool.preview.path);
         if (verdict !== true) {
           ui.patch(stepId, (s) => ({ ...s, status: 'skipped', detail: '不在插件能写的文件夹里' }));
           return { content: verdict, isError: true };
@@ -2667,7 +2668,8 @@ export class Assistant {
       }));
       if (writeTools.has(name) && !outcome.isError) {
         this.forgetText();
-        if (tool.preview) policy?.written.push(tool.preview.path);
+        if (tool.preview && tool.preview.kind !== 'library')
+          policy?.written.push(tool.preview.path);
       }
       return outcome;
     } catch (e) {

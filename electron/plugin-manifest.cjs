@@ -7,7 +7,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 
 const FORMAT = 1;
-// "folio": 2 加了 widget（挂件）；只有 AI 任务的插件照旧写 1。
+// "folio": 2 加了 widget（挂件）和 page（页面）；只有 AI 任务的插件照旧写 1。
 const FORMATS = [1, 2];
 const MANIFEST = 'folio-plugin.json';
 // 插件可以让 AI 使用的工具：页间的项目工具，加上只能访问清单里网站的 fetch_url、read_feed。
@@ -26,6 +26,8 @@ const TOOLS = [
   'add_highlights',
   'write_note',
   'save_pdf',
+  'list_library',
+  'update_library',
 ];
 // 往项目里写东西的工具，插件运行时只能写进它声明的文件夹。
 const WRITE_TOOLS = ['create_html', 'edit_html', 'add_highlights', 'write_note', 'save_pdf'];
@@ -40,19 +42,28 @@ const FOLDER_TOOLS = [
   'search_papers',
 ];
 // 任务说明、模板和写入文件夹里，除了设置项还能用的 {{…}}（src/plugins/schedule.ts、runner.ts）。
-const BUILTIN_VARS = ['today', 'yesterday', 'week_ago', 'now', 'weekday', 'project', 'folder'];
+const BUILTIN_VARS = [
+  'today',
+  'yesterday',
+  'week_ago',
+  'now',
+  'weekday',
+  'project',
+  'folder',
+  'document',
+];
 // 设置项不能用的名字：上面这些，以及 template。
 const RESERVED_KEYS = [...BUILTIN_VARS, 'template'];
 const TEXT_TYPES = ['.md', '.html', '.htm', '.css', '.txt', '.json', '.svg', '.js'];
 const LIMITS = { files: 24, file: 1024 * 1024, total: 2 * 1024 * 1024, manifest: 64 * 1024 };
-// 带挂件的插件：图片、字体、音频比文字大，文件也多。
+// 带挂件或页面的插件：图片、字体、音频比文字大，文件也多。
 const WIDGET_LIMITS = {
   files: 200,
   file: 20 * 1024 * 1024,
   total: 50 * 1024 * 1024,
   manifest: LIMITS.manifest,
 };
-const limitsFor = (manifest) => (manifest?.widget ? WIDGET_LIMITS : LIMITS);
+const limitsFor = (manifest) => (manifest?.widget || manifest?.page ? WIDGET_LIMITS : LIMITS);
 // 插件里可以放的素材：图片、字体、音频。
 const ASSET_TYPES = [
   '.png',
@@ -74,6 +85,8 @@ const ASSET_TYPES = [
 const WIDGET_EVENTS = ['ai', 'reading', 'document'];
 // 挂件放在哪：趴在 AI 助手的输入框上，或者窗口的一个角。
 const WIDGET_ANCHORS = ['assistant', 'bottom-right', 'bottom-left', 'top-right', 'top-left'];
+// 页面能不能用项目的文献库：不能（不写）、只读、能改。
+const PAGE_LIBRARY = ['read', 'write'];
 
 class PluginError extends Error {}
 const fail = (message) => {
@@ -160,12 +173,16 @@ function validateManifest(raw, { appVersion } = {}) {
   const files = [...new Set((Array.isArray(raw.files) ? raw.files : []).map(cleanFile))];
   const hasWidget = raw.widget !== undefined && raw.widget !== null;
   if (hasWidget && raw.folio !== 2) fail('用到 widget（挂件）的插件，要写 "folio": 2');
-  const limits = hasWidget ? WIDGET_LIMITS : LIMITS;
+  const hasPage = raw.page !== undefined && raw.page !== null;
+  if (hasPage && raw.folio !== 2) fail('用到 page（页面）的插件，要写 "folio": 2');
+  const limits = hasWidget || hasPage ? WIDGET_LIMITS : LIMITS;
   if (files.length > limits.files) fail(`插件文件太多（最多 ${limits.files} 个）`);
   const widget = hasWidget ? cleanWidget(raw.widget, files) : null;
-  // 只有挂件的插件可以不写 run：它不让 AI 干活，也就没有运行按钮和定时。
+  const page = hasPage ? cleanPage(raw.page, files, name) : null;
+  // 只有挂件或页面的插件可以不写 run：它不让 AI 干活，也就没有运行按钮和定时。
   const hasRun = raw.run !== undefined && raw.run !== null;
-  if (!hasRun && !widget) fail('插件要有 run（交给 AI 的任务）或 widget（挂件）');
+  if (!hasRun && !widget && !page)
+    fail('插件要有 run（交给 AI 的任务）、widget（挂件）或 page（页面）');
   const run = raw.run || {};
   const prompt = hasRun ? cleanFile(run.prompt) : '';
   if (hasRun && !/\.md$/i.test(prompt)) fail('run.prompt 应当是一个 .md 文件');
@@ -175,8 +192,8 @@ function validateManifest(raw, { appVersion } = {}) {
   const script = run.script ? cleanFile(run.script) : '';
   if (script && (!/\.js$/i.test(script) || !files.includes(script)))
     fail('run.script 应当是 files 里列出的一个 .js 文件');
-  // 只有 run.script 指向的那个文件可以是脚本；带挂件的插件里，其余的 .js 都是挂件的代码。
-  if (!widget)
+  // 只有 run.script 指向的那个文件可以是脚本；带挂件或页面的插件里，其余的 .js 是它们的代码。
+  if (!widget && !page)
     for (const f of files) if (/\.js$/i.test(f) && f !== script) fail(`插件里多了脚本文件：${f}`);
   const tools = [...new Set((Array.isArray(run.tools) ? run.tools : []).map((t) => text(t, 40)))];
   for (const t of tools) if (!TOOLS.includes(t)) fail(`不认识的工具：${t}`);
@@ -264,7 +281,19 @@ function validateManifest(raw, { appVersion } = {}) {
     permissions: { network, write },
     settings,
     widget,
+    page,
   };
+}
+
+// 页面：在阅读区里开成一个标签页的 HTML，比如仪表盘。library 写明它能不能读、能不能改文献库。
+function cleanPage(raw, files, name) {
+  if (typeof raw !== 'object' || Array.isArray(raw)) fail('page 应当是一个对象');
+  const entry = cleanFile(raw.entry);
+  if (!/\.html?$/i.test(entry) || !files.includes(entry))
+    fail('page.entry 应当是 files 里列出的一个 .html 文件');
+  if (raw.library !== undefined && !PAGE_LIBRARY.includes(raw.library))
+    fail('page.library 只能是 "read" 或 "write"');
+  return { entry, title: text(raw.title, 24) || name, library: raw.library || '' };
 }
 
 // 挂件：入口页面、大小、放在哪、要订阅的事件，以及可选的美术署名。
@@ -305,6 +334,12 @@ function newPermissions(before, after) {
     web: after.run.web && !before.run.web,
     widget: !!after.widget && !before.widget,
     events: (after.widget?.events || []).filter((e) => !(before.widget?.events || []).includes(e)),
+    page: !!after.page && !before.page,
+    // 页面对文献库的权限变大了：'' → read → write。
+    library:
+      PAGE_LIBRARY.indexOf(after.page?.library) > PAGE_LIBRARY.indexOf(before.page?.library)
+        ? after.page.library
+        : '',
   };
   return added.network.length ||
     added.write.length ||
@@ -312,7 +347,9 @@ function newPermissions(before, after) {
     added.script ||
     added.web ||
     added.widget ||
-    added.events.length
+    added.events.length ||
+    added.page ||
+    added.library
     ? added
     : null;
 }
@@ -383,7 +420,12 @@ function lintPlugin(manifest, { prompt = '', template = '' } = {}) {
   if (manifest.permissions.write.length && !writes && manifest.run.where !== 'folder')
     warnings.push('permissions.write 写了文件夹，但没有用任何写入工具，用不上');
   if (!manifest.description) warnings.push('没有 description，用户在安装时看不到它是做什么的');
-  if (manifest.run.prompt && !manifest.run.tools.length && !manifest.run.script && !manifest.run.web)
+  if (
+    manifest.run.prompt &&
+    !manifest.run.tools.length &&
+    !manifest.run.script &&
+    !manifest.run.web
+  )
     warnings.push('没有任何工具，AI 只能回答一段话，读不到也写不了文件');
   return warnings;
 }
@@ -444,6 +486,7 @@ module.exports = {
   WIDGET_LIMITS,
   WIDGET_EVENTS,
   WIDGET_ANCHORS,
+  PAGE_LIBRARY,
   limitsFor,
   PluginError,
   fail,

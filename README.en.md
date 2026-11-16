@@ -36,9 +36,15 @@ Get the latest version from [Releases](https://github.com/XiangXiaoYuan5254/foli
 - **Whiteboard lessons**: select a passage, formula or figure and a teacher explains it on a whiteboard, with optional voice and a spoken conversation.
 - Works with OpenAI-compatible APIs and Claude (DeepSeek, Kimi, Qwen, Doubao, GLM, MiniMax, Gemini, OpenRouter, SiliconFlow and more), a ChatGPT plan through Codex, a Kimi membership through Kimi Code, or local models with Ollama and LM Studio. You pay your provider directly; Folio is not in between.
 
+**A paper library**
+- Keep the papers of a project in a library: title, authors, year, venue, whether you have read it (and the day you finished), tags, categories, a one-line summary and the files that belong to it. Add a document from its menu and Folio looks its record up in OpenAlex and arXiv; papers the assistant downloads are recorded with their PDF; BibTeX comes in and goes out.
+- Mark papers read from the list or the file tree, search and filter them, and ask the assistant what you have read or let it tidy tags, categories and reading lists (it shows what it would change and waits for you).
+- Official plugins build on it: a **paper dashboard** (progress, a wall of papers, a reading calendar, categories, venues, years), **companion notes** for the paper you are reading, and a **literature review** written from your library and your own highlights.
+- Other AI tools on your computer that speak MCP (OpenScience, Claude Code and others) can read the library, when you turn that on: what you have, what you have read, what you highlighted and noted.
+
 **Make it yours**
 - Ten interface themes, light and dark, optionally following the system.
-- Optional plugins that let AI do a job on a schedule or at a click, such as a daily AI news digest. Official plugins are listed under Settings → Plugins and download only when you click Install; nothing is bundled with the app. Community plugins are off until you allow them. See [folio-plugins](https://github.com/XiangXiaoYuan5254/folio-plugins) for the manifest, script API, template and CLI (MIT).
+- Optional plugins that let AI do a job on a schedule or at a click, such as a daily AI news digest, or add a page of their own to the reading area, such as the paper dashboard. Official plugins are listed under Settings → Plugins and download only when you click Install; nothing is bundled with the app. Community plugins are off until you allow them. See [folio-plugins](https://github.com/XiangXiaoYuan5254/folio-plugins) for the manifest, script API, template and CLI (MIT).
 
 ![A whiteboard lesson explaining a passage](website/assets/board.webp)
 

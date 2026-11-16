@@ -508,30 +508,32 @@ function PluginCard(p: {
   const run = (fn: () => Promise<unknown>) => void fn().catch((e) => p.onError(errorText(e)));
   const shownOpen = open || changed;
   const summary = !runs
-    ? plugin.enabled && m.widget
-      ? `挂件${widgetPlaces[m.widget.anchor]}`
-      : m.description
+    ? plugin.enabled && m.page
+      ? `「${m.page.title}」在左边文件树下面，点一下打开`
+      : plugin.enabled && m.widget
+        ? `挂件${widgetPlaces[m.widget.anchor]}`
+        : m.description
     : plugin.enabled
-    ? [
-        plugin.schedule
-          ? plugin.schedule.off
-            ? '不定时运行'
-            : `每天 ${plugin.schedule.time} 自动运行`
-          : '',
-        own
-          ? plugin.folder
-            ? `放在 ${plugin.folder.shown}`
-            : ''
-          : plugin.root
-            ? `在项目「${plugin.root.split(/[\\/]/).pop()}」里运行`
+      ? [
+          plugin.schedule
+            ? plugin.schedule.off
+              ? '不定时运行'
+              : `每天 ${plugin.schedule.time} 自动运行`
             : '',
-        plugin.lastResult
-          ? `上次 ${when(plugin.lastResult.at)}${plugin.lastResult.ok ? ' 完成' : ' 没有完成'}`
-          : '',
-      ]
-        .filter(Boolean)
-        .join(' · ')
-    : m.description;
+          own
+            ? plugin.folder
+              ? `放在 ${plugin.folder.shown}`
+              : ''
+            : plugin.root
+              ? `在项目「${plugin.root.split(/[\\/]/).pop()}」里运行`
+              : '',
+          plugin.lastResult
+            ? `上次 ${when(plugin.lastResult.at)}${plugin.lastResult.ok ? ' 完成' : ' 没有完成'}`
+            : '',
+        ]
+          .filter(Boolean)
+          .join(' · ')
+      : m.description;
   const origin = [
     m.author,
     plugin.source && 'commit' in plugin.source
@@ -993,7 +995,8 @@ function Permissions({
               </li>
             ))}
             <li className={added?.widget ? 'new' : ''}>
-              挂件可以自己访问任何网站，可能把上面这些发出去；页间从来不会在挂件里问你要密码或 API Key
+              挂件可以自己访问任何网站，可能把上面这些发出去；页间从来不会在挂件里问你要密码或 API
+              Key
             </li>
             {m.widget.art.author || m.widget.art.license ? (
               <li>
@@ -1001,6 +1004,25 @@ function Permissions({
                 {[m.widget.art.author, m.widget.art.license].filter(Boolean).join('，')}
               </li>
             ) : null}
+          </>
+        ) : null}
+        {m.page ? (
+          <>
+            <li className={added?.page ? 'new' : ''}>
+              {`在阅读区开一个标签页「${m.page.title}」（入口在左边文件树下面）`}
+            </li>
+            {m.page.library ? (
+              <li className={added?.page || added?.library ? 'new' : ''}>
+                {m.page.library === 'write'
+                  ? '页面能看到并修改你的文献库：论文、阅读状态、总结，以及你在这些论文的文件里划的重点和笔记'
+                  : '页面能看到你的文献库：论文、阅读状态、总结，以及你在这些论文的文件里划的重点和笔记'}
+              </li>
+            ) : null}
+            <li className={added?.page ? 'new' : ''}>
+              {m.page.library
+                ? '页面可以自己访问任何网站，可能把它看到的文献库和笔记发出去；页间从来不会在页面里问你要密码或 API Key'
+                : '页面可以自己访问任何网站；页间从来不会在页面里问你要密码或 API Key'}
+            </li>
           </>
         ) : null}
         {m.run.script ? (

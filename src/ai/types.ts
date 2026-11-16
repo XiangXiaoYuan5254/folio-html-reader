@@ -231,7 +231,9 @@ export type AgentPreview =
   | { kind: 'note'; path: string; before: string; after: string }
   | { kind: 'source'; path: string; before: string; after: string }
   | { kind: 'create'; path: string; content: string }
-  | { kind: 'download'; path: string; url: string; title: string };
+  | { kind: 'download'; path: string; url: string; title: string }
+  // Changes to the library: each paper and what happens to it. `path` is its name, 文献库.
+  | { kind: 'library'; path: string; items: { title: string; change: string }[] };
 export type AgentStep = {
   id: string;
   tool: string;

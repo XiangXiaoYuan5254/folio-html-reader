@@ -33,9 +33,12 @@ const { createAiLog } = require('./ai-log.cjs');
 const { createHearing } = require('./hearing.cjs');
 const { limiter } = require('./cloud-voice.cjs');
 const papers = require('./papers.cjs');
+const { createLibrary, toBibtex, fromBibtex } = require('./library.cjs');
+const { createLibraryMcp } = require('./library-mcp.cjs');
 const { createPlugins } = require('./plugins.cjs');
 const isMac = process.platform === 'darwin';
 const workspace = new Workspace();
+const library = createLibrary({ atomicWrite });
 let win;
 let allowClose = false;
 let quitting = false;
@@ -61,6 +64,30 @@ let voiceHushes = 0;
 const toWindow = (event) => {
   if (win && !win.isDestroyed()) win.webContents.send('folio:event', event);
 };
+// The library changed: the window and the plugin pages showing it read it again.
+const libraryChanged = () => toWindow({ type: 'library-changed' });
+// The library for other AI tools on this computer, over MCP (electron/library-mcp.cjs). Off
+// until the reader turns it on; its address keeps the same secret and port from then on.
+const libraryMcp = createLibraryMcp({
+  library,
+  workspace,
+  version: app.getVersion(),
+  onChange: libraryChanged,
+});
+async function applyLibraryMcp(config) {
+  if (!config?.enabled || typeof config.token !== 'string') return void (await libraryMcp.stop());
+  const port = await libraryMcp.start({
+    secret: config.token,
+    ...(Number.isInteger(config.port) ? { preferred: config.port } : {}),
+  });
+  if (port !== config.port) {
+    const settings = await readSettings();
+    await atomicWrite(
+      settingsFile(),
+      JSON.stringify({ ...settings, libraryMcp: { ...config, port } }),
+    );
+  }
+}
 const speech = createSpeech({ app, systemPreferences, send: toWindow });
 // Where the helper isn't there, the window's microphone is listened to here.
 const hearing = createHearing({
@@ -345,6 +372,7 @@ function menu() {
 }
 app.on('before-quit', () => {
   quitting = true;
+  void libraryMcp.stop();
   ai?.shutdown();
   speech.stop();
   hearing.stop();
@@ -441,7 +469,9 @@ app
       fetch: (url, init) =>
         init?.redirect === 'manual' ? fetchOneHop(url, init) : net.fetch(url, init),
       atomicWrite,
-      appVersion: app.getVersion(),
+      // FOLIO_APP_VERSION: run from source, 页间 can stand for the version a plugin being
+      // written asks for (engines.folio) before that version is out.
+      appVersion: (!app.isPackaged && process.env.FOLIO_APP_VERSION) || app.getVersion(),
       // FOLIO_DOCUMENTS: tests run from source keep plugin folders out of the real Documents.
       documentsDir: (!app.isPackaged && process.env.FOLIO_DOCUMENTS) || app.getPath('documents'),
       // A plugin loaded from a folder changed: the window reads the list again.
@@ -456,6 +486,9 @@ app
         : {}),
     });
     void plugins.cleanup();
+    void readSettings()
+      .then((settings) => applyLibraryMcp(settings.libraryMcp))
+      .catch(() => {});
     protocol.handle('app', async (request) => {
       const url = new URL(request.url);
       // A plugin's script, alone in a sandboxed page that can't reach the network itself
@@ -477,6 +510,23 @@ app
           const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
           const id = parts.shift() || '';
           const { data, type, csp } = await plugins.widget(id, parts.join('/'));
+          return new Response(data, {
+            headers: {
+              'Content-Type': type,
+              'Cache-Control': 'no-store',
+              ...(csp ? { 'Content-Security-Policy': csp } : {}),
+            },
+          });
+        } catch (e) {
+          return new Response(String(e.message), { status: 403 });
+        }
+      }
+      // A plugin's page, a tab in the reading area: its HTML and the files it lists.
+      if (url.host === 'page') {
+        try {
+          const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
+          const id = parts.shift() || '';
+          const { data, type, csp } = await plugins.page(id, parts.join('/'));
           return new Response(data, {
             headers: {
               'Content-Type': type,
@@ -664,6 +714,7 @@ app
           'plugin-log',
           'plugin-directory',
           'plugin-widget-storage',
+          'library-mcp',
         ].includes(action) &&
         token !== workspace.token
       )
@@ -740,13 +791,106 @@ app
         }
         case 'save-pdf': {
           const data = await papers.download(net.fetch, payload?.url);
-          return {
-            workspace: await workspace.savePdf({ path: payload?.path, data }),
-            size: data.length,
-          };
+          const saved = await workspace.savePdf({ path: payload?.path, data });
+          // What the search said of the paper goes into the library with its file.
+          let paper = null;
+          if (payload?.paper?.title) {
+            ({ paper } = await library.add(workspace, {
+              ...payload.paper,
+              files: [payload.path],
+            }));
+            libraryChanged();
+          }
+          return { workspace: saved, size: data.length, paper };
         }
-        case 'move':
-          return workspace.move(payload);
+        case 'move': {
+          const moved = await workspace.move(payload);
+          await library.moved(workspace, payload.from, payload.to);
+          libraryChanged();
+          return moved;
+        }
+        // 文献库：the project's papers (electron/library.cjs).
+        case 'library':
+          return library.list(workspace);
+        case 'library-detail':
+          return library.detail(workspace, payload?.id);
+        case 'library-add': {
+          const result = payload?.papers
+            ? await library.addMany(workspace, payload.papers, { overwrite: !!payload.overwrite })
+            : await library.add(workspace, payload?.paper, { overwrite: !!payload?.overwrite });
+          libraryChanged();
+          return result;
+        }
+        case 'library-update': {
+          const paper = await library.update(workspace, payload?.id, payload?.patch);
+          libraryChanged();
+          return paper;
+        }
+        case 'library-remove': {
+          const removed = await library.remove(workspace, payload?.ids);
+          libraryChanged();
+          return removed;
+        }
+        case 'library-list-set': {
+          const count = await library.setList(workspace, payload || {});
+          libraryChanged();
+          return count;
+        }
+        // Whether other AI tools on this computer may read the library, and at which address.
+        // `enabled` turns it on or off; `renew` gives the address a new secret.
+        case 'library-mcp': {
+          const settings = await readSettings();
+          let config = settings.libraryMcp || {};
+          let error = '';
+          if (typeof payload?.enabled === 'boolean' || payload?.renew) {
+            config = {
+              ...config,
+              enabled: typeof payload.enabled === 'boolean' ? payload.enabled : !!config.enabled,
+              token:
+                payload.renew || !config.token
+                  ? require('node:crypto').randomBytes(24).toString('base64url')
+                  : config.token,
+            };
+            await atomicWrite(settingsFile(), JSON.stringify({ ...settings, libraryMcp: config }));
+            await applyLibraryMcp(config).catch((e) => (error = e.message));
+          }
+          return { enabled: !!config.enabled, url: libraryMcp.url(), error };
+        }
+        // What OpenAlex and arXiv know of a paper, to fill in its record.
+        case 'library-lookup':
+          return papers.lookup(net.fetch, payload, await ai.paperKeys());
+        case 'library-export': {
+          const all = (await library.list(workspace)).papers;
+          const ids = Array.isArray(payload?.ids) ? new Set(payload.ids) : null;
+          const chosen = ids ? all.filter((p) => ids.has(p.id)) : all;
+          if (!chosen.length) throw Error('没有可导出的论文');
+          const r = await dialog.showSaveDialog(win, {
+            defaultPath: `${path.basename(workspace.root)}-文献.bib`,
+            filters: [{ name: 'BibTeX', extensions: ['bib'] }],
+          });
+          if (r.canceled) return false;
+          await atomicWrite(r.filePath, toBibtex(chosen));
+          return chosen.length;
+        }
+        case 'library-import': {
+          let text = typeof payload?.text === 'string' ? payload.text : null;
+          if (text === null) {
+            const r = await dialog.showOpenDialog(win, {
+              properties: ['openFile'],
+              title: '导入 BibTeX（Zotero、EndNote、Google Scholar 都能导出）',
+              filters: [{ name: 'BibTeX', extensions: ['bib', 'bibtex', 'txt'] }],
+            });
+            if (r.canceled) return false;
+            const stat = await fs.stat(r.filePaths[0]);
+            if (stat.size > 50_000_000) throw Error('文件太大');
+            text = await fs.readFile(r.filePaths[0], 'utf8');
+          }
+          const found = fromBibtex(text);
+          if (!found.length) throw Error('没有在文件里找到论文条目');
+          const result = await library.addMany(workspace, found);
+          libraryChanged();
+          return { created: result.created, updated: result.updated };
+        }
         case 'import-files':
           return workspace.importFiles(payload);
         case 'paste-files': {

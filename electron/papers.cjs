@@ -154,12 +154,16 @@ async function openAlex(fetch, { query, limit, fromYear, pdfOnly, fieldIds, venu
   const params = new URLSearchParams({
     search: query,
     'per-page': String(limit),
-    select:
-      'title,doi,publication_year,cited_by_count,authorships,primary_location,best_oa_location,locations,abstract_inverted_index,id',
+    select: OPENALEX_FIELDS,
   });
   if (filters.length) params.set('filter', filters.join(','));
   const data = await openAlexGet(fetch, 'works', params, key);
-  return (data.results || []).map((w) => {
+  return (data.results || []).map(openAlexWork);
+}
+const OPENALEX_FIELDS =
+  'title,doi,publication_year,cited_by_count,authorships,primary_location,best_oa_location,locations,abstract_inverted_index,id';
+function openAlexWork(w) {
+  {
     const pdf = [w.best_oa_location?.pdf_url, ...(w.locations || []).map((l) => l?.pdf_url)];
     return {
       title: clean(w.title),
@@ -173,7 +177,7 @@ async function openAlex(fetch, { query, limit, fromYear, pdfOnly, fieldIds, venu
       abstract: abstractOf(w.abstract_inverted_index),
       source: 'OpenAlex',
     };
-  });
+  }
 }
 
 // Europe PMC holds PubMed, PubMed Central and the biomedical preprint servers. Its own PDF links
@@ -247,10 +251,16 @@ async function arxiv(fetch, { query, limit, fromYear, categories }) {
     max_results: String(limit),
     sortBy: 'relevance',
   });
-  const xml = await getText(fetch, `https://export.arxiv.org/api/query?${params}`, 'arXiv');
+  return arxivEntries(
+    await getText(fetch, `https://export.arxiv.org/api/query?${params}`, 'arXiv'),
+  );
+}
+function arxivEntries(xml) {
   return [...xml.matchAll(/<entry>([\s\S]*?)<\/entry>/g)].map(([, entry]) => {
     const tag = (name) => entry.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`))?.[1];
-    const id = xmlText(tag('id')).replace(/^https?:\/\/arxiv\.org\/abs\//, '');
+    const id = xmlText(tag('id'))
+      .replace(/^https?:\/\/arxiv\.org\/abs\//, '')
+      .replace(/v\d+$/, '');
     return {
       title: xmlText(tag('title')),
       authors: [...entry.matchAll(/<name>([\s\S]*?)<\/name>/g)].map((m) => xmlText(m[1])),
@@ -392,4 +402,99 @@ async function download(fetch, url, limit = 200 * 1024 * 1024) {
   return data;
 }
 
-module.exports = { search, download, checkOpenAlexKey, FIELDS, LIBRARIES };
+// How alike two titles are, 0 to 1: the same once case and punctuation are set aside, or the
+// share of words they have in common.
+function alike(a, b) {
+  if (!a || !b) return 0;
+  if (titleKey(a) === titleKey(b)) return 1;
+  const words = (t) =>
+    new Set(
+      clean(t)
+        .toLowerCase()
+        .split(/[^\p{L}\p{N}]+/u)
+        .filter(Boolean),
+    );
+  const x = words(a);
+  const y = words(b);
+  let both = 0;
+  for (const w of x) if (y.has(w)) both++;
+  return both / (x.size + y.size - both || 1);
+}
+
+// What the libraries know of one paper, to fill in its record: by DOI, by arXiv number, or by
+// title. Returns the candidates, the likeliest first, each with how well its title fits (`match`).
+async function lookup(fetch, payload, { openalexKey = '' } = {}) {
+  const doi = clean(payload?.doi)
+    .replace(/^(https?:\/\/(dx\.)?doi\.org\/|doi:\s*)/i, '')
+    .slice(0, 200);
+  const arxivId = clean(payload?.arxiv)
+    .replace(/^(https?:\/\/arxiv\.org\/(abs|pdf)\/|arxiv:\s*)/i, '')
+    .replace(/(\.pdf|v\d+)$/gi, '')
+    .slice(0, 40);
+  let title = clean(payload?.title).slice(0, 300);
+  const found = [];
+  const notes = [];
+  const attempt = async (run) => {
+    try {
+      found.push(...(await run()));
+    } catch (e) {
+      notes.push(e?.message || String(e));
+    }
+  };
+  if (doi)
+    await attempt(async () => {
+      const params = new URLSearchParams({ select: OPENALEX_FIELDS });
+      const work = await openAlexGet(
+        fetch,
+        `works/https://doi.org/${encodeURIComponent(doi).replace(/%2F/g, '/')}`,
+        params,
+        openalexKey,
+      );
+      return work?.title ? [{ ...openAlexWork(work), match: 1 }] : [];
+    });
+  if (/^(\d{4}\.\d{4,5}|[a-z-]+(\.[A-Z]{2})?\/\d{7})$/.test(arxivId))
+    await attempt(async () => {
+      const params = new URLSearchParams({ id_list: arxivId, max_results: '1' });
+      const entries = arxivEntries(
+        await getText(fetch, `https://export.arxiv.org/api/query?${params}`, 'arXiv'),
+      ).filter((e) => e.title);
+      return entries.map((e) => ({ ...e, match: 1 }));
+    });
+  // A paper found by its number: its title finds the published version and the citations.
+  const known = found[0];
+  if (known && !title) title = known.title;
+  if (title && (!known || !known.venue || !known.doi))
+    await attempt(async () => {
+      const { papers } = await search(
+        fetch,
+        { query: title, limit: 6, sources: ['openalex', 'arxiv'] },
+        { openalexKey },
+      );
+      return papers.map((p) => ({ ...p, match: alike(p.title, title) }));
+    });
+  // The same paper from two places becomes one record.
+  const merged = [];
+  for (const paper of found) {
+    const same = merged.find(
+      (m) =>
+        titleKey(m.title) === titleKey(paper.title) ||
+        (m.doi && paper.doi && m.doi.toLowerCase() === paper.doi.toLowerCase()) ||
+        (m.arxiv && m.arxiv === paper.arxiv),
+    );
+    if (!same) {
+      merged.push({ ...paper });
+      continue;
+    }
+    for (const key of ['venue', 'doi', 'arxiv', 'pmid', 'year', 'abstract', 'url'])
+      same[key] ||= paper[key];
+    same.citations ??= paper.citations;
+    if (!same.authors?.length) same.authors = paper.authors;
+    same.pdf = [...new Set([...(same.pdf || []), ...(paper.pdf || [])])];
+    same.match = Math.max(same.match, paper.match);
+  }
+  merged.sort((a, b) => b.match - a.match || (b.citations || 0) - (a.citations || 0));
+  if (!merged.length && notes.length) throw Error(notes.join('；'));
+  return { papers: merged.slice(0, 6), notes };
+}
+
+module.exports = { search, lookup, alike, download, checkOpenAlexKey, FIELDS, LIBRARIES };

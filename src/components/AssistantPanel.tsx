@@ -1238,6 +1238,18 @@ function StepPreview({ step }: { step: AgentStep }) {
         ))}
       </ul>
     );
+  if (v.kind === 'library')
+    return (
+      <ul className="agent-library">
+        {v.items.slice(0, 60).map((item, i) => (
+          <li key={i}>
+            <span>{item.title}</span>
+            <em>{item.change}</em>
+          </li>
+        ))}
+        {v.items.length > 60 ? <li>……另有 {v.items.length - 60} 篇</li> : null}
+      </ul>
+    );
   if (v.kind === 'download')
     return (
       <div className="agent-create">

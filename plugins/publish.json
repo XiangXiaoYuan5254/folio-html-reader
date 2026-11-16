@@ -1,6 +1,9 @@
 {
   "plugins": [
     { "dir": "ai-daily", "listed": true },
+    { "dir": "paper-dashboard", "listed": true },
+    { "dir": "paper-companion", "listed": true },
+    { "dir": "literature-review", "listed": true },
     { "dir": "../../folio-shenshen-widget", "listed": false }
   ]
 }

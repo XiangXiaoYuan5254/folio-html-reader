@@ -24,12 +24,26 @@ import {
   ArrowLeftRight,
 } from 'lucide-react';
 import { invoke, subscribe, useWorkspace, isDesktop, documentUrl } from './api';
+import {
+  arxivIdIn,
+  clearLibrary,
+  libraryApi,
+  paperOf,
+  reloadLibrary,
+  titleFromPath,
+  useLibrary,
+} from './library';
+import { LibraryView, PaperDialog, type PaperTarget } from './components/LibraryView';
+import { PluginPageView } from './components/PluginPageView';
+import { PageIcon } from './components/PageIcon';
+import { isOfficial, usePlugins } from './plugins/store';
 import { loadAnnouncements } from './announcements';
 import { isMac, shortcut, trashName } from './platform';
 import type {
   Anchor,
   BackupEntry,
   EraserMode,
+  FileNode,
   FrameEvent,
   NoteReveal,
   OpenDocument,
@@ -39,7 +53,7 @@ import type {
   WorkspaceInfo,
 } from './types';
 import { FileTree } from './components/FileTree';
-import type { FileAction } from './components/FileTree';
+import type { FileAction, LibraryAction } from './components/FileTree';
 import { DocumentTabs } from './components/DocumentTabs';
 import { Toolbar } from './components/Toolbar';
 import { DocumentReader } from './components/DocumentReader';
@@ -342,6 +356,65 @@ export default function App() {
   const setRebind = (rebind: string | null) => doc && patchReader(doc.id, { rebind });
   const [dialog, setDialog] = useState<DialogOptions | null>(null);
   const [settingsRequest, setSettingsRequest] = useState<{ page: SettingsPage } | null>(null);
+  // Pages open as tabs beside the documents: the library ('library') and plugins' pages
+  // ('plugin:<id>'). The one showing covers the reader, which stays as it was underneath.
+  const [pageTabs, setPageTabs] = useState<string[]>([]);
+  const [activePage, setActivePage] = useState<string | null>(null);
+  const [paperDialog, setPaperDialog] = useState<PaperTarget | null>(null);
+  const lib = useLibrary();
+  const pluginList = usePlugins();
+  const pagePlugins = (pluginList?.plugins || []).filter(
+    (w) => w.enabled && w.manifest?.page && (pluginList?.thirdParty || w.bundled || isOfficial(w)),
+  );
+  const pageTitle = (id: string) =>
+    id === 'library'
+      ? '文献库'
+      : pagePlugins.find((w) => `plugin:${w.id}` === id)?.manifest?.page?.title || '';
+  // A page whose plugin was turned off or removed closes.
+  const openPages = pageTabs.filter((id) => pageTitle(id));
+  const shownPage = activePage && openPages.includes(activePage) ? activePage : null;
+  function openPage(id: string) {
+    setPageTabs((tabs) => (tabs.includes(id) ? tabs : [...tabs, id]));
+    setActivePage(id);
+  }
+  function closePage(id: string) {
+    setPageTabs((tabs) => tabs.filter((t) => t !== id));
+    setActivePage((now) => (now === id ? null : now));
+  }
+  // The library is the open project's: read when a project opens and when its files change.
+  useEffect(() => {
+    if (workspace) void reloadLibrary();
+    else clearLibrary();
+  }, [workspace?.token, workspace?.tree]);
+  // A document shown by anything (the assistant, a plugin, a link) comes in front of a page.
+  useEffect(() => setActivePage(null), [model.active]);
+  // Reaching the end of a paper not yet marked read offers to mark it, once for each paper.
+  // Not at once for a page short enough to be all on screen: only after some time with it.
+  const activePaper = paperOf(doc?.path);
+  const offeredRead = useRef(new Set<string>());
+  const readingSince = useRef(Date.now());
+  useEffect(() => {
+    readingSince.current = Date.now();
+  }, [doc?.id]);
+  const atEnd = progress >= 98;
+  useEffect(() => {
+    if (!doc || !activePaper || activePaper.status === 'done' || !atEnd || shownPage) return;
+    if (offeredRead.current.has(activePaper.id)) return;
+    const { id, title, alias } = activePaper;
+    const timer = setTimeout(
+      () => {
+        offeredRead.current.add(id);
+        const name = alias || title;
+        notify(`读到「${name.length > 26 ? `${name.slice(0, 26)}…` : name}」的结尾了`, false, {
+          label: '标为已读',
+          run: () => run(() => libraryApi.update(id, { status: 'done' })),
+        });
+      },
+      Math.max(1500, 45_000 - (Date.now() - readingSince.current)),
+    );
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc?.id, activePaper?.id, activePaper?.status, atEnd, shownPage]);
   function openSettings(page: SettingsPage = 'appearance') {
     void loadAnnouncements(true).catch(() => {});
     setAiSettingsOpen(false);
@@ -393,6 +466,7 @@ export default function App() {
     assistant,
     root: () => hostImpl.current?.root(),
     projectName: () => hostImpl.current?.projectName() || '',
+    activePath: () => hostImpl.current?.activePath(),
     notify: (text, error, action) => notifyRef.current(text, error, action),
     open: (path) => hostImpl.current.open(path),
     show: (threadId, home) => pluginViews.current.show(threadId, home),
@@ -838,6 +912,7 @@ export default function App() {
     focusedSide.current = saved?.right === w.session?.active ? 'right' : 'left';
   }
   function selectDocument(id: string, side?: PaneSide) {
+    setActivePage(null);
     if (split) {
       const visibleSide = split.left === id ? 'left' : split.right === id ? 'right' : null;
       if (visibleSide) focusedSide.current = visibleSide;
@@ -960,6 +1035,10 @@ export default function App() {
     assistant.reset();
     setSplit(null);
     setReaderStates({});
+    setPageTabs([]);
+    setActivePage(null);
+    setPaperDialog(null);
+    clearLibrary();
     useWorkspace(w);
     // Plugin progress can load while documents reopen. Its host must already point at
     // this project, otherwise the live run is omitted and an older run is shown.
@@ -1175,6 +1254,53 @@ export default function App() {
         }
       },
     });
+  }
+  // The library's part of a file's menu: a document joins it (its record looked up from its
+  // name, or for a PDF from what its first page says), is marked read, or shows its record.
+  function libraryAction(action: LibraryAction, node: FileNode) {
+    const paper = paperOf(node.path);
+    if (action === 'info' && paper) return setPaperDialog({ id: paper.id });
+    if ((action === 'done' || action === 'unread' || action === 'reading') && paper)
+      return run(() => libraryApi.update(paper.id, { status: action }));
+    if (action === 'add' && node.kind !== 'folder')
+      return run(async () => {
+        let title = titleFromPath(node.path);
+        let arxiv = arxivIdIn(node.name);
+        if (node.kind === 'pdf')
+          try {
+            // A PDF often says more than its file name: its own title, and on an arXiv
+            // paper's first page, its number.
+            const text = await Promise.race([
+              hostImpl.current.docText(node.path),
+              new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000)),
+            ]);
+            const named = text?.title?.trim();
+            if (named && named.length > 8 && named !== node.name && !/\.pdf$/i.test(named))
+              title = named;
+            arxiv ||= text?.text.slice(0, 4000).match(/arXiv:(\d{4}\.\d{4,5})/)?.[1] || '';
+          } catch {}
+        setPaperDialog({ draft: { title, arxiv, files: [node.path] } });
+      });
+    if (action === 'add' && node.kind === 'folder')
+      return run(async () => {
+        const inside = (nodes: FileNode[]): string[] =>
+          nodes.flatMap((n) =>
+            n.kind === 'folder'
+              ? inside(n.children || [])
+              : isDocKind(n.kind) && n.kind !== 'image' && !paperOf(n.path)
+                ? [n.path]
+                : [],
+          );
+        const files = inside(node.children || []);
+        if (!files.length) return notify('这个文件夹里没有还没加入文献库的文档');
+        const { created } = await libraryApi.addMany(
+          files.map((f) => ({ title: titleFromPath(f), arxiv: arxivIdIn(f), files: [f] })),
+        );
+        notify(`已把 ${created} 篇加入文献库，作者和年份可以在文献库里一键补全`, false, {
+          label: '打开文献库',
+          run: () => openPage('library'),
+        });
+      });
   }
   async function relocate(from: string, to: string) {
     await model.flush();
@@ -1770,14 +1896,19 @@ export default function App() {
       if (open) await model.reload(open.id);
     },
     searchPapers: (options) => invoke('papers-search', options),
-    async savePdf(url, path) {
+    async savePdf(url, path, paper) {
       const saved = await invoke<{ workspace: WorkspaceInfo; size: number }>('save-pdf', {
         url,
         path,
+        paper,
       });
       setWorkspace(saved.workspace);
       return saved.size;
     },
+    library: () => invoke('library'),
+    libraryAdd: (papers, overwrite) => libraryApi.addMany(papers, overwrite),
+    libraryRemove: (ids) => libraryApi.remove(ids),
+    librarySetList: (list) => libraryApi.setList(list),
     async open(path) {
       await openDocument(path);
       setMode('read');
@@ -1824,6 +1955,14 @@ export default function App() {
           onClose={requestCloseDocument}
           onNew={(kind) => fileAction(kind === 'markdown' ? 'create-markdown' : 'create-file', '')}
           autosave={autosave}
+          pages={openPages.map((id) => ({
+            id,
+            title: pageTitle(id),
+            icon: <PageIcon id={id} size={14} />,
+          }))}
+          activePage={shownPage}
+          onSelectPage={setActivePage}
+          onClosePage={closePage}
         />
         <div className="titlebar-end">
           {isDesktop ? (
@@ -1878,6 +2017,39 @@ export default function App() {
           }}
           onImportError={(message) => notify(message, true)}
           onRefresh={() => run(refresh)}
+          paper={paperOf}
+          onLibrary={libraryAction}
+          pages={
+            isDesktop && workspace ? (
+              <nav className="page-shelf" aria-label="文献库与页面">
+                <button
+                  type="button"
+                  className={shownPage === 'library' ? 'selected' : ''}
+                  onClick={() => openPage('library')}
+                >
+                  <PageIcon id="library" size={15} />
+                  <span>文献库</span>
+                  {lib.papers.length ? (
+                    <em title="已读 / 全部">
+                      {lib.papers.filter((x) => x.status === 'done').length}/{lib.papers.length}
+                    </em>
+                  ) : null}
+                </button>
+                {pagePlugins.map((w) => (
+                  <button
+                    key={w.id}
+                    type="button"
+                    className={shownPage === `plugin:${w.id}` ? 'selected' : ''}
+                    title={w.manifest!.name}
+                    onClick={() => openPage(`plugin:${w.id}`)}
+                  >
+                    <PageIcon id={`plugin:${w.id}`} size={15} />
+                    <span>{w.manifest!.page!.title}</span>
+                  </button>
+                ))}
+              </nav>
+            ) : null
+          }
           boards={
             isDesktop ? (
               <BoardShelf
@@ -2417,6 +2589,40 @@ export default function App() {
               <span>高亮 · 批注 · 手绘 · 笔记</span>
             </div>
           )}
+          {workspace && openPages.length ? (
+            <div className="page-host" hidden={!shownPage}>
+              {openPages.includes('library') ? (
+                <div className="page-slot" hidden={shownPage !== 'library'}>
+                  <LibraryView
+                    onOpen={(path) => run(() => openDocument(path))}
+                    onEdit={(id) => setPaperDialog({ id })}
+                    onNew={() => setPaperDialog({ draft: { title: '' } })}
+                    notify={notify}
+                    pages={pagePlugins
+                      .filter((w) => w.manifest!.page!.library)
+                      .map((w) => ({ id: `plugin:${w.id}`, title: w.manifest!.page!.title }))}
+                    onOpenPage={openPage}
+                  />
+                </div>
+              ) : null}
+              {pagePlugins
+                .filter((w) => openPages.includes(`plugin:${w.id}`))
+                .map((w) => (
+                  <PluginPageView
+                    key={w.id}
+                    plugin={w}
+                    active={shownPage === `plugin:${w.id}`}
+                    projectName={workspace.name}
+                    onOpenDocument={async (path) => {
+                      if (!readableFiles(workspace.tree).includes(path))
+                        throw Error(`项目里没有 ${path}`);
+                      await openDocument(path);
+                      setMode('read');
+                    }}
+                  />
+                ))}
+            </div>
+          ) : null}
         </main>
         <Inspector
           onClose={() => setRight(false)}
@@ -2668,11 +2874,28 @@ export default function App() {
           <Dialog key={objectKey(dialog)} options={dialog} onClose={() => setDialog(null)} />
         )}
       </Exit>
+      <Exit when={paperDialog}>
+        {(target) => (
+          <PaperDialog
+            key={objectKey(target)}
+            target={target}
+            files={readableFiles(workspace?.tree || []).filter((f) => docKind(f) !== 'image')}
+            onOpen={(path) => run(() => openDocument(path))}
+            onClose={() => setPaperDialog(null)}
+            notify={notify}
+          />
+        )}
+      </Exit>
       {isDesktop ? (
         <WidgetLayer
           assistant={assistant}
           document={{
-            title: doc ? doc.path.split(/[\\/]/).pop()!.replace(/\.[^.]+$/, '') : '',
+            title: doc
+              ? doc.path
+                  .split(/[\\/]/)
+                  .pop()!
+                  .replace(/\.[^.]+$/, '')
+              : '',
             kind: doc?.kind || 'none',
           }}
         />

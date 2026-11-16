@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>文献综述｜主题</title>
+<style>
+  :root { --ink:#1f2937; --dim:#6b7280; --line:#e5e7eb; --accent:#4338ca; --soft:#eef2ff; --note:#92400e; --note-soft:#fffbeb; }
+  body { max-width: 860px; margin: 56px auto 96px; padding: 0 28px; color: var(--ink); background: #fff;
+    font: 17px/1.85 -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif; }
+  header { border-bottom: 1px solid var(--line); padding-bottom: 22px; margin-bottom: 30px; }
+  .kicker { font-size: 13px; letter-spacing: .08em; color: var(--accent); font-weight: 600; }
+  h1 { font-size: 31px; line-height: 1.35; margin: 8px 0 10px; }
+  .meta { font-size: 13.5px; color: var(--dim); }
+  .meta span + span::before { content: "·"; margin: 0 8px; }
+  .lead { background: var(--soft); border-radius: 12px; padding: 18px 22px; margin: 0 0 36px; }
+  .lead b { display: block; font-size: 13px; color: var(--accent); margin-bottom: 4px; }
+  .map { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin: 16px 0 8px; }
+  .map div { border: 1px solid var(--line); border-radius: 10px; padding: 12px 15px; font-size: 15px; }
+  .map b { display: block; color: var(--accent); margin-bottom: 2px; }
+  .map span { color: var(--dim); font-size: 13px; }
+  h2 { font-size: 22px; margin: 46px 0 14px; }
+  h2 i { font-style: normal; color: var(--accent); margin-right: 10px; font-variant-numeric: tabular-nums; }
+  h3 { font-size: 17.5px; margin: 26px 0 8px; }
+  p { margin: 12px 0; }
+  sup.c, .c { color: var(--accent); font-size: 13.5px; font-weight: 600; vertical-align: baseline; }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; margin: 16px 0; }
+  th, td { border-bottom: 1px solid var(--line); padding: 9px 10px; text-align: left; vertical-align: top; }
+  th { color: var(--dim); font-weight: 600; font-size: 13px; white-space: nowrap; }
+  .mine { background: var(--note-soft); border-left: 4px solid #f59e0b; border-radius: 0 10px 10px 0; padding: 11px 17px; margin: 14px 0; font-size: 15.5px; }
+  .mine b { color: var(--note); font-size: 13px; display: block; margin-bottom: 2px; }
+  .timeline { list-style: none; padding: 0; margin: 14px 0; border-left: 2px solid var(--line); }
+  .timeline li { position: relative; padding: 2px 0 12px 20px; font-size: 15.5px; }
+  .timeline li::before { content: ""; position: absolute; left: -6px; top: 11px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+  .timeline b { font-variant-numeric: tabular-nums; margin-right: 8px; }
+  .open li { margin: 10px 0; }
+  .next { list-style: none; padding: 0; }
+  .next li { border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; margin: 10px 0; font-size: 15.5px; }
+  .next b { display: block; }
+  .next span { color: var(--dim); font-size: 13px; }
+  .refs { font-size: 14.5px; padding-left: 0; list-style: none; counter-reset: ref; }
+  .refs li { counter-increment: ref; position: relative; padding-left: 38px; margin: 7px 0; }
+  .refs li::before { content: "[" counter(ref) "]"; position: absolute; left: 0; color: var(--accent); font-weight: 600; }
+  .refs em { font-style: normal; color: var(--dim); }
+  .refs .read { color: #047857; font-size: 12.5px; margin-left: 6px; }
+  footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 13px; color: var(--dim); }
+</style>
+</head>
+<body>
+<header>
+  <div class="kicker">文献综述</div>
+  <h1>综述的题目</h1>
+  <div class="meta"><span>基于文献库里的 N 篇论文</span><span>其中已读 M 篇</span><span>{{today}}</span></div>
+</header>
+
+<div class="lead"><b>先说结论</b>三五句话：这个方向在解决什么问题，目前主要有哪几条路，它们的分歧在哪，最大的空白是什么。</div>
+
+<div class="map">
+  <div><b>主线一的名字</b>一句话说它的想法。<br><span>代表：[1] [4] [7]</span></div>
+  <div><b>主线二的名字</b>一句话说它的想法。<br><span>代表：[2] [3]</span></div>
+  <div><b>主线三的名字</b>一句话说它的想法。<br><span>代表：[5] [6]</span></div>
+</div>
+
+<h2><i>1</i>主线一的名字</h2>
+<p>这条线要解决的问题和核心想法。然后按“谁往前推了哪一步”讲代表论文<sup class="c">[1]</sup>，而不是一篇一段地复述<sup class="c">[4]</sup>。</p>
+<div class="mine"><b>你的笔记</b>你在 [1] 里划了：“……”，并写道：……（和这里的论点有关时才放）</div>
+<p>这条线内部的分歧，和它没有解决的地方。</p>
+
+<h2><i>2</i>主线二的名字</h2>
+<p>……</p>
+
+<h2><i>3</i>几条线放在一起比</h2>
+<table>
+  <tr><th>路线</th><th>关键假设</th><th>换来了什么</th><th>代价</th><th>代表</th></tr>
+  <tr><td>主线一</td><td>……</td><td>……</td><td>……</td><td><span class="c">[1] [4]</span></td></tr>
+  <tr><td>主线二</td><td>……</td><td>……</td><td>……</td><td><span class="c">[2] [3]</span></td></tr>
+</table>
+
+<h2><i>4</i>时间线</h2>
+<ul class="timeline">
+  <li><b>2017</b>发生了什么，为什么重要<span class="c"> [1]</span></li>
+  <li><b>2020</b>……<span class="c"> [3]</span></li>
+</ul>
+
+<h2><i>5</i>还没解决的问题</h2>
+<ol class="open">
+  <li>一个具体的问题：现有工作为什么没有解决它，库里哪篇最接近<span class="c"> [6]</span>。</li>
+  <li>……</li>
+</ol>
+
+<h2><i>6</i>接下来读什么</h2>
+<ul class="next">
+  <li><b>论文标题</b>为什么值得现在读，读它能补上哪块空白。<br><span>作者 等 · 出处 年份 · 文献库里未读</span></li>
+</ul>
+
+<h2>参考文献</h2>
+<ol class="refs">
+  <li>作者 等. 论文标题. <em>出处, 年份.</em><span class="read">已读</span></li>
+  <li>作者 等. 论文标题. <em>出处, 年份.</em></li>
+</ol>
+
+<footer>由页间「文献综述」根据文献库里的论文和你的批注生成于 {{today}}。论断以原文为准。</footer>
+</body>
+</html>

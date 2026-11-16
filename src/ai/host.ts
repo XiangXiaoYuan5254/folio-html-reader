@@ -1,6 +1,7 @@
 import type { Anchor, Annotation, DocumentData } from '../types';
 import type { DocText, Paper, PdfFigure } from './types';
 import type { DocKind } from '../doc-kind';
+import type { Library, LibraryPaper, PaperPatch } from '../library';
 
 // What the AI features may do in the app. App.tsx implements it on top of the open
 // documents, the readers and the workspace; everything goes through the same paths as
@@ -42,7 +43,16 @@ export type AiHost = {
     venues?: string[];
   }): Promise<{ papers: Paper[]; notes: string[]; searched: string[] }>;
   // Downloads a PDF into the project, creating folders on the way; resolves with its size.
-  savePdf(url: string, path: string): Promise<number>;
+  // `paper`: what is known of it, kept in the library with the file.
+  savePdf(url: string, path: string, paper?: PaperPatch & { title: string }): Promise<number>;
+  // 文献库: the project's papers and reading lists.
+  library(): Promise<Library>;
+  libraryAdd(
+    papers: (PaperPatch & { id?: string })[],
+    overwrite?: boolean,
+  ): Promise<{ papers: LibraryPaper[]; created: number; updated: number }>;
+  libraryRemove(ids: string[]): Promise<number>;
+  librarySetList(list: { name: string; note?: string; papers: string[] }): Promise<number>;
   open(path: string): Promise<void>;
   // Shows `path` in two-column reading next to `beside` (e.g. a notes page next to its paper);
   // `linked` also turns on 同步滚动, for a translation and its PDF.

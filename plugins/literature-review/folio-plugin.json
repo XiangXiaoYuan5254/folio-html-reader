@@ -1,0 +1,52 @@
+{
+  "folio": 1,
+  "id": "literature-review",
+  "name": "文献综述",
+  "version": "1.0.0",
+  "author": "页间",
+  "description": "根据文献库里的论文和你在上面划的重点、写的笔记，写一篇文献综述：按思路把论文串起来，比较各家的做法，指出还没解决的问题，并从没读的论文里挑出接下来该读的。结果是项目里的一篇 HTML。",
+  "engines": {
+    "folio": ">=0.32.0"
+  },
+  "icon": "icon.svg",
+  "files": ["prompt.md", "template.html", "icon.svg"],
+  "run": {
+    "prompt": "prompt.md",
+    "template": "template.html",
+    "tools": ["list_files", "list_library", "read_annotations", "read_document", "search", "create_html"],
+    "where": "project"
+  },
+  "triggers": [
+    {
+      "type": "button",
+      "label": "写一篇文献综述"
+    }
+  ],
+  "permissions": {
+    "network": [],
+    "write": ["{{output}}"]
+  },
+  "settings": [
+    {
+      "key": "topic",
+      "type": "text",
+      "label": "综述的主题",
+      "hint": "比如“大模型智能体的规划方法”。不填就综述整个文献库。",
+      "default": ""
+    },
+    {
+      "key": "scope",
+      "type": "text",
+      "label": "用哪些论文",
+      "hint": "可以写标签、分类或书单的名字，或者“只用已读的”。不填就由主题决定。",
+      "default": ""
+    },
+    {
+      "key": "output",
+      "type": "folder",
+      "label": "综述放在项目里的哪个文件夹",
+      "hint": "",
+      "default": "综述"
+    }
+  ]
+}

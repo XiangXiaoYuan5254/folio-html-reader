@@ -19,8 +19,11 @@ export type PluginWidget = {
   events: WidgetEvent[];
   art: { author: string; license: string };
 };
+// A page of the plugin's own, shown as a tab in the reading area (a dashboard, say).
+// `library`: whether it may read, or also change, the project's library.
+export type PluginPage = { entry: string; title: string; library: '' | 'read' | 'write' };
 export type PluginManifest = {
-  // 2 when it has a widget.
+  // 2 when it has a widget or a page.
   folio: 1 | 2;
   id: string;
   name: string;
@@ -47,6 +50,7 @@ export type PluginManifest = {
   // A widget in the window (folio: 2); a plugin with only a widget has an empty run (no prompt)
   // and no triggers.
   widget: PluginWidget | null;
+  page: PluginPage | null;
 };
 export type PluginSource =
   | { type: 'bundled' }
@@ -116,6 +120,9 @@ export type PluginAdded = {
   web: boolean;
   widget: boolean;
   events: string[];
+  page: boolean;
+  // The page's hold on the library grew: to this.
+  library: '' | 'read' | 'write';
 };
 // A plugin read from a link and waiting to be installed.
 export type PluginInspection = {

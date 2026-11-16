@@ -54,7 +54,7 @@
 
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
-| `folio` | ✓ | 插件格式版本：`1`；带挂件（`widget`）时写 `2`，旧版页间看到 2 会提示用户更新。 |
+| `folio` | ✓ | 插件格式版本：`1`；带挂件（`widget`）或页面（`page`）时写 `2`，旧版页间看到 2 会提示用户更新。 |
 | `id` | ✓ | 唯一标识：小写字母、数字和 `-`，2–40 个字符。**发布后不要改**：页间按它区分插件，改了就是另一个插件。 |
 | `name` | ✓ | 显示的名字，最多 40 个字。 |
 | `version` | ✓ | 版本号 `1.2.3`，可以带预发布后缀，如 `1.3.0-beta.1`。每次发布新版本都要改。 |
@@ -101,11 +101,19 @@
 | `edit_html` | 修改 HTML 文件（查找替换） | ✓ | |
 | `add_highlights` | 在文档里加高亮批注 | ✓ | |
 | `write_note` | 写文档笔记（追加或替换） | ✓ | |
-| `save_pdf` | 下载一篇论文的 PDF 到项目里 | ✓ | |
+| `save_pdf` | 下载一篇论文的 PDF 到项目里（它的作者、年份、出处会一起记进文献库） | ✓ | |
+| `list_library` | 看项目的文献库：每篇论文的标题、作者、年份、出处、读没读过、标签、分类、总结和文件，以及书单 | | |
+| `update_library` | 改文献库：新增论文、改信息和阅读状态、移出论文、排书单 | | |
 
 - 用了 `fetch_url` 或 `read_feed`，就必须写 `permissions.network`。脚本自己联网不用写；脚本用 `folio.fetch` 访问的网站要写。
 - 用了任何写入工具，就必须写 `permissions.write`。
 - 聊天时 AI 写文件要用户确认；插件运行时不问，改为只允许写进 `permissions.write` 列出的文件夹，写到别处会被拒绝。
+
+`update_library` 改的是文献库，不是文件夹，所以不用写 `permissions.write`；安装时用户会看到“修改文献库”。这两个工具需要页间 0.32.0 或更新的版本，记得写 `engines.folio`。
+
+### page：页面
+
+插件自己的一整页 HTML，在阅读区里开成一个标签页，比如仪表盘；可以读（写明后也可以改）项目的文献库。要写 `"folio": 2`；只有页面的插件可以不写 `run` 和 `triggers`。字段和运行环境见 [页面 API](page-api.md)。
 
 ### widget：挂件
 
@@ -149,7 +157,7 @@
 
 | 字段 | 说明 |
 | --- | --- |
-| `key` | 小写字母开头，只用小写字母、数字和 `_`，最多 30 个字符；不能和内置变量重名（`today`、`yesterday`、`week_ago`、`now`、`weekday`、`project`、`folder`、`template`）。 |
+| `key` | 小写字母开头，只用小写字母、数字和 `_`，最多 30 个字符；不能和内置变量重名（`today`、`yesterday`、`week_ago`、`now`、`weekday`、`project`、`folder`、`document`、`template`）。 |
 | `type` | `text`（一行）、`textarea`（多行）或 `folder`（文件夹，可以点「选择…」挑）。 |
 | `label` | 显示的名字，最多 40 个字。 |
 | `hint` | 下面的小字说明，最多 160 个字。 |
@@ -171,14 +179,15 @@
 | `{{weekday}}` | 星期几，如 `星期四` |
 | `{{project}}` | 打开的项目的名字（`project` 插件） |
 | `{{folder}}` | 插件自己的文件夹，如 `~/Documents/AI日报`（`folder` 插件） |
+| `{{document}}` | 运行时用户正在看的文档，项目内路径，如 `论文/attention.pdf`（`project` 插件；没有打开文档时是空的） |
 
 不认识的变量会原样留在文字里，`folio-plugin validate` 会提示。
 
 ## 文件和大小的限制
 
-- `files` 里可以是 `.md .html .htm .css .txt .json .svg`，图片、字体和音频（`.png .webp .gif .jpg .jpeg .avif .woff .woff2 .ttf .otf .mp3 .wav .ogg .m4a`），加上 `run.script` 指向的**一个** `.js`；带挂件的插件 `.js` 不限个数。
+- `files` 里可以是 `.md .html .htm .css .txt .json .svg`，图片、字体和音频（`.png .webp .gif .jpg .jpeg .avif .woff .woff2 .ttf .otf .mp3 .wav .ogg .m4a`），加上 `run.script` 指向的**一个** `.js`；带挂件或页面的插件 `.js` 不限个数。
 - 文件名只用字母、数字和 `. _ - /`，不能以 `/` 开头，不能有 `..`。可以放在子文件夹里，如 `assets/icon.svg`。
-- 最多 24 个文件；每个不超过 1 MB；连同清单合计不超过 2 MB；清单本身不超过 64 KB。带挂件的插件放宽到最多 200 个文件，每个不超过 20 MB，合计不超过 50 MB。
+- 最多 24 个文件；每个不超过 1 MB；连同清单合计不超过 2 MB；清单本身不超过 64 KB。带挂件或页面的插件放宽到最多 200 个文件，每个不超过 20 MB，合计不超过 50 MB。
 - 没列在 `files` 里的文件不会被安装（比如 `README.md`、`folio.d.ts`、`jsconfig.json` 可以放在文件夹里给开发用）。
 
 ## 页间怎么把这些交给 AI

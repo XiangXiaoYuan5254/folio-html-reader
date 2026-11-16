@@ -20,10 +20,7 @@ const stopped = new Set<string>();
 
 type Values = Record<string, unknown>;
 
-export function WidgetLayer(p: {
-  assistant: Assistant;
-  document: DocumentState;
-}) {
+export function WidgetLayer(p: { assistant: Assistant; document: DocumentState }) {
   const list = usePlugins();
   const [, redraw] = useState(0);
   const ai = useAiState(p.assistant);
@@ -87,9 +84,7 @@ function usePlace(widget: PluginWidget): Place {
               top: Math.round(r.top - widget.size.height + composerOverlap(widget.size.height)),
             }
           : null;
-      setPlace((now) =>
-        now?.left === next?.left && now?.top === next?.top ? now : next,
-      );
+      setPlace((now) => (now?.left === next?.left && now?.top === next?.top ? now : next));
     };
     measure();
     const timer = setInterval(measure, 250);
@@ -206,11 +201,7 @@ function WidgetBox(p: {
       : corners[widget.anchor]),
   };
   return (
-    <div
-      className={`widget-box${shown ? '' : ' away'}`}
-      style={style}
-      data-widget={id}
-    >
+    <div className={`widget-box${shown ? '' : ' away'}`} style={style} data-widget={id}>
       <iframe
         ref={frame}
         title={plugin.manifest?.name || id}

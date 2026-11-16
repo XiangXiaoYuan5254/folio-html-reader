@@ -118,7 +118,9 @@
               "edit_html",
               "add_highlights",
               "write_note",
-              "save_pdf"
+              "save_pdf",
+              "list_library",
+              "update_library"
             ]
           }
         },
@@ -318,6 +320,32 @@
           }
         }
       }
+    },
+    "page": {
+      "type": "object",
+      "description": "页面：插件自己的一整页 HTML，在阅读区里开成一个标签页（要写 \"folio\": 2）。见 docs/page-api.md。",
+      "required": [
+        "entry"
+      ],
+      "properties": {
+        "entry": {
+          "type": "string",
+          "pattern": "\\.html?$",
+          "description": "页面，files 里的一个 .html。"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 24,
+          "description": "标签页和侧栏里显示的名字；不写就用插件的名字。"
+        },
+        "library": {
+          "enum": [
+            "read",
+            "write"
+          ],
+          "description": "能不能用项目的文献库：read 只读，write 还能改。不写就用不了 folio.library。"
+        }
+      }
     }
   },
   "anyOf": [
@@ -329,6 +357,11 @@
     {
       "required": [
         "widget"
+      ]
+    },
+    {
+      "required": [
+        "page"
       ]
     }
   ]

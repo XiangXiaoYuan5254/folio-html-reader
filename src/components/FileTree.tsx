@@ -15,6 +15,7 @@ import {
   MoreHorizontal,
   HardDrive,
   BookOpen,
+  Check,
   X,
 } from 'lucide-react';
 import type { FileNode, WorkspaceInfo } from '../types';
@@ -51,6 +52,9 @@ function Unfold({ open, children }: { open: boolean; children: () => ReactNode }
 }
 export type FileAction =
   'create-file' | 'create-markdown' | 'create-folder' | 'rename' | 'move' | 'trash' | 'reveal';
+// What a file's menu does with the library: a document (or a folder's documents) joins it,
+// its paper's record is shown, or its paper is marked.
+export type LibraryAction = 'add' | 'info' | 'done' | 'reading' | 'unread';
 export function FileTree({
   workspace,
   active,
@@ -65,6 +69,9 @@ export function FileTree({
   onImportError,
   boards,
   status,
+  paper,
+  onLibrary,
+  pages,
 }: {
   workspace: WorkspaceInfo | null;
   active?: string;
@@ -80,6 +87,11 @@ export function FileTree({
   // The project's whiteboards, under its files.
   boards?: ReactNode;
   status?: ReactNode;
+  // The paper of the library a document belongs to, for its mark and its menu.
+  paper?: (path: string) => { status: 'unread' | 'reading' | 'done'; title: string } | undefined;
+  onLibrary?: (action: LibraryAction, node: FileNode) => void;
+  // The library and the plugins' pages, under the project's files.
+  pages?: ReactNode;
 }) {
   const [query, setQuery] = useState('');
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -156,7 +168,27 @@ export function FileTree({
       ['reveal', isMac ? '在 Finder 中显示' : '在资源管理器中显示'],
       ['trash', `移到${trashName}`],
     ];
+    // The library's part: for a document, or for all the documents of a folder.
+    const of = paper?.(n.path);
+    const library: MenuItem[] = !onLibrary
+      ? []
+      : n.kind === 'folder'
+        ? [{ label: '里面的文档加入文献库', onSelect: () => onLibrary('add', n) }]
+        : !isDocKind(n.kind) || n.kind === 'image'
+          ? []
+          : of
+            ? [
+                of.status === 'done'
+                  ? { label: '标为未读', onSelect: () => onLibrary('unread', n) }
+                  : { label: '标为已读', onSelect: () => onLibrary('done', n) },
+                ...(of.status === 'unread'
+                  ? [{ label: '标为在读', onSelect: () => onLibrary('reading', n) }]
+                  : []),
+                { label: '文献信息…', onSelect: () => onLibrary('info', n) },
+              ]
+            : [{ label: '加入文献库…', onSelect: () => onLibrary('add', n) }];
     return [
+      ...library,
       paste,
       ...actions.map(([action, label]) => ({
         label,
@@ -252,6 +284,20 @@ export function FileTree({
       },
     };
   }
+  // A paper being read or read shows on its files; one not started shows nothing.
+  function readMark(n: FileNode) {
+    const of = n.kind === 'folder' ? undefined : paper?.(n.path);
+    if (!of || of.status === 'unread') return null;
+    return (
+      <span
+        className={`tree-read ${of.status}`}
+        title={`${of.status === 'done' ? '已读' : '在读'} · ${of.title}`}
+        aria-label={of.status === 'done' ? '已读' : '在读'}
+      >
+        {of.status === 'done' ? <Check size={9} strokeWidth={3.5} /> : null}
+      </span>
+    );
+  }
   function match(n: FileNode): boolean {
     return n.name.toLowerCase().includes(query.toLowerCase()) || !!n.children?.some(match);
   }
@@ -327,6 +373,7 @@ export function FileTree({
             )}
             <span>{n.name}</span>
           </button>
+          {readMark(n)}
           <IconButton
             label={`${n.name} 的操作`}
             aria-haspopup="menu"
@@ -451,6 +498,7 @@ export function FileTree({
                   : '拖到文件夹或项目名称移动'}
         </div>
       ) : null}
+      {workspace ? pages : null}
       {workspace ? boards : null}
       {menu && workspace ? (
         <PopupMenu

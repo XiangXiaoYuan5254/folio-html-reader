@@ -18,6 +18,8 @@ export type PluginHost = {
   assistant: Assistant;
   root(): string | undefined;
   projectName(): string;
+  // The document open in front, for a plugin that works on what is being read.
+  activePath(): string | undefined;
   notify(text: string, error?: boolean, action?: { label: string; run: () => void }): void;
   open(path: string): Promise<void>;
   // Shows a run's conversation in 整个项目, where its steps come in as it works. A plugin with
@@ -106,6 +108,8 @@ export async function runPluginNow(
       ...timeVars(),
       project: host.projectName(),
       folder: place?.shown || '',
+      // The document being read (a project plugin's {{document}}); none for a folder plugin.
+      document: own ? '' : host.activePath() || '',
     };
     const folders = own ? [] : writableFolders(m, info.settings);
     const reserved = new Set([...agentTools, ...webTools].map((t) => t.name));

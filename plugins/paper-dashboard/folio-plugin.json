@@ -1,0 +1,27 @@
+{
+  "folio": 2,
+  "id": "paper-dashboard",
+  "name": "论文仪表盘",
+  "version": "1.0.0",
+  "author": "页间",
+  "description": "把文献库画成一张仪表盘：总体进度、书墙、阅读日历，按类别、发表渠道与 CCF 等级、年份看读了多少，还有能多选筛选的论文浏览器。点一篇先看自己的总结和划的重点，再打开原文。",
+  "engines": {
+    "folio": ">=0.32.0"
+  },
+  "icon": "icon.svg",
+  "files": ["index.html", "app.js", "adapter.js", "venues.js", "icon.svg"],
+  "page": {
+    "entry": "index.html",
+    "title": "论文仪表盘",
+    "library": "write"
+  },
+  "settings": [
+    {
+      "key": "venues",
+      "type": "textarea",
+      "label": "补充或更正渠道等级",
+      "hint": "一行一个：渠道名=等级，等级写 A、B、C 或 -（无评级），如 KDD=A。内置的是 AI 方向常见渠道的 CCF 等级。",
+      "default": ""
+    }
+  ]
+}

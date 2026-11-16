@@ -307,12 +307,17 @@ const sandboxCspFor = (html) =>
 // iframe sandbox="allow-scripts" 里（没有同源权限），看不到页间的界面、用户的文件和 API Key；
 // 可以自己联网，但代码只能来自插件包（widgetCspFor）。它通过 postMessage 和页间说话：收事件、
 // 存取自己的小存储、写运行日志、回应页间的 ping（src/plugins/widget.ts）。
-function widgetPage({ html, settings, events }) {
+//
+// 页面（page）用同一套：多一个 folio.library（清单里写了 page.library 才有）、folio.open（在阅读区
+// 打开项目里的一篇文档）和 folio.openExternal（用浏览器打开一个网页）。
+function widgetPage({ html, settings, events, page }) {
   const safe = (value) => JSON.stringify(value).replace(/</g, '\\u003c');
+  const what = page ? '页面' : '挂件';
   const boot = `<script>
 (() => {
   const host = window.parent;
-  const allowed = new Set(${safe(['theme', 'visible', ...(events || [])])});
+  const allowed = new Set(${safe(['theme', 'visible', ...(page?.library ? ['library'] : []), ...(events || [])])});
+  const page = ${safe(page ? { title: page.title, library: page.library } : null)};
   const listeners = new Map();
   const pending = new Map();
   let seq = 0;
@@ -329,7 +334,7 @@ function widgetPage({ html, settings, events }) {
     get theme() { return theme; },
     on(event, listener) {
       if (typeof listener !== 'function') throw Error('folio.on(event, listener)');
-      if (!allowed.has(event)) say('warn', ['挂件订阅了 ' + event + '，但 widget.events 里没有写它，收不到']);
+      if (!allowed.has(event)) say('warn', ['${what}订阅了 ' + event + '，但清单里没有写它，收不到']);
       const set = listeners.get(event) || new Set();
       set.add(listener);
       listeners.set(event, set);
@@ -340,6 +345,22 @@ function widgetPage({ html, settings, events }) {
     log: (...args) => say('info', args),
     warn: (...args) => say('warn', args),
     error: (...args) => say('error', args),
+    ...(page ? {
+      page: Object.freeze(page),
+      open: (path) => call('open', String(path)),
+      openExternal: (url) => call('external', String(url)),
+      project: () => call('project'),
+    } : {}),
+    ...(page && page.library ? {
+      library: Object.freeze({
+        list: () => call('library-list'),
+        get: (id) => call('library-get', String(id)),
+        update: (id, patch) => call('library-update', { id: String(id), patch }),
+        add: (paper) => call('library-add', paper),
+        remove: (id) => call('library-remove', String(id)),
+        setList: (list) => call('library-set-list', list),
+      }),
+    } : {}),
   });
   Object.defineProperty(window, 'folio', { value: folio });
   addEventListener('message', (e) => {
@@ -356,12 +377,12 @@ function widgetPage({ html, settings, events }) {
         try {
           listener(m.data);
         } catch (err) {
-          say('error', ['挂件处理 ' + m.event + ' 时出错：', err]);
+          say('error', ['${what}处理 ' + m.event + ' 时出错：', err]);
         }
     }
   });
-  addEventListener('error', (e) => say('error', ['挂件出错：' + e.message + (e.filename ? '（' + e.filename.split('/').pop() + ' 第 ' + e.lineno + ' 行）' : '')]));
-  addEventListener('unhandledrejection', (e) => say('error', ['挂件里有没处理的错误：', e.reason]));
+  addEventListener('error', (e) => say('error', ['${what}出错：' + e.message + (e.filename ? '（' + e.filename.split('/').pop() + ' 第 ' + e.lineno + ' 行）' : '')]));
+  addEventListener('unhandledrejection', (e) => say('error', ['${what}里有没处理的错误：', e.reason]));
   send({ type: 'ready' });
 })();
 </script>`;
@@ -382,6 +403,23 @@ function widgetPage({ html, settings, events }) {
 // comes only from its own files: scripts from app://widget/<id>/ and the inline ones served.
 const widgetCspFor = (id, html) => {
   const own = `app://widget/${id}/`;
+  return [
+    "default-src 'none'",
+    `script-src ${own} ${inlineScriptHashes(html).join(' ')}`,
+    `style-src 'unsafe-inline' ${own} https:`,
+    `img-src ${own} http: https: data: blob:`,
+    `media-src ${own} http: https: data: blob:`,
+    `font-src ${own} https: data:`,
+    `connect-src ${own} http: https: ws: wss: data: blob:`,
+    "base-uri 'none'",
+    "form-action 'none'",
+  ].join('; ');
+};
+// A page is held to what a widget is: it may reach any website, and its code comes only from
+// its own files. A page given the library can therefore send what it reads elsewhere, which the
+// plugin's card says before it is installed.
+const pageCspFor = (id, html) => {
+  const own = `app://page/${id}/`;
   return [
     "default-src 'none'",
     `script-src ${own} ${inlineScriptHashes(html).join(' ')}`,
@@ -1136,11 +1174,35 @@ function createPlugins({
         : data.toString('utf8').replace(/\r\n?/g, '\n');
     return { data: Buffer.from(html), type, csp: widgetCspFor(id, html) };
   }
-  // A widget's own storage (folio.storage): read it, or replace it with a new value.
+  // A plugin's page (app://page/<id>/) and its files, served like a widget's while the plugin
+  // is on.
+  async function page(id, relative) {
+    const entry = await find(id);
+    const { manifest, dir } = entry;
+    const s = await readState();
+    if (!trusted(entry, s) && !s.thirdParty) fail('「社区插件」已关闭');
+    if (!s.plugins[id]?.enabled) fail('插件没有开启');
+    if (!manifest.page) fail('这个插件没有页面');
+    const name = String(relative || '') || manifest.page.entry;
+    if (!manifest.files.includes(name)) fail(`插件里没有 ${name.slice(0, 80)}`);
+    const type = mediaTypes[path.extname(name).toLowerCase()] || 'application/octet-stream';
+    const data = await fs.readFile(path.join(dir, name));
+    if (!/^text\/html/.test(type)) return { data, type };
+    const html =
+      name === manifest.page.entry
+        ? widgetPage({
+            html: data.toString('utf8'),
+            settings: settingsFor(manifest, s.plugins[id]?.settings),
+            page: manifest.page,
+          })
+        : data.toString('utf8').replace(/\r\n?/g, '\n');
+    return { data: Buffer.from(html), type, csp: pageCspFor(id, html) };
+  }
+  // A widget's or a page's own storage (folio.storage): read it, or replace it with a new value.
   const widgetData = (id) => path.join(userDir, 'plugin-data', `${id}.json`);
   async function widgetStorage({ id, value, set }) {
     const { manifest } = await find(String(id));
-    if (!manifest.widget) fail('这个插件没有挂件');
+    if (!manifest.widget && !manifest.page) fail('这个插件没有挂件或页面');
     const file = widgetData(manifest.id);
     if (!set)
       return fs
@@ -1368,6 +1430,7 @@ function createPlugins({
     fetch: pluginFetch,
     sandbox,
     widget,
+    page,
     widgetStorage,
     folder,
     saveRun,
@@ -1420,6 +1483,7 @@ module.exports = {
   sandboxCspFor,
   widgetPage,
   widgetCspFor,
+  pageCspFor,
   inlineScriptHashes,
   cleanDirectory,
   PluginError,
