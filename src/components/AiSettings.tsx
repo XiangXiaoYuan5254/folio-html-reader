@@ -1839,7 +1839,7 @@ function GoogleAccount({ onReady, onLogout }: { onReady: () => void; onLogout: (
         </p>
       ) : null}
       <p className="ai-codex-note">
-        使用 Google 账号的 Antigravity 额度，无需 API Key。插件使用独立的 API 服务。
+        使用 Google 账号的 Antigravity 额度，无需 API Key。
       </p>
     </div>
   );

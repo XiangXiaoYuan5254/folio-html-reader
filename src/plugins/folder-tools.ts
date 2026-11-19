@@ -1,7 +1,7 @@
 import { invoke } from '../api';
 import type { PreparedTool, ToolOutcome } from '../ai/agent-tools';
 import type { ToolDef } from '../ai/types';
-import { htmlToText } from './web-tools';
+import { htmlToText, localTime } from './web-tools';
 
 // The tools of a plugin that works in a folder of its own (run.where "folder"): the folder is
 // all it sees and the only place it writes, whichever project is open. electron/plugins.cjs
@@ -43,10 +43,6 @@ export const folderTools: ToolDef[] = [
 const fail = (content: string): ToolOutcome => ({ content, isError: true, detail: content });
 const folderOp = <T>(id: string, payload: Record<string, unknown>) =>
   invoke<T>('plugin-folder', { id, ...payload });
-const day = (ms: number) => {
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
 
 export function prepareFolderTool(
   pluginId: string,
@@ -67,7 +63,7 @@ export function prepareFolderTool(
         }>(pluginId, { action: 'list' });
         return {
           content: files.length
-            ? `文件夹 ${folder} 里有 ${files.length} 篇文档（从新到旧）：\n${files.map((f) => `${f.path}（${day(f.modified)}）`).join('\n')}`
+            ? `文件夹 ${folder} 里有 ${files.length} 篇文档（从新到旧）：\n${files.map((f) => `${f.path}（${localTime(f.modified)}）`).join('\n')}`
             : `文件夹 ${folder} 里还没有文档。`,
           detail: `${files.length} 篇文档`,
         };

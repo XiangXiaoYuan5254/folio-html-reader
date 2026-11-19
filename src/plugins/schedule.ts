@@ -17,6 +17,13 @@ export function timeVars(d = new Date()) {
     weekday: `星期${weekdays[d.getDay()]}`,
   };
 }
+// The reader's time zone, for comparing with times sources give in UTC: “UTC+8”.
+export function utcOffset(d = new Date()) {
+  const minutes = -d.getTimezoneOffset();
+  const h = Math.floor(Math.abs(minutes) / 60);
+  const m = Math.abs(minutes) % 60;
+  return `UTC${minutes < 0 ? '-' : '+'}${h}${m ? `:${pad(m)}` : ''}`;
+}
 export const fill = (text: string, vars: Record<string, string>) =>
   text.replace(/\{\{\s*(\w+)\s*\}\}/g, (all, key) => (key in vars ? vars[key] : all));
 
@@ -71,8 +78,8 @@ export function pluginSystem(
   ];
   return [
     own
-      ? `你是页间（Folio）的插件「${m.name}」，在你自己的文件夹里工作。现在是 ${vars.now}，${vars.weekday}。`
-      : `你是页间（Folio）的插件「${m.name}」，正在项目「${vars.project}」里运行。现在是 ${vars.now}，${vars.weekday}。`,
+      ? `你是页间（Folio）的插件「${m.name}」，在你自己的文件夹里工作。现在是 ${vars.now}（${utcOffset()}），${vars.weekday}。`
+      : `你是页间（Folio）的插件「${m.name}」，正在项目「${vars.project}」里运行。现在是 ${vars.now}（${utcOffset()}），${vars.weekday}。`,
     fill(loaded.prompt, vars).trim(),
     loaded.template
       ? `## 输出模板\n\n照这个模板的结构和样式写 HTML：保留 <style>，把示例内容换成真实内容。\n\n\`\`\`html\n${fill(loaded.template, vars).trim()}\n\`\`\``

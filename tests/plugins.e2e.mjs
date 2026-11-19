@@ -646,7 +646,9 @@ try {
       const page = __webTools.htmlToText('<html><head><title>T</title><script>evil()</script></head><body><nav>菜单</nav><article><h2>标题</h2><p>正文<a href="/x">链接</a></p>${'<p>填充文字。</p>'.repeat(60)}</article></body></html>', 'https://site.test/a/');
       const rss = __webTools.parseFeed('<rss><channel><title>博客</title><item><title>新模型</title><link>https://b.test/1</link><pubDate>Tue, 03 Nov 2026 08:00:00 GMT</pubDate><description>&lt;p&gt;简介&lt;/p&gt;</description></item></channel></rss>', 'https://b.test/feed');
       const atom = __webTools.parseFeed('<feed xmlns="http://www.w3.org/2005/Atom"><title>arXiv</title><entry><id>http://arxiv.org/abs/1</id><title>A Paper</title><published>2026-11-03T00:00:00Z</published><summary>Abs</summary><author><name>Ada</name></author><link href="http://arxiv.org/abs/1v1" rel="alternate"/></entry></feed>', 'https://export.arxiv.org/api/query');
-      return { page, rss, atom };
+      // A 日报 of many <article> cards, one of them long: read whole, not just that card.
+      const cards = __webTools.htmlToText('<html><body><h1>日报</h1><article><h3><a href="https://a.test/1">深读</a></h3><p>${'值得深读的理由。'.repeat(60)}</p></article>${[2, 3, 4, 5].map((n) => `<article><h3><a href="https://a.test/${n}">第${n}条</a></h3><p>${'一条新闻的说明。'.repeat(25)}</p></article>`).join('')}</body></html>', 'https://folder.invalid/');
+      return { page, rss, atom, cards, time: __webTools.localTime(new Date(2026, 10, 3, 8, 5).getTime()) };
     })()`);
   assert.equal(parsed.page.title, 'T');
   assert.match(parsed.page.body, /## 标题/);
@@ -656,6 +658,9 @@ try {
   assert.equal(parsed.rss.items[0].summary, '简介');
   assert.equal(parsed.atom.items[0].link, 'http://arxiv.org/abs/1v1');
   assert.equal(parsed.atom.items[0].authors, 'Ada');
+  assert.match(parsed.cards.body, /\[第5条\]\(https:\/\/a\.test\/5\)/);
+  assert.match(parsed.cards.body, /# 日报/);
+  assert.equal(parsed.time, '2026-11-03 08:05');
 
   assert.deepEqual(errors, []);
   console.log('plugins e2e: ok');

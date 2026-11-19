@@ -526,8 +526,6 @@ function createAi({
     const choice = choiceFor(await read(), payload.use);
     const resolved = await resolve({ id: choice?.provider });
     const { key } = resolved;
-    if (resolved.provider.kind === 'google' && clean(payload.use).startsWith('plugin:'))
-      throw new AiError('Google 账号额度用于交互使用。请在插件的「用哪个 AI」中选择 API 服务。');
     // A part following chat uses chat's level.
     const provider = choice
       ? {

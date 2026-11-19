@@ -1,38 +1,46 @@
 # 任务：写今天（{{today}}）的 AI 前沿日报
 
-读者想每天花五分钟，知道 AI 领域昨天到今天发生了哪些值得关注的事。关注方向：{{topics}}。
+读者想每天花五分钟，知道 AI 领域从上一期到现在新发生了哪些值得关注的事。关注方向：{{topics}}。
 
-## 1. 先看以前写过什么
+这份日报最要紧的是**只写新的、不重复**：
 
-用 list_files 看看你的文件夹里已有的日报。如果有，用 read_document 读最近的两篇，记下已经写过的条目，今天不要重复（除非有了重要的新进展）。
+- **只写新的**：只写上一期日报之后新发布、新发生的事，最多往前看两天（还没有上一期，就看最近 24 小时）。看事情本身的时间，不看文章的时间：几天前的大事，今天又有文章在讨论、分析、回顾，不算新闻，不写。
+- **不重复**：最近几期写过的不再写。同一个链接不写；同一件事（同一个人、同一家公司的同一次发布、表态或事件）换了来源、换了说法也不写。只有出现了实质性的新进展（新发布、新数据、官方回应、有了结果）才写，而且只写新进展：标题说新进展本身，正文用一句话带过背景，来源后面标「后续」。
+- 这两条对「今日要点」和「值得深读」同样适用。新内容不够就少写几条，不要拿旧闻凑数。
+
+## 1. 先看最近写过什么
+
+用 list_files 看文件夹里已有的日报，列表里有每篇的写成时间，最新一篇的时间就是「上一期」。用 read_document 读最近三篇（不到三篇就都读），记下每期写过的事和链接。
 
 ## 2. 读取来源
 
 按顺序读下面的来源。某个来源读取失败（网站连不上、返回错误）就跳过，继续下一个，最后在日报末尾注明。每个地址读一次就够：数据接口内容很长时，只看第一段（不带 offset）里最新、最热的条目，不要一段段读完，也不要重复读同一个地址。
 
-- arXiv 最新论文：read_feed `https://export.arxiv.org/api/query?search_query=cat:cs.CL+OR+cat:cs.AI+OR+cat:cs.LG+OR+cat:cs.CV&sortBy=submittedDate&sortOrder=descending&max_results=50`，days 填 3
-- Hugging Face 每日论文（社区投票选出的热门论文）：fetch_url `https://huggingface.co/api/daily_papers`
-- GitHub 最近一周新建、增长最快的 AI 项目：fetch_url `https://api.github.com/search/repositories?q=topic:llm+created:>{{week_ago}}&sort=stars&order=desc&per_page=15`
+读到的每一条先看时间：早于上一期的、最近几期写过的，直接略过。订阅给的时间已经是现在的时区；数据接口里的时间（created_at、publishedAt 等）是 UTC，先换算再比较。
+
+- arXiv 最新论文：read_feed `https://export.arxiv.org/api/query?search_query=cat:cs.CL+OR+cat:cs.AI+OR+cat:cs.LG+OR+cat:cs.CV&sortBy=submittedDate&sortOrder=descending&max_results=50`，days 填 2
+- Hugging Face 每日论文（社区投票选出的热门论文）：fetch_url `https://huggingface.co/api/daily_papers`。这里有最近两三天的论文，最近几期写过的跳过。
+- GitHub 新建、增长最快的 AI 项目：fetch_url `https://api.github.com/search/repositories?q=topic:llm+created:>{{week_ago}}&sort=stars&order=desc&per_page=40`。只看 created_at 在最近三天内的。同一个仓库名出现在好几个账号下、星标数也差不多的，是刷星的垃圾仓库，可能带恶意程序，一律不写。
 - Hacker News 上热议的 AI 话题：fetch_url `https://hn.algolia.com/api/v1/search_by_date?query=LLM&tags=story&numericFilters=points%3E60&hitsPerPage=20`
-- 官方博客（各 read_feed，days 填 3）：
+- 官方博客（各 read_feed，days 填 2）：
   - OpenAI：`https://openai.com/news/rss.xml`
   - Google DeepMind：`https://deepmind.google/blog/rss.xml`
   - Google Research：`https://research.google/blog/rss/`
   - Hugging Face 博客：`https://huggingface.co/blog/feed.xml`
-- 中文资讯：read_feed `https://www.qbitai.com/feed`，days 填 2
+- 中文资讯：read_feed `https://www.qbitai.com/feed`，days 填 2，limit 填 30
 
-如果你能联网搜索，可以再搜一次今天的重大 AI 新闻（新模型发布、重要开源），只采用有可靠来源的内容。
+如果你能联网搜索，可以再搜一次今天的 AI 新闻（新模型发布、重要开源）。搜到的常常是这几天反复报道的大事：只采用发布时间在上一期之后、有可靠来源的报道，写过的事和上一期之前的事都不用。
 
 ## 3. 挑选
 
-从读到的内容里挑出大约 {{count}} 条最值得看的，优先关注方向里的内容：
+从读到的新内容里挑出大约 {{count}} 条最值得看的（不够就少写），优先关注方向里的内容：
 
 - 重要的新模型、新产品、新版本
 - 有新意或影响大的论文（Hugging Face 投票多的优先）
 - 增长快、有用的开源项目
 - 值得知道的行业动态
 
-去掉重复的、纯营销的、和 AI 关系不大的。
+去掉最近几期写过的、纯营销的、和 AI 关系不大的。
 
 挑出的条目只看标题和摘要弄不清是什么的（比如 Hacker News 上链接到别的网站的文章，或标题里有没见过的缩写），用 fetch_url 打开原文看一下再写。只打开需要弄清楚的那几篇，不要每条都打开。
 
@@ -42,6 +50,7 @@
 
 - **有实质内容**：讲清楚了方法、设计或实现的论文、技术报告、工程博客，或者文档写得好的开源项目。新闻稿、产品宣传、融资和人事消息不选。
 - **确实有人在用、在讨论**：同时出现在两个以上来源里的，Hugging Face 投票多的，GitHub 星标涨得快的，Hacker News 上讨论多的，或者来自主要实验室和知名团队的。只在一个角落出现、看不出有人关注的，不选；不要为了显得新而挑冷门的东西。
+- 最近几期没有选过、也没有写过。
 - 优先和关注方向相关的。
 
 今天确实没有够格的，就写「今天没有特别值得深读的」，不要硬凑。
@@ -55,8 +64,10 @@
 - 开头「今日要点」：三条，每条一句话，说今天最重要的三件事。
 - 接着「值得深读」：标题（链接到原文：论文给 arXiv 页面，博客给原文地址）、来源、大约要读多久，然后分三句话写「为什么值得读」（它解决了什么问题、为什么现在重要）、「读完能弄懂什么」、「先了解什么更好读」（需要的背景知识，没有就不写）。
 - 正文按「模型与产品」「论文」「开源项目」「行业动态」分组，没有内容的分组不写。
-- 每一条：标题（链接到原文）、来源和日期、两三句话说明「是什么、为什么值得关注」。论文写清楚是哪个机构或团队、核心做法和结果。英文标题可以保留原文，再给一个中文译名。
+- 每一条：标题（链接到原文）、来源和日期（事情发布或发生的日期）、两三句话说明「是什么、为什么值得关注」。论文写清楚是哪个机构或团队、核心做法和结果。英文标题可以保留原文，再给一个中文译名。
 - 末尾「今天读取的来源」：列出每个来源，标明读到了几条，或者读取失败。
 - 只写这次真正读到的内容，不要凭记忆补充，也不要编造链接。
+
+写之前对照第 1 步记下的内容，把每一条（包括今日要点和值得深读）再查一遍：是上一期之后的事，最近几期没有写过。不符合的删掉。
 
 写完后用一两句话告诉我日报的文件名和今天最重要的一件事。

@@ -84,7 +84,8 @@ test(
       assert.equal(continued.text, '读到了第 2 页。');
 
       await assert.rejects(ask([user('额度用尽')]), /套餐额度已达上限/);
-      await assert.rejects(ask([user('任务')], { use: 'plugin:daily' }), /选择 API 服务/);
+      // Plugins may use the Google account too.
+      assert.match((await ask([user('任务')], { use: 'plugin:daily' })).text, /问：任务$/);
       const pending = ai.chat({ requestId: 'cancel-me', messages: [user('请停止')] }, () => {});
       const timer = setTimeout(() => ai.cancel({ requestId: 'cancel-me' }), 200);
       try {

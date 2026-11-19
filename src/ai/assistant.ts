@@ -626,8 +626,6 @@ export class Assistant {
   ): Promise<{ provider: AiProvider; config: AiConfig }> {
     const config = await loadAiConfig();
     const provider = providerFor(config, use);
-    if (provider?.kind === 'google' && use.startsWith('plugin:'))
-      throw Error('Google 账号额度用于交互使用。请在插件的「用哪个 AI」中选择 API 服务。');
     if (!config || !providerReady(provider, config)) {
       if (!quiet) this.host.openSettings();
       throw Error('请先在 AI 设置中添加服务、填写 API Key 并选择模型');

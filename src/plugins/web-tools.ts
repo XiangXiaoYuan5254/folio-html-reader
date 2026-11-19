@@ -92,10 +92,14 @@ export function htmlToText(html: string, base: string) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   doc.querySelectorAll(dropped).forEach((e) => e.remove());
   const title = doc.title.trim();
+  // The main part of the page: its <main>, or an <article> holding most of the text. A page of
+  // many <article> cards (a news list, a 日报) is read whole, not just its first long card.
+  const size = (e: Element) => (e.textContent || '').replace(/\s+/g, '').length;
+  const all = size(doc.body);
   const main =
-    [...doc.querySelectorAll('article, main, [role=main]')].find(
-      (e) => (e.textContent || '').trim().length > 400,
-    ) || doc.body;
+    [...doc.querySelectorAll('main, [role=main]')].find((e) => size(e) > 400) ||
+    [...doc.querySelectorAll('article')].find((e) => size(e) > 400 && size(e) >= all * 0.6) ||
+    doc.body;
   const out: string[] = [];
   const walk = (node: Node) => {
     if (node.nodeType === Node.TEXT_NODE) {
@@ -236,6 +240,12 @@ export function slimJson(value: unknown, depth = 0): unknown {
 // A page as read once in a run; reading on from an offset uses it again.
 type Page = { url: string; head: string; body: string; cut: boolean };
 const day = 86_400_000;
+const pad = (n: number) => String(n).padStart(2, '0');
+// A time on the reader's clock, as {{now}} gives it, so "today" means the same thing to both.
+export const localTime = (ms: number) => {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
 // fetch_url and read_feed for one plugin's run; `pages` keeps what the run has read.
 export function prepareWebTool(
   pluginId: string,
@@ -310,7 +320,7 @@ export function prepareWebTool(
         const lines = items.map((i, n) =>
           [
             `${n + 1}. ${i.title}`,
-            `   ${[i.date ? new Date(i.date).toISOString().slice(0, 10) : '', i.authors].filter(Boolean).join(' · ')}`,
+            `   ${[i.date ? localTime(i.date) : '', i.authors].filter(Boolean).join(' · ')}`,
             `   链接：${i.link}`,
             i.summary
               ? `   摘要：${i.summary.length > 360 ? `${i.summary.slice(0, 360)}…` : i.summary}`
