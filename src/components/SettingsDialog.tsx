@@ -74,6 +74,8 @@ export function SettingsDialog(p: {
   projectName?: string;
   toolbarSide: ToolbarSide;
   onToolbarSide: (side: ToolbarSide) => void;
+  replyToolbarSide: ToolbarSide;
+  onReplyToolbarSide: (side: ToolbarSide) => void;
   noteFontSize: number;
   onNoteFontSize: (size: number) => void;
   autosave: boolean;
@@ -221,6 +223,20 @@ export function SettingsDialog(p: {
                   aria-label="划词工具条位置"
                   value={p.toolbarSide}
                   onChange={(e) => p.onToolbarSide(e.target.value as ToolbarSide)}
+                >
+                  <option value="below">文字下方</option>
+                  <option value="above">文字上方</option>
+                </select>
+              </label>
+              <label className="settings-row">
+                <span>
+                  <strong>AI 回答里的划词工具条位置</strong>
+                  <small>在助手的回答里选中文字后，解释、翻译、提问出现的位置。</small>
+                </span>
+                <select
+                  aria-label="AI 回答里的划词工具条位置"
+                  value={p.replyToolbarSide}
+                  onChange={(e) => p.onReplyToolbarSide(e.target.value as ToolbarSide)}
                 >
                   <option value="below">文字下方</option>
                   <option value="above">文字上方</option>

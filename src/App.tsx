@@ -214,6 +214,19 @@ export default function App() {
       localStorage.setItem('folio.selection-toolbar', toolbarSide);
     } catch {}
   }, [toolbarSide]);
+  // The same for text selected in the assistant's replies, set only in the settings.
+  const [replyToolbarSide, setReplyToolbarSide] = useState<ToolbarSide>(() => {
+    try {
+      return localStorage.getItem('folio.reply-toolbar') === 'above' ? 'above' : 'below';
+    } catch {
+      return 'below';
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('folio.reply-toolbar', replyToolbarSide);
+    } catch {}
+  }, [replyToolbarSide]);
   const focusedSide = useRef<PaneSide>('left');
   const [splitRatio, setSplitRatio] = useState(() => {
     try {
@@ -2626,6 +2639,7 @@ export default function App() {
                 onRunPlugin={runPlugin}
                 onOpenPlugins={() => openSettings('plugins')}
                 root={workspace?.root}
+                replyToolbarSide={replyToolbarSide}
               />
             ) : (
               <div className="inspector-empty">
@@ -2782,6 +2796,8 @@ export default function App() {
             projectName={workspace?.name}
             toolbarSide={toolbarSide}
             onToolbarSide={setToolbarSide}
+            replyToolbarSide={replyToolbarSide}
+            onReplyToolbarSide={setReplyToolbarSide}
             noteFontSize={noteFontSize}
             onNoteFontSize={setNoteFontSize}
             autosave={autosave}

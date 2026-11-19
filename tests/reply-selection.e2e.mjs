@@ -417,6 +417,28 @@ try {
   );
   console.log('PASS: 解释 and 继续追问 work in 整个项目');
 
+  // Set in the settings, the toolbar goes above the passage; it has no button to flip it.
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  const appSettings = page.getByRole('dialog', { name: '设置', exact: true });
+  await appSettings.getByLabel('AI 回答里的划词工具条位置', { exact: true }).selectOption('above');
+  await page.keyboard.press('Escape');
+  await appSettings.waitFor({ state: 'hidden' });
+  await pick('位置编码补上了顺序');
+  await page.waitForTimeout(400);
+  const spot = await panel()
+    .locator('.chat-answer')
+    .last()
+    .locator('p', { hasText: '位置编码补上了顺序' })
+    .first()
+    .boundingBox();
+  const above = await bar().boundingBox();
+  assert.ok(above.y + above.height <= spot.y + 1, JSON.stringify({ above, spot }));
+  assert.equal(await bar().locator('.toolbar-side-button').count(), 0, 'no flip button');
+  await page.screenshot({ path: path.join(evidence, 'reply-selection-above.png') });
+  await page.keyboard.press('Escape');
+  await bar().waitFor({ state: 'detached' });
+  console.log('PASS: the reply toolbar goes above the passage when set so in the settings');
+
   assert.deepEqual(errors, []);
   console.log(`Evidence in ${evidence}`);
 } finally {

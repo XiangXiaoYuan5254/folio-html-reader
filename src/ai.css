@@ -712,6 +712,21 @@
   line-height: 1.6;
   color: var(--muted);
 }
+.model-menu-cache {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 0 6px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+  color: var(--text-2);
+}
+.model-menu-cache svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--warn);
+}
 .model-menu-note button {
   margin-left: 6px;
   color: var(--accent);
@@ -2248,15 +2263,44 @@
 .ai-picks-actions > span {
   flex: 1;
 }
+/* A row that reads as something to open: framed, with the current window on it. */
 .ai-advanced-toggle {
-  align-self: flex-start;
-  font-size: 12px;
-  color: var(--text-4);
-  padding: 2px 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-size: 12.5px;
+  color: var(--text-2);
+  text-align: left;
 }
 .ai-advanced-toggle:hover:not(:disabled) {
-  background: none;
-  color: var(--accent);
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.ai-advanced-toggle.open {
+  border-color: var(--line-strong);
+}
+.ai-advanced-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  font-size: 12px;
+  color: var(--muted);
+}
+.ai-advanced-chevron {
+  flex: none;
+  transition: transform 0.15s;
+}
+.ai-advanced-toggle.open .ai-advanced-chevron {
+  transform: rotate(180deg);
 }
 .ai-advanced {
   display: flex;
@@ -2536,8 +2580,123 @@
 }
 
 /* Pictures sent with a question */
-.assistant-model + .assistant-tool {
+.assistant-model + .assistant-tool,
+.assistant-model + .context-meter {
   margin-left: auto;
+}
+.assistant-model:has(+ .context-meter) {
+  max-width: calc(100% - 156px);
+}
+
+/* How much of the model's window the conversation takes */
+.context-meter {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 6px;
+  margin-right: -2px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-4);
+}
+.context-meter:hover:not(:disabled),
+.context-meter.open {
+  background: var(--fill);
+  color: var(--text);
+}
+.context-meter circle {
+  fill: none;
+  stroke-width: 2.4;
+}
+.context-meter-track {
+  stroke: var(--track);
+}
+.context-meter-fill {
+  stroke: var(--accent);
+  stroke-linecap: round;
+}
+.context-meter.high .context-meter-fill {
+  stroke: var(--warn);
+}
+.context-meter.full .context-meter-fill {
+  stroke: var(--danger);
+}
+.context-meter.high,
+.context-meter.full {
+  color: var(--text-2);
+}
+.context-menu {
+  width: 280px;
+}
+.context-menu-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 4px 6px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.context-menu-head strong {
+  font-size: 13px;
+  color: var(--text);
+}
+.context-menu-total {
+  padding: 2px 6px 8px;
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-strong);
+}
+.context-menu-total.high {
+  color: var(--warn);
+}
+.context-menu-total.full {
+  color: var(--danger);
+}
+.context-menu-bar {
+  display: flex;
+  height: 6px;
+  margin: 0 6px 10px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--track);
+}
+.context-menu-bar i {
+  flex: none;
+  min-width: 2px;
+}
+.context-menu-parts {
+  margin: 0;
+  padding: 0 6px;
+  list-style: none;
+}
+.context-menu-parts li {
+  display: grid;
+  grid-template-columns: 10px 1fr auto 3.2em;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.context-menu-parts li > span:nth-child(n + 3) {
+  text-align: right;
+  color: var(--muted);
+}
+.context-menu-parts li > span:last-child {
+  color: var(--text);
+}
+.context-menu-parts i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+.context-menu-parts li.free i {
+  background: var(--track);
 }
 .assistant-composer-foot .assistant-tool {
   width: 28px;

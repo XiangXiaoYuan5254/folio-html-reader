@@ -1,6 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, ImageOff, ImagePlus, LoaderCircle, Settings2 } from 'lucide-react';
+import {
+  Check,
+  ChevronDown,
+  ImageOff,
+  ImagePlus,
+  LoaderCircle,
+  Settings2,
+  TriangleAlert,
+} from 'lucide-react';
 import { invoke } from '../api';
 import {
   activeProvider,
@@ -11,7 +19,13 @@ import {
   useChoice,
   useInfo,
 } from '../ai/client';
-import { effortLabel, levelsFor, modelOptions } from '../ai/levels';
+import {
+  effortLabel,
+  levelsFor,
+  loadedModelOptions,
+  modelOptions,
+  onModelOptions,
+} from '../ai/levels';
 import { refusesImages, seesImages } from '../ai/images';
 import { tellsBalance } from '../ai/balance';
 import type { AiConfig, AiProvider, AiUse, ModelOption } from '../ai/types';
@@ -29,12 +43,17 @@ export function ModelMenu({
   onOpenSettings,
   className = '',
   label = useInfo[use]?.label || '这个插件',
+  cached: cacheShare,
 }: {
   use?: AiUse;
   onOpenSettings?: () => void;
   className?: string;
   // What the part is called in the menu; a plugin passes its name.
   label?: string;
+  // How much of the open conversation's latest reply came from the service's prompt cache,
+  // in percent, while that cache is likely still there (0 otherwise); another model can't
+  // use it. Asked when the menu opens.
+  cached?: () => number;
 }) {
   const config = useAiConfig();
   const chat = use === 'chat';
@@ -93,6 +112,35 @@ export function ModelMenu({
     });
     for (const p of stale) if (p.id === provider?.id || (open && p.id === viewing)) fetchList(p.id);
   }, [config]);
+  // A list fetched again elsewhere (the settings, another menu) shows here at once; one
+  // forgotten is asked for again when it's on show, unless another comes in its place.
+  const showing = useRef({ open, viewing, provider: provider?.id });
+  showing.current = { open, viewing, provider: provider?.id };
+  useEffect(
+    () =>
+      onModelOptions((changed) => {
+        for (const id of changed ? [changed] : Object.keys(loadedFor.current)) {
+          if (!(id in loadedFor.current)) continue;
+          requests.current[id] = (requests.current[id] || 0) + 1;
+          const list = loadedModelOptions(id);
+          if (list) {
+            setLists((l) => ({ ...l, [id]: list }));
+            continue;
+          }
+          setLists((l) => {
+            const next = { ...l };
+            delete next[id];
+            return next;
+          });
+          queueMicrotask(() => {
+            const { open, viewing, provider } = showing.current;
+            if (!loadedModelOptions(id) && (id === provider || (open && id === viewing)))
+              fetchList(id);
+          });
+        }
+      }),
+    [],
+  );
   useLayoutEffect(() => {
     if (!open || !button.current) return;
     const r = button.current.getBoundingClientRect();
@@ -130,6 +178,7 @@ export function ModelMenu({
       window.removeEventListener('resize', close);
     };
   }, [open]);
+  const cached = open ? cacheShare?.() || 0 : 0;
   if (!config || !provider)
     return (
       <button
@@ -238,6 +287,15 @@ export function ModelMenu({
               aria-label={`${chat ? '' : `${label}的`}模型和推理强度`}
               style={place}
             >
+              {cached ? (
+                <p className="model-menu-note model-menu-cache" role="note">
+                  <TriangleAlert size={13} />
+                  <span>
+                    这段对话的缓存命中 {cached}
+                    %。换模型或服务后缓存不能沿用，下一条消息要重新读取整段对话，更慢也更费额度。
+                  </span>
+                </p>
+              ) : null}
               {!chat || config.providers.length > 1 ? (
                 <div className="model-menu-services" role="group" aria-label="服务">
                   {!chat ? (

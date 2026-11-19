@@ -24,6 +24,23 @@ const uses = ['explain', 'translate', 'board', 'edit'];
 const isUse = (use) =>
   uses.includes(use) || (typeof use === 'string' && /^plugin:[a-z0-9][a-z0-9-]{1,39}$/.test(use));
 const clean = (value, max = 300) => (typeof value === 'string' ? value.trim().slice(0, max) : '');
+// The windows services started with before they all started with 1M.
+const oldContexts = {
+  qwen: 131_072,
+  moonshot: 262_144,
+  kimicode: 262_144,
+  zhipu: 131_072,
+  doubao: 131_072,
+  xiaomi: 1_048_576,
+  siliconflow: 131_072,
+  openai: 400_000,
+  codex: 272_000,
+  google: 128_000,
+  openrouter: 131_072,
+  ollama: 32_768,
+  lmstudio: 32_768,
+  custom: 131_072,
+};
 function number(value, min, max) {
   const n = Math.round(Number(value));
   return Number.isFinite(n) && n >= min && n <= max ? n : 0;
@@ -63,6 +80,13 @@ function createAi({
     cache.providers = Array.isArray(cache.providers) ? cache.providers : [];
     // Codex was once named “ChatGPT（通过 Codex）”; keep saved services in step with it.
     for (const p of cache.providers) if (p?.name === 'ChatGPT（通过 Codex）') p.name = 'Codex';
+    // Every service now starts with a 1M window; saved ones still at their old default get
+    // it too, once, so a window picked by hand afterwards stays.
+    if (!cache.wideContext) {
+      for (const p of cache.providers)
+        if (p && oldContexts[p.preset] === p.context) p.context = 1_000_000;
+      cache.wideContext = true;
+    }
     cache.prefs = cache.prefs && typeof cache.prefs === 'object' ? cache.prefs : {};
     cache.uses = cache.uses && typeof cache.uses === 'object' ? cache.uses : {};
     cache.speech = cache.speech && typeof cache.speech === 'object' ? cache.speech : {};

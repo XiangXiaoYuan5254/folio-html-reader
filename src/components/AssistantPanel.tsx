@@ -34,7 +34,7 @@ import {
 } from 'lucide-react';
 import { invoke } from '../api';
 import { activeProvider, providerReady, useAiConfig } from '../ai/client';
-import type { AgentStep, ChatMessage, ChatThread, PairThreads } from '../ai/types';
+import type { AgentStep, AiProvider, ChatMessage, ChatThread, PairThreads } from '../ai/types';
 import { citeKey, plainCites, taskLabels, useAssistantState } from '../ai/assistant';
 import type { Assistant, ReadingContext, Task } from '../ai/assistant';
 import { Markdown } from '../ai/Markdown';
@@ -42,9 +42,11 @@ import { fileName } from '../ai/context';
 import { draftText } from '../ai/companion';
 import { DiffView } from './DiffView';
 import { ModelMenu } from './ModelMenu';
+import { ContextMeter } from './ContextMeter';
 import { IconButton } from './IconButton';
 import { RegionCapture } from './RegionCapture';
 import { ReplySelection } from './ReplySelection';
+import type { ToolbarSide } from './SelectionToolbar';
 import { ImageViewer } from './ImageViewer';
 import { isImageFile, maxImages, prepareImage, refusesImages } from '../ai/images';
 import { loadedModelOptions } from '../ai/levels';
@@ -82,6 +84,8 @@ export function AssistantPanel(p: {
   onOpenPlugins: () => void;
   // The open project's folder.
   root?: string;
+  // Where the toolbar for text selected in a reply goes (the settings).
+  replyToolbarSide?: ToolbarSide;
 }) {
   const config = useAiConfig();
   const runs = usePluginRuns();
@@ -392,6 +396,7 @@ export function AssistantPanel(p: {
       </div>
       <ReplySelection
         list={list}
+        side={p.replyToolbarSide}
         store={p.store}
         scope={scope}
         conversation={`${scope}:${thread?.id || ''}`}
@@ -523,7 +528,20 @@ export function AssistantPanel(p: {
           }}
         />
         <div className="assistant-composer-foot">
-          <ModelMenu onOpenSettings={p.onOpenSettings} />
+          <ModelMenu onOpenSettings={p.onOpenSettings} cached={() => warmCache(thread, provider)} />
+          {ready ? (
+            <ContextMeter
+              store={p.store}
+              scope={scope}
+              reading={p.reading}
+              thread={thread}
+              running={running}
+              provider={provider}
+              config={config}
+              root={p.root}
+              onOpenSettings={p.onOpenSettings}
+            />
+          ) : null}
           <IconButton
             className="assistant-tool"
             label="框选区域问 AI"
@@ -591,6 +609,24 @@ export function AssistantPanel(p: {
       {viewing ? <ImageViewer src={viewing} onClose={() => setViewing('')} /> : null}
     </div>
   );
+}
+
+// About how long a service keeps a conversation's prompt cache after the last request:
+// Claude's lasts five minutes, DeepSeek's stays on disk for hours, most others' some minutes.
+const cacheMinutes = (p: AiProvider) =>
+  p.kind === 'anthropic' ? 5 : p.preset === 'deepseek' ? 180 : 15;
+// How much of the latest reply's input came from the prompt cache, in percent, while that
+// cache is likely still there for the model now picked; 0 when there's little to lose.
+function warmCache(thread: ChatThread | undefined, provider: AiProvider | undefined) {
+  const reply = [...(thread?.messages || [])]
+    .reverse()
+    .find((m) => m.role === 'assistant' && m.usage);
+  const usage = reply?.usage;
+  if (!usage || !provider || reply.model !== `${provider.name} · ${provider.model}`) return 0;
+  if (Date.now() - reply.createdAt > cacheMinutes(provider) * 60_000) return 0;
+  if (usage.cached < 4_000 || usage.cached > usage.input) return 0;
+  const share = Math.round((usage.cached / usage.input) * 100);
+  return share >= 30 ? share : 0;
 }
 
 function SetupCard({ onOpen }: { onOpen: () => void }) {

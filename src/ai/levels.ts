@@ -17,14 +17,27 @@ export const effortLabel = (effort: string) => labels[effort] ?? effort;
 const cache = new Map<string, Promise<ModelOption[]>>();
 // The lists that have arrived, for code that can't wait for one.
 const loaded = new Map<string, ModelOption[]>();
+// Told a service's id when its list arrives, is fetched again elsewhere (the settings) or is
+// forgotten; '' for all of them. The model menus keep theirs in step this way.
+const listeners = new Set<(providerId: string) => void>();
+export function onModelOptions(listener: (providerId: string) => void) {
+  listeners.add(listener);
+  return () => void listeners.delete(listener);
+}
+const changed = (providerId: string) => listeners.forEach((l) => l(providerId));
 export function modelOptions(providerId: string, refresh = false) {
   let pending = cache.get(providerId);
   if (!pending || refresh) {
-    pending = invoke<ModelOption[]>('ai-models', { id: providerId, refresh });
-    cache.set(providerId, pending);
-    pending.then(
-      (list) => cache.get(providerId) === pending && loaded.set(providerId, list),
-      () => cache.delete(providerId),
+    const asked = invoke<ModelOption[]>('ai-models', { id: providerId, refresh });
+    pending = asked;
+    cache.set(providerId, asked);
+    asked.then(
+      (list) => {
+        if (cache.get(providerId) !== asked) return;
+        loaded.set(providerId, list);
+        changed(providerId);
+      },
+      () => cache.get(providerId) === asked && cache.delete(providerId),
     );
   }
   return pending;
@@ -34,6 +47,7 @@ export const loadedModelOptions = (providerId: string | undefined) =>
 export function rememberModelOptions(providerId: string, list: ModelOption[]) {
   cache.set(providerId, Promise.resolve(list));
   loaded.set(providerId, list);
+  changed(providerId);
 }
 export function forgetModelOptions(providerId?: string) {
   if (providerId) {
@@ -43,6 +57,7 @@ export function forgetModelOptions(providerId?: string) {
     cache.clear();
     loaded.clear();
   }
+  changed(providerId || '');
 }
 // The levels a service's model offers and the one it uses until another is picked, as
 // electron/ai-providers.cjs works them out.

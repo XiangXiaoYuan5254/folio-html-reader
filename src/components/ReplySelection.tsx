@@ -19,7 +19,7 @@ import { Markdown } from '../ai/Markdown';
 import { invoke } from '../api';
 import { IconButton } from './IconButton';
 import { SelectionToolbar } from './SelectionToolbar';
-import type { ScreenBox } from './SelectionToolbar';
+import type { ScreenBox, ToolbarSide } from './SelectionToolbar';
 
 type Picked = { range: Range; box: ScreenBox; answerId: string };
 // What 解释, 翻译 or 提问 said about the selection, shown where the toolbar was.
@@ -86,6 +86,8 @@ export function pickedText(range: Range) {
 // on. The toolbar goes when the selection does, on a click elsewhere, or with Esc.
 export function ReplySelection(p: {
   list: RefObject<HTMLDivElement | null>;
+  // Below the selection or above it, as set in the settings.
+  side?: ToolbarSide;
   store: Assistant;
   scope: Scope;
   // The conversation shown; another one puts the toolbar away.
@@ -254,6 +256,7 @@ export function ReplySelection(p: {
   return (
     <SelectionToolbar
       box={picked.box}
+      side={p.side}
       area=".assistant-messages"
       className={`reply-selection${about ? ' with-card' : ''}`}
       // Keeps the selection, except where the answer can be selected or a question typed.

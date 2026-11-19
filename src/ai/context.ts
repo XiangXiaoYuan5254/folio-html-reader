@@ -1,4 +1,5 @@
-import type { AiProvider, DocText } from './types';
+import type { AiProvider, DocText, ToolDef, WireMessage } from './types';
+import { imageTokens } from './images';
 
 // A rough count that errs high: CJK characters are about a token each, other text about
 // four characters per token.
@@ -11,6 +12,59 @@ export function estimateTokens(text: string) {
 export function documentBudget(provider: AiProvider | undefined, share = 0.55) {
   const context = provider?.context || 32_000;
   return Math.max(3_000, Math.min(Math.floor(context * share), 120_000));
+}
+export type ContextPart = {
+  key: 'instructions' | 'documents' | 'tools' | 'summary' | 'messages';
+  label: string;
+  tokens: number;
+};
+export type ContextUse = { window: number; used: number; parts: ContextPart[] };
+// What a request takes of the model's window, part by part, counted as the app counts when
+// fitting a conversation in (estimateTokens). The documents and the summary of an earlier
+// part are found in the instructions by their tags (prompts.ts).
+export function contextUse(
+  request: { system: string; messages: WireMessage[]; tools?: ToolDef[] },
+  window: number,
+): ContextUse {
+  let documents = 0;
+  let summary = 0;
+  const rest = request.system
+    .replace(/<document [^>]*>[\s\S]*?<\/document>/g, (block) => {
+      documents += estimateTokens(block);
+      return '';
+    })
+    .replace(/<earlier>[\s\S]*?<\/earlier>/g, (block) => {
+      summary += estimateTokens(block);
+      return '';
+    });
+  const messages = request.messages.reduce(
+    (n, m) =>
+      n +
+      estimateTokens(m.content) +
+      (m.toolCalls?.length ? estimateTokens(JSON.stringify(m.toolCalls)) : 0) +
+      (m.images?.length || 0) * imageTokens +
+      8,
+    0,
+  );
+  const parts: ContextPart[] = [
+    { key: 'instructions', label: '系统指令', tokens: estimateTokens(rest) },
+    { key: 'documents', label: '文档内容', tokens: documents },
+    {
+      key: 'tools',
+      label: '工具',
+      tokens: request.tools?.length ? estimateTokens(JSON.stringify(request.tools)) : 0,
+    },
+    { key: 'summary', label: '较早对话的摘要', tokens: summary },
+    { key: 'messages', label: '对话', tokens: messages },
+  ];
+  const shown = parts.filter((p) => p.tokens > 0);
+  return { window, used: shown.reduce((n, p) => n + p.tokens, 0), parts: shown };
+}
+// 1M, 128K, 8.2K, 900.
+export function tokensLabel(n: number) {
+  if (n >= 1_000_000) return `${+(n / 1_000_000).toFixed(n % 1_000_000 ? 2 : 0)}M`;
+  if (n >= 1_000) return `${+(n / 1_000).toFixed(n >= 100_000 ? 0 : 1)}K`;
+  return String(n);
 }
 export function charsLabel(text: string) {
   const n = text.length;

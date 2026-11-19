@@ -35,6 +35,7 @@ import {
 import {
   around,
   chunkDocument,
+  contextUse,
   docBody,
   documentBudget,
   documentContext,
@@ -43,7 +44,7 @@ import {
   mostlyChinese,
   surrounding,
 } from './context';
-import type { Chunk } from './context';
+import type { Chunk, ContextUse } from './context';
 import {
   agentSystem,
   annotationsList,
@@ -319,6 +320,8 @@ export class Assistant {
   private saveTimers = new Map<Scope, ReturnType<typeof setTimeout>>();
   private loading = new Map<Scope, Promise<void>>();
   private texts = new Map<string, Promise<DocText>>();
+  // Documents' text as last read for contextUse, so the meter doesn't read them each time.
+  private usageTexts = new Map<string, Promise<DocText>>();
   constructor(private host: AiHost) {}
 
   subscribe = (listener: () => void) => {
@@ -370,8 +373,13 @@ export class Assistant {
   }
   // Cached text of documents that are not on screen; visible ones are read live.
   forgetText(path?: string) {
-    if (path) this.texts.delete(path);
-    else this.texts.clear();
+    if (path) {
+      this.texts.delete(path);
+      this.usageTexts.delete(path);
+    } else {
+      this.texts.clear();
+      this.usageTexts.clear();
+    }
   }
 
   load(scope: Scope) {
@@ -764,12 +772,13 @@ export class Assistant {
     config: AiConfig,
     query: string,
     lookup: boolean,
+    read = (path: string) => this.host.docText(path),
   ) {
     const budget = documentBudget(provider) / Math.max(1, ctx.docs.length);
     const blocks: string[] = [];
     let partial = false;
     for (const [i, d] of ctx.docs.entries()) {
-      const doc = await this.host.docText(d.path);
+      const doc = await read(d.path);
       const context = documentContext(doc, budget, lookup ? '' : query);
       partial ||= context.partial;
       if (!context.text.trim())
@@ -786,6 +795,47 @@ export class Assistant {
       else blocks.push(documentBlock(doc, context.text, i + 1, context.partial, lookup));
     }
     return { system: withDocuments(readingSystem(config.prefs, ctx.docs.length), blocks), partial };
+  }
+  // What the next question in the open conversation would take of the model's window: the
+  // instructions with the open documents (or the project's files and tools), the summary of
+  // an earlier part, and the conversation so far. Documents are read once for this.
+  async contextUse(
+    scope: Scope,
+    ctx: ReadingContext | null,
+    provider: AiProvider,
+    config: AiConfig,
+  ): Promise<ContextUse | null> {
+    const thread = this.thread(scope);
+    const vision = !refusesImages(provider, loadedModelOptions(provider.id));
+    let system: string;
+    let tools: ToolDef[] | undefined;
+    if (scope === 'project') {
+      system = agentSystem(
+        config.prefs,
+        this.host.projectName(),
+        this.host.files(),
+        this.host.activePath(),
+      );
+      tools = [...agentTools, ...pluginToolDefs(this.host)];
+    } else {
+      if (!ctx?.docs.length) return null;
+      const reading = await this.readingContext(ctx, provider, config, '', true, (path) => {
+        let pending = this.usageTexts.get(path);
+        if (!pending) {
+          pending = this.host.docText(path);
+          this.usageTexts.set(path, pending);
+          pending.catch(() => this.usageTexts.delete(path));
+        }
+        return pending;
+      });
+      system = reading.system;
+      tools = reading.partial ? readingTools : undefined;
+    }
+    const messages = thread ? this.conversation(thread, thread.messages, vision) : [];
+    return contextUse(
+      { system: withSummary(system, thread?.summary?.text), messages, tools },
+      provider.context,
+    );
   }
   // A reply as the model is to see it in the conversation: what it's told the reply was, and
   // where an unfinished one broke off. `latest`: the last 精读笔记 reply before the question.

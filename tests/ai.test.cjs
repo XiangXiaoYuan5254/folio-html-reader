@@ -25,7 +25,8 @@ function load(entry) {
 const { findQuote } = load('src/ai/quote-match.ts');
 const { applyReply, parseEdits } = load('src/ai/edits.ts');
 const { diffLines, hunks } = load('src/ai/diff.ts');
-const { documentContext, chunkDocument, estimateTokens } = load('src/ai/context.ts');
+const { documentContext, chunkDocument, estimateTokens, contextUse, tokensLabel } =
+  load('src/ai/context.ts');
 
 // A minimal OpenAI-compatible server that streams whatever the test queues.
 async function mockServer(handler) {
@@ -546,6 +547,39 @@ test('settings store keeps keys out of the window and encrypted at rest', async 
   assert.equal((await ai.config()).providers.length, 0);
 });
 
+test('every service starts with a 1M window; saved ones on their old default move up once', async () => {
+  assert.ok(providers.presets.every((p) => p.context === 1_000_000));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'folio-ai-'));
+  const file = path.join(dir, 'ai.json');
+  const saved = (id, preset, context) => ({ id, preset, kind: 'openai', name: id, context });
+  await fs.writeFile(
+    file,
+    JSON.stringify({
+      version: 1,
+      active: 'a',
+      prefs: {},
+      providers: [
+        saved('a', 'qwen', 131_072),
+        saved('b', 'ollama', 32_768),
+        saved('c', 'openai', 64_000),
+        saved('d', 'xiaomi', 1_048_576),
+      ],
+    }),
+  );
+  const options = { file, fetch, atomicWrite, protect: (k) => k, unprotect: (v) => v };
+  const ai = createAi(options);
+  assert.deepEqual(
+    (await ai.config()).providers.map((p) => p.context),
+    [1_000_000, 1_000_000, 64_000, 1_000_000],
+  );
+  // A window picked afterwards stays, even one that was an old default.
+  await ai.saveProvider({ id: 'a', context: 131_072 });
+  const again = createAi(options);
+  assert.equal((await again.config()).providers[0].context, 131_072);
+  const { provider: added } = await again.saveProvider({ preset: 'zhipu' });
+  assert.equal(added.context, 1_000_000);
+});
+
 test('picked models are listed without asking the service; settings still get everything', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'folio-ai-'));
   const server = await mockServer((req, res) => {
@@ -807,6 +841,53 @@ test('line diff marks additions and removals with folded context', () => {
   assert.equal(groups.length, 3);
   assert.ok(groups[1].skippedBefore > 0);
   assert.deepEqual(diffLines('a', 'a'), [{ type: 'same', text: 'a', a: 1, b: 1 }]);
+});
+
+test('the context meter splits a request into its parts', () => {
+  const { documentBlock, withDocuments, withSummary } = load('src/ai/prompts.ts');
+  const doc = { path: 'a.md', kind: 'markdown', title: 'A', text: '' };
+  const body = '注意力机制的推导。'.repeat(400);
+  const system = withSummary(
+    withDocuments('你是阅读助手。', [documentBlock(doc, body, 1, false)]),
+    '之前聊过位置编码。',
+  );
+  const use = contextUse(
+    {
+      system,
+      messages: [
+        { role: 'user', content: '为什么要除以根号 d？' },
+        { role: 'assistant', content: '为了让方差稳定。'.repeat(10) },
+      ],
+      tools: [{ name: 'search', description: '搜索', parameters: { type: 'object' } }],
+    },
+    1_000_000,
+  );
+  const part = (key) => use.parts.find((p) => p.key === key)?.tokens || 0;
+  assert.deepEqual(
+    use.parts.map((p) => p.key),
+    ['instructions', 'documents', 'tools', 'summary', 'messages'],
+  );
+  assert.ok(part('documents') >= estimateTokens(body), 'the document counts as documents');
+  assert.ok(part('instructions') < 100, 'instructions leave the document and summary out');
+  assert.ok(part('summary') > 0 && part('summary') < 60);
+  assert.equal(
+    use.used,
+    use.parts.reduce((n, p) => n + p.tokens, 0),
+  );
+  assert.equal(use.window, 1_000_000);
+  // No tools and no summary: those parts aren't listed.
+  const bare = contextUse({ system: '你好', messages: [] }, 128_000);
+  assert.deepEqual(
+    bare.parts.map((p) => p.key),
+    ['instructions'],
+  );
+  assert.deepEqual([1_000_000, 1_048_576, 128_000, 8_200, 900].map(tokensLabel), [
+    '1M',
+    '1.05M',
+    '128K',
+    '8.2K',
+    '900',
+  ]);
 });
 
 test('long documents are cut to the sections that match the question', () => {

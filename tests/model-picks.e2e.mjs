@@ -22,13 +22,31 @@ await fs.writeFile(
 );
 
 const requests = [];
+// What the service lists; a model added later shows once the list is fetched again.
+const models = ['mock-model', 'mock-large', 'mock-extra'];
+const sse = (chunk) => `data: ${JSON.stringify(chunk)}\n\n`;
 const server = http.createServer((req, res) => {
   requests.push(req.url);
+  req.resume();
   if (req.url.endsWith('/models')) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(
-      JSON.stringify({ data: [{ id: 'mock-model' }, { id: 'mock-large' }, { id: 'mock-extra' }] }),
+    return res.end(JSON.stringify({ data: models.map((id) => ({ id })) }));
+  }
+  // An answer that read most of its input from the service's prompt cache.
+  if (req.url.endsWith('/chat/completions')) {
+    res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+    res.write(sse({ choices: [{ delta: { content: '讲的是一段文字。' } }] }));
+    res.write(
+      sse({
+        choices: [{ delta: {}, finish_reason: 'stop' }],
+        usage: {
+          prompt_tokens: 50000,
+          completion_tokens: 10,
+          prompt_tokens_details: { cached_tokens: 46000 },
+        },
+      }),
     );
+    return res.end('data: [DONE]\n\n');
   }
   res.writeHead(404);
   res.end();
@@ -41,7 +59,7 @@ await fs.writeFile(
   JSON.stringify({
     version: 1,
     active: 'p1',
-    prefs: {},
+    prefs: { consented: ['p1'] },
     uses: {},
     speech: {},
     providers: [
@@ -125,9 +143,40 @@ try {
   await settings.getByRole('button', { name: '关闭 AI 设置' }).click();
   await picker.click();
   await menu.getByRole('menuitemradio', { name: 'mock-extra' }).waitFor();
+  await page.keyboard.press('Escape');
+  await menu.waitFor({ state: 'hidden' });
+  console.log('PASS: a model menu that listed everything shows only the picked models once saved');
+
+  // A model the service lists later, fetched again in the settings, is in the menu above at
+  // once, without saving anything.
+  models.push('mock-new');
+  await panel.getByLabel('AI 设置', { exact: true }).click();
+  await settings.getByRole('button', { name: '获取列表' }).click();
+  await settings.getByRole('option', { name: 'mock-new', exact: true }).waitFor();
+  await settings.getByRole('button', { name: '关闭 AI 设置' }).click();
+  await settings.waitFor({ state: 'hidden' });
+  await picker.click();
+  await menu.getByRole('menuitemradio', { name: 'mock-new' }).waitFor();
+  await page.keyboard.press('Escape');
+  await menu.waitFor({ state: 'hidden' });
+  console.log('PASS: a list fetched again in the settings shows in the chat model menu');
+
+  // After an answer that hit the prompt cache, the menu says a switch would lose it; once
+  // switched, there's nothing left to lose.
+  const ask = panel.getByLabel('向 AI 提问');
+  await ask.fill('这段讲了什么？');
+  await ask.press('Enter');
+  await panel.locator('.chat-answer.done').waitFor();
+  await picker.click();
+  const warning = menu.getByRole('note');
+  await warning.getByText(/缓存命中 92%/).waitFor();
+  await page.screenshot({ path: path.join(evidence, 'model-menu-cache.png') });
+  await menu.getByRole('menuitemradio', { name: 'mock-large' }).click();
+  await warning.waitFor({ state: 'detached' });
+  await page.keyboard.press('Escape');
+  console.log('PASS: switching away from a warm prompt cache is warned about');
 
   assert.deepEqual(errors, []);
-  console.log('PASS: a model menu that listed everything shows only the picked models once saved');
 } finally {
   await app?.close();
   server.close();

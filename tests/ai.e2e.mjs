@@ -307,7 +307,8 @@ try {
   await settings.getByRole('button', { name: /^DeepSeek/ }).click();
   await settings.getByLabel('名称').fill('本地模拟');
   await settings.getByLabel('API Key').fill(testKey);
-  await settings.getByRole('button', { name: /高级设置/ }).click();
+  // The advanced settings say what's in them: every service starts with a 1M window.
+  await settings.getByRole('button', { name: /高级设置.*接口地址.*上下文 1M/ }).click();
   await settings.getByLabel('接口地址').fill(mockUrl);
   await settings.getByRole('button', { name: '获取列表' }).click();
   await settings.getByRole('option', { name: 'mock-model', exact: true }).click();
@@ -393,6 +394,17 @@ try {
   );
   assert.equal(ask.auth, `Bearer ${testKey}`);
   assert.ok(ask.body.messages[0].content.includes(S3), 'document text sent as context');
+  // How much of the model's window the conversation takes, and what it's made of.
+  await panel()
+    .getByRole('button', { name: /^上下文已用 / })
+    .click();
+  const usage = page.getByRole('dialog', { name: '上下文用量' });
+  for (const part of ['系统指令', '文档内容', '对话', '剩余空间'])
+    await usage.getByText(part, { exact: true }).waitFor();
+  await usage.getByText(/^约 .+ \/ 1M$/).waitFor();
+  await page.screenshot({ path: path.join(evidence, 'ai-context-meter.png') });
+  await page.keyboard.press('Escape');
+  await usage.waitFor({ state: 'detached' });
   await panel().locator('.chat-reasoning summary').click();
   assert.ok((await panel().locator('.chat-reasoning').innerText()).includes('先找到文档'));
   await panel().locator('.cite-chip').first().click();

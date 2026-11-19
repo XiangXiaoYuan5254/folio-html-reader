@@ -3,6 +3,7 @@ import {
   AudioLines,
   Blocks,
   Check,
+  ChevronDown,
   CircleX,
   ExternalLink,
   GraduationCap,
@@ -14,6 +15,7 @@ import {
   PlugZap,
   RefreshCw,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkle,
   Trash2,
   UserRound,
@@ -865,15 +867,16 @@ export function AiSettings({
                   ) : null}
                   <button
                     type="button"
-                    className="ai-advanced-toggle"
+                    className={`ai-advanced-toggle ${advanced ? 'open' : ''}`}
                     aria-expanded={advanced}
                     onClick={() => setAdvanced((v) => !v)}
                   >
-                    {advanced
-                      ? '收起高级设置'
-                      : accountService
-                        ? '高级设置：上下文长度'
-                        : '高级设置：接口地址、上下文长度'}
+                    <SlidersHorizontal size={14} />
+                    <span>高级设置</span>
+                    <span className="ai-advanced-summary">
+                      {accountService ? '' : '接口地址 · '}上下文 {contextLabel(form.context)}
+                    </span>
+                    <ChevronDown size={14} className="ai-advanced-chevron" />
                   </button>
                   {advanced ? (
                     <div className="ai-advanced">
