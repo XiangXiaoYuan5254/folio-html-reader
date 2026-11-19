@@ -1,13 +1,15 @@
-import { Fragment, useState } from 'react';
+import { createElement, Fragment, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Check, Copy } from 'lucide-react';
+import { Check, Code, Copy, Shapes } from 'lucide-react';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
+import { chatFigure, figureLanguages } from './chat-figure';
 
 // Renders model output as React elements, never as HTML: the app window can reach the file
 // system bridge, so model text must not become markup. <cite> is the one tag understood.
 // Formulas are the exception: KaTeX writes their markup, with its commands that could link
-// or run anything (\href, \htmlData…) turned off.
+// or run anything (\href, \htmlData…) turned off. ```svg and ```plot blocks are drawn, from
+// shapes cleaned of everything but geometry and color (chat-figure.ts).
 export type CiteRenderer = (cite: { n: number; doc: string; quote: string }) => ReactNode;
 type Props = {
   text: string;
@@ -44,12 +46,14 @@ export function Markdown({ text, streaming, renderCite, onLink, onBoard, image, 
       return `${marker}${cites.length - 1}${marker}`;
     },
   );
-  const ctx: Inline = { cites, renderCite, onLink, onBoard, image, onImage };
+  const ctx: Inline = { cites, renderCite, onLink, onBoard, image, onImage, streaming };
   return <div className="ai-markdown">{blocks(source, ctx)}</div>;
 }
 
 type Inline = {
   cites: { n: number; doc: string; quote: string }[];
+  // A block that isn't closed yet is still being written.
+  streaming?: boolean;
   renderCite?: CiteRenderer;
   onLink?: (url: string) => void;
   onBoard?: (id: string) => void;
@@ -83,26 +87,91 @@ function math(tex: string, display: boolean, key: number) {
   );
 }
 
-function CodeBlock({ code }: { code: string }) {
+// `extra`: another button beside 复制, such as going back to a drawing.
+function CodeBlock({ code, extra }: { code: string; extra?: ReactNode }) {
   const [copied, setCopied] = useState(false);
   return (
     <div className="md-code">
       <pre>
         <code>{code}</code>
       </pre>
-      <button
-        className="md-code-copy"
-        title="复制代码"
-        onClick={() => {
-          void navigator.clipboard.writeText(code);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        }}
-      >
-        {copied ? <Check size={12} /> : <Copy size={12} />}
-        {copied ? '已复制' : '复制'}
-      </button>
+      <div className="md-code-tools">
+        {extra}
+        <button
+          className="md-code-copy"
+          title="复制代码"
+          onClick={() => {
+            void navigator.clipboard.writeText(code);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          }}
+        >
+          {copied ? <Check size={12} /> : <Copy size={12} />}
+          {copied ? '已复制' : '复制'}
+        </button>
+      </div>
     </div>
+  );
+}
+
+// SVG attribute names as React writes them: stroke-width → strokeWidth.
+const reactName = (name: string) => name.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+
+// A drawing the model wrote, with its code a click away: someone who asked for SVG code
+// wants to copy it.
+function Figure({ lang, code, partial }: { lang: string; code: string; partial: boolean }) {
+  const [source, setSource] = useState(false);
+  const fig = chatFigure(lang, code, partial);
+  if (!fig.shapes.length && partial) return <div className="md-figure-pending">画图中…</div>;
+  if (!fig.shapes.length || source)
+    return (
+      <div className="md-figure-source">
+        <CodeBlock
+          code={code}
+          extra={
+            fig.shapes.length ? (
+              <button className="md-code-copy" onClick={() => setSource(false)}>
+                <Shapes size={12} />图
+              </button>
+            ) : null
+          }
+        />
+        {!partial && fig.errors.length ? (
+          <p className="md-figure-error">{fig.errors.join('；')}</p>
+        ) : null}
+      </div>
+    );
+  const [x, y, w, h] = fig.box;
+  return (
+    <figure className="md-figure">
+      <svg
+        className="md-figure-art"
+        viewBox={`${x} ${y} ${w} ${h}`}
+        width={w}
+        height={h}
+        role="img"
+      >
+        {fig.shapes.map((shape, i) =>
+          createElement(
+            shape.tag,
+            {
+              key: i,
+              ...Object.fromEntries(Object.entries(shape.attrs).map(([k, v]) => [reactName(k), v])),
+            },
+            shape.text,
+          ),
+        )}
+      </svg>
+      {!partial && fig.errors.length ? (
+        <figcaption className="md-figure-error">{fig.errors.join('；')}</figcaption>
+      ) : null}
+      {partial ? null : (
+        <button className="md-figure-toggle" title="查看代码" onClick={() => setSource(true)}>
+          <Code size={12} />
+          代码
+        </button>
+      )}
+    </figure>
   );
 }
 
@@ -122,8 +191,16 @@ function blocks(source: string, ctx: Inline): ReactNode[] {
       const body: string[] = [];
       i++;
       while (i < lines.length && !lines[i].trim().startsWith(fence[1])) body.push(lines[i++]);
+      const partial = i >= lines.length && !!ctx.streaming;
       i++;
-      out.push(<CodeBlock key={key()} code={body.join('\n')} />);
+      const lang = fence[2].toLowerCase();
+      out.push(
+        figureLanguages.has(lang) ? (
+          <Figure key={key()} lang={lang} code={body.join('\n')} partial={partial} />
+        ) : (
+          <CodeBlock key={key()} code={body.join('\n')} />
+        ),
+      );
       continue;
     }
     // $$ … $$ or \[ … \] on a line of its own, or over several lines.

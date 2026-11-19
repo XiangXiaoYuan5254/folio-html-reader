@@ -471,6 +471,15 @@ function sample(f: () => [number, number] | null, n: number, at: (i: number) => 
     .join(' ');
 }
 
+// "y = x^2", "f(x) = x^2" or "x = cos t, y = sin t" → the formulas alone.
+function formulaParts(formula: string) {
+  return formula
+    .replace(/^\s*[a-z]\s*(\([^)]*\))?\s*=\s*/i, '')
+    .split(/[,，;；]/)
+    .map((s) => s.replace(/^\s*[xyz]\s*=\s*/i, '').trim())
+    .filter(Boolean);
+}
+
 // A curve, a space curve or a surface, from the formulas after the bar: "x^2 - 1" (y as a
 // function of x), "cos(t), sin(t) | t 0 6.28", "cos(t), sin(t), t/4 | t 0 12.6",
 // "u*cos(v), u*sin(v), u | u 0 1 | v 0 6.28".
@@ -483,11 +492,7 @@ export function graphShapes(
   color: string,
 ): ShapeSpec[] {
   const [formula, ...ranges] = body.split(/[|｜]/).map((s) => s.trim());
-  const parts = formula
-    .replace(/^\s*[a-z]\s*(\([^)]*\))?\s*=\s*/i, '')
-    .split(/[,，;；]/)
-    .map((s) => s.replace(/^\s*[xyz]\s*=\s*/i, '').trim())
-    .filter(Boolean);
+  const parts = formulaParts(formula);
   const stroke = { stroke: color, fill: 'none', 'stroke-width': '3' };
   if (op === 'plot') {
     if (a.kind !== '2d') throw Error('plot 要画在二维坐标轴上');
@@ -570,9 +575,77 @@ export function graphShapes(
   ];
 }
 
-// A marked point on the axes: "1 2" or "1 0 2", then an optional label.
-export function dotShapes(body: string, a: Axes, w: number, h: number, color: string): ShapeSpec[] {
-  const [coords, text = ''] = body.split(/[|｜]/).map((s) => s.trim());
+// The region between a curve and the x axis, or between two curves, from a to b: what an
+// integral measures. "x^2 | 0 2", "x^2, 2x | 0 2", "sin(x) | x 0 pi".
+export function areaShapes(
+  body: string,
+  a: Axes,
+  w: number,
+  h: number,
+  color: string,
+): ShapeSpec[] {
+  if (a.kind !== '2d') throw Error('area 要画在二维坐标轴上');
+  const [formula, spec = ''] = body.split(/[|｜]/).map((s) => s.trim());
+  const [top, bottom] = formulaParts(formula).map((p) => compile(p, ['x']));
+  if (!top) throw Error('area 需要一个表达式');
+  const bits = spec
+    .replace(/^[A-Za-z]\s*[:=∈]?\s*/, '')
+    .replace(/[[\]()（）]/g, ' ')
+    .split(/\s*(?:\.\.|,|，|到|~|\bto\b)\s*|\s+/)
+    .filter(Boolean);
+  let [x0, x1] = bits.length >= 2 ? bits.map((s) => compile(s, [])({})) : a.x;
+  if (!Number.isFinite(x0) || !Number.isFinite(x1)) throw Error(`area 的范围不对：${spec}`);
+  if (x0 > x1) [x0, x1] = [x1, x0];
+  const at = frame2(a, w, h);
+  const clamp = (y: number) => Math.min(a.y[1], Math.max(a.y[0], y));
+  const vars: Record<string, number> = {};
+  const upper: [number, number][] = [];
+  const lower: [number, number][] = [];
+  const n = 200;
+  for (let i = 0; i <= n; i++) {
+    vars.x = x0 + ((x1 - x0) * i) / n;
+    const y1 = top(vars);
+    const y2 = bottom ? bottom(vars) : 0;
+    if (!Number.isFinite(y1) || !Number.isFinite(y2)) continue;
+    upper.push(at(vars.x, clamp(y1)));
+    lower.push(at(vars.x, clamp(y2)));
+  }
+  if (upper.length < 2) throw Error(`area 在这个范围里算不出来：${formula}`);
+  const edges = [x0, x1]
+    .map((x) => {
+      vars.x = x;
+      const [p, q] = [at(x, clamp(top(vars))), at(x, clamp(bottom ? bottom(vars) : 0))];
+      return [p, q].every((v) => v.every(Number.isFinite)) ? polyD([p, q]) : '';
+    })
+    .join(' ');
+  return [
+    {
+      tag: 'path',
+      attrs: {
+        d: `${polyD([...upper, ...lower.reverse()])} Z`,
+        fill: color,
+        'fill-opacity': '0.2',
+        stroke: 'none',
+      },
+      fade: true,
+    },
+    {
+      tag: 'path',
+      attrs: {
+        d: edges,
+        stroke: color,
+        fill: 'none',
+        'stroke-width': '1.5',
+        'stroke-dasharray': '4 4',
+        opacity: '0.8',
+      },
+      fade: true,
+    },
+  ];
+}
+
+// Coordinates on the axes, "1 2" or "1 0 2", as a place on the canvas.
+function place(coords: string, a: Axes, w: number, h: number) {
   const values = coords
     .split(/[\s,，()（）]+/)
     .filter(Boolean)
@@ -581,7 +654,30 @@ export function dotShapes(body: string, a: Axes, w: number, h: number, color: st
     a.kind === '2d'
       ? frame2(a, w, h)(values[0], values[1])
       : frame3(a, w, h)(values[0], values[1], values[2]);
-  if (!Number.isFinite(x) || !Number.isFinite(y)) throw Error(`点的坐标不对：${coords}`);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) throw Error(`坐标不对：${coords}`);
+  return [x, y];
+}
+
+// Words at a place on the axes: "1 2 | y = x²".
+export function textShapes(
+  body: string,
+  a: Axes,
+  w: number,
+  h: number,
+  color?: string,
+): ShapeSpec[] {
+  const [coords, text = ''] = body.split(/[|｜]/).map((s) => s.trim());
+  if (!text) throw Error('text 需要文字：坐标 | 文字');
+  const [x, y] = place(coords, a, w, h);
+  const spec = label(x, y, text.slice(0, 200), 'middle', 15);
+  if (color) spec.attrs.fill = color;
+  return [spec];
+}
+
+// A marked point on the axes: "1 2" or "1 0 2", then an optional label.
+export function dotShapes(body: string, a: Axes, w: number, h: number, color: string): ShapeSpec[] {
+  const [coords, text = ''] = body.split(/[|｜]/).map((s) => s.trim());
+  const [x, y] = place(coords, a, w, h);
   return [
     {
       tag: 'circle',

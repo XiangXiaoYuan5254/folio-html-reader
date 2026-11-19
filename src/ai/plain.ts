@@ -8,9 +8,12 @@ export const citeKey = (doc: string, quote: string) => `${doc}\u0000${quote}`;
 export function plainCites(text: string) {
   return text.replace(citePattern, (_, __, quote) => `「${quote.trim()}」`);
 }
+// Drawings (```svg, ```plot) are pictures, not words to keep or read out.
+const drawings = /^[ \t]*```(?:svg|plot)[ \t]*\n[\s\S]*?(?:^[ \t]*```[ \t]*$|(?![\s\S]))/gim;
 // Highlight notes are plain text: Markdown marks from a reply are removed.
 export function plainText(text: string) {
   return plainCites(text)
+    .replace(drawings, '［图］')
     .replace(/```[\w-]*\n?/g, '')
     .replace(/^#{1,6}\s+/gm, '')
     .replace(/\*\*([^*]+)\*\*|__([^_]+)__/g, '$1$2')
