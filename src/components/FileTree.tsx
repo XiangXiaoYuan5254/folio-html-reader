@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { DragEvent, ReactNode } from 'react';
+import type { CSSProperties, DragEvent, ReactNode } from 'react';
 import {
   FolderOpen,
   Folder,
@@ -16,6 +16,9 @@ import {
   HardDrive,
   BookOpen,
   Check,
+  Star,
+  Flag,
+  Bookmark,
   X,
 } from 'lucide-react';
 import type { FileNode, WorkspaceInfo } from '../types';
@@ -26,6 +29,7 @@ import { fileManager, isMac, shortcut, trashName } from '../platform';
 import { SidebarResizer } from './SidebarResizer';
 import { importFiles, invoke } from '../api';
 import { useExit } from '../motion';
+import type { TreeDecor } from '../plugins/runtime';
 // A folder's contents, which unfold when it is opened and fold away when it is closed.
 // Folders that are open when the tree first shows are simply there.
 function Unfold({ open, children }: { open: boolean; children: () => ReactNode }) {
@@ -52,9 +56,6 @@ function Unfold({ open, children }: { open: boolean; children: () => ReactNode }
 }
 export type FileAction =
   'create-file' | 'create-markdown' | 'create-folder' | 'rename' | 'move' | 'trash' | 'reveal';
-// What a file's menu does with the library: a document (or a folder's documents) joins it,
-// its paper's record is shown, or its paper is marked.
-export type LibraryAction = 'add' | 'info' | 'done' | 'reading' | 'unread';
 export function FileTree({
   workspace,
   active,
@@ -69,8 +70,8 @@ export function FileTree({
   onImportError,
   boards,
   status,
-  paper,
-  onLibrary,
+  decor,
+  onPluginMenu,
   pages,
 }: {
   workspace: WorkspaceInfo | null;
@@ -87,10 +88,10 @@ export function FileTree({
   // The project's whiteboards, under its files.
   boards?: ReactNode;
   status?: ReactNode;
-  // The paper of the library a document belongs to, for its mark and its menu.
-  paper?: (path: string) => { status: 'unread' | 'reading' | 'done'; title: string } | undefined;
-  onLibrary?: (action: LibraryAction, node: FileNode) => void;
-  // The library and the plugins' pages, under the project's files.
+  // What plugins put on the tree: marks on files, and items in their menus (folio.tree.set).
+  decor?: Map<string, TreeDecor>;
+  onPluginMenu?: (plugin: string, id: string, node: FileNode) => void;
+  // The plugins' pages, under the project's files.
   pages?: ReactNode;
 }) {
   const [query, setQuery] = useState('');
@@ -168,27 +169,16 @@ export function FileTree({
       ['reveal', isMac ? '在 Finder 中显示' : '在资源管理器中显示'],
       ['trash', `移到${trashName}`],
     ];
-    // The library's part: for a document, or for all the documents of a folder.
-    const of = paper?.(n.path);
-    const library: MenuItem[] = !onLibrary
-      ? []
-      : n.kind === 'folder'
-        ? [{ label: '里面的文档加入文献库', onSelect: () => onLibrary('add', n) }]
-        : !isDocKind(n.kind) || n.kind === 'image'
-          ? []
-          : of
-            ? [
-                of.status === 'done'
-                  ? { label: '标为未读', onSelect: () => onLibrary('unread', n) }
-                  : { label: '标为已读', onSelect: () => onLibrary('done', n) },
-                ...(of.status === 'unread'
-                  ? [{ label: '标为在读', onSelect: () => onLibrary('reading', n) }]
-                  : []),
-                { label: '文献信息…', onSelect: () => onLibrary('info', n) },
-              ]
-            : [{ label: '加入文献库…', onSelect: () => onLibrary('add', n) }];
+    // Plugins' items: the ones for this file, or for any file or folder of its kind.
+    const plugins: MenuItem[] = [];
+    for (const [plugin, d] of decor || [])
+      for (const item of d.menus[n.path] ||
+        (n.kind === 'folder'
+          ? d.folderMenu
+          : d.fileMenu.filter((x) => !x.kinds || x.kinds.includes(n.kind))))
+        plugins.push({ label: item.label, onSelect: () => onPluginMenu?.(plugin, item.id, n) });
     return [
-      ...library,
+      ...plugins,
       paste,
       ...actions.map(([action, label]) => ({
         label,
@@ -284,17 +274,35 @@ export function FileTree({
       },
     };
   }
-  // A paper being read or read shows on its files; one not started shows nothing.
-  function readMark(n: FileNode) {
-    const of = n.kind === 'folder' ? undefined : paper?.(n.path);
-    if (!of || of.status === 'unread') return null;
+  // Plugins' marks on a file or folder: two at most.
+  function badges(n: FileNode) {
+    const shown = [...(decor?.values() || [])]
+      .map((d) => d.badges[n.path])
+      .filter(Boolean)
+      .slice(0, 2);
+    if (!shown.length) return null;
     return (
-      <span
-        className={`tree-read ${of.status}`}
-        title={`${of.status === 'done' ? '已读' : '在读'} · ${of.title}`}
-        aria-label={of.status === 'done' ? '已读' : '在读'}
-      >
-        {of.status === 'done' ? <Check size={9} strokeWidth={3.5} /> : null}
+      <span className="tree-badges">
+        {shown.map((b, i) => (
+          <span
+            key={i}
+            className={`tree-badge ${b.text ? 'text' : b.icon}`}
+            style={b.color ? ({ '--badge': b.color } as CSSProperties) : undefined}
+            title={b.title || undefined}
+            aria-label={b.title || undefined}
+          >
+            {b.text ||
+              (b.icon === 'check' ? (
+                <Check size={9} strokeWidth={3.5} />
+              ) : b.icon === 'star' ? (
+                <Star size={11} fill="currentColor" />
+              ) : b.icon === 'flag' ? (
+                <Flag size={11} fill="currentColor" />
+              ) : b.icon === 'bookmark' ? (
+                <Bookmark size={11} fill="currentColor" />
+              ) : null)}
+          </span>
+        ))}
       </span>
     );
   }
@@ -373,7 +381,7 @@ export function FileTree({
             )}
             <span>{n.name}</span>
           </button>
-          {readMark(n)}
+          {badges(n)}
           <IconButton
             label={`${n.name} 的操作`}
             aria-haspopup="menu"

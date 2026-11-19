@@ -3,7 +3,7 @@ import App from './App';
 import './themes.css';
 import './styles.css';
 import './ai.css';
-import './library.css';
+import './plugin-pages.css';
 import './theme-styles.css';
 import { applyTheme } from './theme';
 import { applyUiType } from './ui-type';

@@ -1,8 +1,8 @@
 // 论文仪表盘 (plugins/paper-dashboard), end to end in the real Electron app: the official
-// plugin's page draws the project's library (progress, the wall, categories, venues and their
-// CCF ranks, years, the calendar, the paper browser), shows a paper's summary and what the
-// reader marked in it, marks it read, follows the library as it changes and opens a paper's
-// document in the reader. No network.
+// plugin's page draws the project's library (progress, the wall, categories, venues, years, the
+// calendar, the paper browser) — with no ranking of venues until the reader picks one in its
+// settings, then CCF's — shows a paper's summary and what the reader marked in it, marks it
+// read, follows the library as it changes and opens a paper's document in the reader. No network.
 import { _electron as electron } from 'playwright';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -90,6 +90,10 @@ await fs.writeFile(
     version: 1,
     thirdParty: true,
     plugins: {
+      library: {
+        enabled: true,
+        source: { type: 'folder', path: path.join(root, 'plugins', 'library') },
+      },
       'paper-dashboard': {
         enabled: true,
         source: { type: 'folder', path: path.join(root, 'plugins', 'paper-dashboard') },
@@ -138,7 +142,7 @@ try {
   const shot = (name) => page.screenshot({ path: path.join(evidence, `${name}.png`) });
 
   await page.locator('.page-shelf').getByRole('button', { name: '论文仪表盘' }).click();
-  const dash = page.frameLocator('.plugin-page iframe');
+  const dash = page.frameLocator('.plugin-page[data-plugin-page="paper-dashboard"] iframe');
   await dash.locator('#subtitle').getByText('共 40 篇 · 已读 14 篇 (35%) · 未读 26 篇').waitFor();
   // Categories keep their order and lose their numbers; a sub-category under each.
   assert.deepEqual(
@@ -148,9 +152,26 @@ try {
       .then((t) => t.map((s) => s.replace('▶', '').trim())),
     ['基础模型', '智能体', '强化学习'],
   );
-  // Venues are recognised from their full names; the reader's own ranks count (Nature=A).
+  // Venues are recognised from their full names. Not ranked unless the reader asks: nothing
+  // of CCF anywhere, and the card it had says how many were read this year.
   const text = async (sel) => (await dash.locator(sel).allInnerTexts()).join('\n');
   await waitFor(async () => /NeurIPS/.test(await text('.vcard')), 'venues drawn');
+  assert.equal(await dash.locator('.ccf-bucket').count(), 0);
+  assert.doesNotMatch(await text('body'), /CCF-|无CCF评级|CCF 等级分布/);
+  assert.match(await text('.section-head h2'), /按发表渠道/);
+  await dash.locator('.kpi').getByText('今年读完').waitFor();
+  await shot('0-unranked');
+  // Ranked by CCF, picked in the plugin's settings (a select): the page loads again with it.
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  const settings = page.getByRole('dialog', { name: '设置', exact: true });
+  await settings.getByRole('button', { name: '插件' }).click();
+  const card = settings.locator('.plugin-card').filter({ has: page.getByLabel('开启论文仪表盘') });
+  await card.getByRole('button', { name: '展开论文仪表盘' }).click();
+  await card.getByLabel('渠道分级').selectOption('ccf');
+  await card.getByRole('button', { name: '保存设置' }).click();
+  await page.keyboard.press('Escape');
+  await waitFor(async () => (await dash.locator('.ccf-bucket').count()) > 0, 'ranked');
+  // The reader's own ranks count too (Nature=A).
   const venuesCard = await text('.vcard');
   for (const name of ['NeurIPS', 'ICML', 'ICLR', 'NAACL', 'JMLR', 'Nature'])
     assert.match(venuesCard, new RegExp(name));

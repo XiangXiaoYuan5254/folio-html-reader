@@ -306,20 +306,46 @@ const sandboxCspFor = (html) =>
 // 挂件的页面：插件自己的入口 HTML，最前面插上页间的引导脚本（全局对象 folio）。挂件放在
 // iframe sandbox="allow-scripts" 里（没有同源权限），看不到页间的界面、用户的文件和 API Key；
 // 可以自己联网，但代码只能来自插件包（widgetCspFor）。它通过 postMessage 和页间说话：收事件、
-// 存取自己的小存储、写运行日志、回应页间的 ping（src/plugins/widget.ts）。
+// 存取自己的小存储、写运行日志、回应页间的 ping（src/components/WidgetLayer.tsx）。
 //
-// 页面（page）用同一套：多一个 folio.library（清单里写了 page.library 才有）、folio.open（在阅读区
-// 打开项目里的一篇文档）和 folio.openExternal（用浏览器打开一个网页）。
-function widgetPage({ html, settings, events, page }) {
+// 页面（page）和后台脚本（background）用同一套，能做的更多（src/plugins/frame-bridge.ts 应答）：
+// 打开文档和网页、发通知、打开自己的页面；清单 permissions 里写了的，还有文献库（library）、
+// 读项目里的文档（documents）、给文件树加标记和右键菜单（fileTree）；后台脚本还实现插件给 AI
+// 的工具（aiTools）。
+function widgetPage({ html, settings, events, kind = 'widget', manifest }) {
   const safe = (value) => JSON.stringify(value).replace(/</g, '\\u003c');
-  const what = page ? '页面' : '挂件';
+  const widget = kind === 'widget';
+  const perms = manifest?.permissions || {};
+  const caps = widget
+    ? null
+    : {
+        kind,
+        page: manifest.page ? { title: manifest.page.title } : null,
+        library: perms.library || '',
+        documents: !!perms.documents,
+        fileTree: !!perms.fileTree,
+        tools: kind === 'background' ? (manifest.aiTools || []).map((t) => t.name) : [],
+      };
+  const allowed = widget
+    ? ['theme', 'visible', ...(events || [])]
+    : [
+        'theme',
+        'document',
+        'progress',
+        'created',
+        ...(kind === 'page' ? ['visible', 'request'] : []),
+        ...(caps.library ? ['library'] : []),
+        ...(caps.fileTree ? ['menu'] : []),
+      ];
+  const what = { widget: '挂件', page: '页面', background: '后台脚本' }[kind];
   const boot = `<script>
 (() => {
   const host = window.parent;
-  const allowed = new Set(${safe(['theme', 'visible', ...(page?.library ? ['library'] : []), ...(events || [])])});
-  const page = ${safe(page ? { title: page.title, library: page.library } : null)};
+  const allowed = new Set(${safe(allowed)});
+  const caps = ${safe(caps)};
   const listeners = new Map();
   const pending = new Map();
+  const tools = new Map();
   let seq = 0;
   let theme = Object.freeze({ dark: false, accent: '', reducedMotion: false });
   const send = (m) => host.postMessage({ folioWidget: 1, ...m }, '*');
@@ -329,41 +355,75 @@ function widgetPage({ html, settings, events, page }) {
     pending.set(id, { resolve, reject });
     send({ type, id, value });
   });
-  const folio = Object.freeze({
-    settings: Object.freeze(${safe(settings || {})}),
+  const frozen = (o) => Object.freeze(o);
+  const more = !caps ? {} : {
+    page: caps.page ? frozen({ ...caps.page }) : null,
+    permissions: frozen({ library: caps.library, documents: caps.documents, fileTree: caps.fileTree }),
+    open: (path) => call('open', String(path)),
+    openExternal: (url) => call('external', String(url)),
+    project: () => call('project'),
+    notify: (text, options = {}) => call('notify', { text: String(text), action: options.action ? String(options.action) : '' }),
+    openSettings: () => call('settings'),
+    ...(caps.page ? {
+      showPage: (data) => call('show-page', data === undefined ? null : data),
+      setBadge: (text) => call('badge', text == null ? '' : String(text)),
+    } : {}),
+    ...(caps.library ? {
+      library: frozen({
+        list: () => call('library-list'),
+        get: (id) => call('library-get', String(id)),
+        update: (id, patch) => call('library-update', { id: String(id), patch }),
+        add: (paper) => call('library-add', paper),
+        addMany: (papers, options = {}) => call('library-add-many', { papers, overwrite: !!options.overwrite }),
+        remove: (ids) => call('library-remove', Array.isArray(ids) ? ids.map(String) : [String(ids)]),
+        setList: (list) => call('library-set-list', list),
+        lookup: (query) => call('library-lookup', query),
+        exportBibtex: (ids) => call('library-export', ids ? { ids } : {}),
+        importBibtex: (text) => call('library-import', text == null ? {} : { text: String(text) }),
+      }),
+    } : {}),
+    ...(caps.documents ? {
+      documents: frozen({
+        list: () => call('documents-list'),
+        read: (path, options = {}) => call('documents-read', { path: String(path), maxChars: Number(options.maxChars) || 0 }),
+        annotations: (path) => call('documents-annotations', String(path)),
+      }),
+    } : {}),
+    ...(caps.fileTree ? {
+      tree: frozen({ set: (decor) => call('tree-set', decor || {}) }),
+    } : {}),
+    ...(caps.tools.length ? {
+      tools: frozen({
+        handle(name, handler) {
+          if (!caps.tools.includes(name)) throw Error('清单的 aiTools 里没有 ' + name);
+          const h = typeof handler === 'function' ? { run: handler } : handler;
+          if (!h || typeof h.run !== 'function') throw Error('folio.tools.handle(name, handler) 或 (name, { preview, run })');
+          tools.set(name, h);
+          send({ type: 'tool-ready', name });
+        },
+      }),
+    } : {}),
+  };
+  const folio = frozen({
+    settings: frozen(${safe(settings || {})}),
     get theme() { return theme; },
     on(event, listener) {
       if (typeof listener !== 'function') throw Error('folio.on(event, listener)');
-      if (!allowed.has(event)) say('warn', ['${what}订阅了 ' + event + '，但清单里没有写它，收不到']);
+      if (!allowed.has(event)) say('warn', ['${what}订阅了 ' + event + '，但收不到：' + (caps ? '看看清单的 permissions' : '清单里没有写它')]);
       const set = listeners.get(event) || new Set();
       set.add(listener);
       listeners.set(event, set);
       send({ type: 'listen', event });
       return () => set.delete(listener);
     },
-    storage: Object.freeze({ get: () => call('storage-get'), set: (value) => call('storage-set', value) }),
+    storage: frozen({ get: () => call('storage-get'), set: (value) => call('storage-set', value) }),
     log: (...args) => say('info', args),
     warn: (...args) => say('warn', args),
     error: (...args) => say('error', args),
-    ...(page ? {
-      page: Object.freeze(page),
-      open: (path) => call('open', String(path)),
-      openExternal: (url) => call('external', String(url)),
-      project: () => call('project'),
-    } : {}),
-    ...(page && page.library ? {
-      library: Object.freeze({
-        list: () => call('library-list'),
-        get: (id) => call('library-get', String(id)),
-        update: (id, patch) => call('library-update', { id: String(id), patch }),
-        add: (paper) => call('library-add', paper),
-        remove: (id) => call('library-remove', String(id)),
-        setList: (list) => call('library-set-list', list),
-      }),
-    } : {}),
+    ...more,
   });
   Object.defineProperty(window, 'folio', { value: folio });
-  addEventListener('message', (e) => {
+  addEventListener('message', async (e) => {
     if (e.source !== host || !e.data || e.data.folioWidget !== 1) return;
     const m = e.data;
     if (m.type === 'ping') return send({ type: 'pong', n: m.n });
@@ -372,13 +432,25 @@ function widgetPage({ html, settings, events, page }) {
       pending.delete(m.id);
       if (p) m.error ? p.reject(Error(m.error)) : p.resolve(m.value);
     } else if (m.type === 'event') {
-      if (m.event === 'theme') theme = Object.freeze({ ...m.data });
+      if (m.event === 'theme') theme = frozen({ ...m.data });
       for (const listener of listeners.get(m.event) || [])
         try {
           listener(m.data);
         } catch (err) {
           say('error', ['${what}处理 ' + m.event + ' 时出错：', err]);
         }
+    } else if (m.type === 'tool') {
+      // The assistant (or another AI tool, over MCP) calling one of the plugin's tools: first
+      // for a preview of a change it will ask the user about, then to run it.
+      const h = tools.get(m.name);
+      try {
+        if (!h) throw Error('后台脚本还没有用 folio.tools.handle 实现 ' + m.name);
+        const fn = m.phase === 'preview' ? h.preview : h.run;
+        const out = fn ? await fn(m.input || {}, { via: m.via === 'mcp' ? 'mcp' : 'assistant' }) : null;
+        send({ type: 'tool-done', id: m.id, value: out === undefined ? null : out });
+      } catch (err) {
+        send({ type: 'tool-done', id: m.id, error: String(err && err.message || err).slice(0, 2000) });
+      }
     }
   });
   addEventListener('error', (e) => say('error', ['${what}出错：' + e.message + (e.filename ? '（' + e.filename.split('/').pop() + ' 第 ' + e.lineno + ' 行）' : '')]));
@@ -602,8 +674,12 @@ function createPlugins({
   }
   function settingsFor(manifest, saved = {}) {
     const out = {};
-    for (const s of manifest.settings)
-      out[s.key] = typeof saved[s.key] === 'string' ? saved[s.key].slice(0, 4000) : s.default;
+    for (const s of manifest.settings) {
+      const value = typeof saved[s.key] === 'string' ? saved[s.key].slice(0, 4000) : s.default;
+      // A select keeps only one of its values.
+      out[s.key] =
+        s.type === 'select' && !s.options.some((o) => o.value === value) ? s.default : value;
+    }
     return out;
   }
   // A folder plugin's folder: the setting its permissions.write names, anywhere on this
@@ -1174,35 +1250,38 @@ function createPlugins({
         : data.toString('utf8').replace(/\r\n?/g, '\n');
     return { data: Buffer.from(html), type, csp: widgetCspFor(id, html) };
   }
-  // A plugin's page (app://page/<id>/) and its files, served like a widget's while the plugin
-  // is on.
+  // A plugin's page and its background script (both at app://page/<id>/) and their files,
+  // served like a widget's while the plugin is on.
   async function page(id, relative) {
     const entry = await find(id);
     const { manifest, dir } = entry;
     const s = await readState();
     if (!trusted(entry, s) && !s.thirdParty) fail('「社区插件」已关闭');
     if (!s.plugins[id]?.enabled) fail('插件没有开启');
-    if (!manifest.page) fail('这个插件没有页面');
-    const name = String(relative || '') || manifest.page.entry;
+    if (!manifest.page && !manifest.background) fail('这个插件没有页面');
+    const name = String(relative || '') || manifest.page?.entry || manifest.background;
     if (!manifest.files.includes(name)) fail(`插件里没有 ${name.slice(0, 80)}`);
     const type = mediaTypes[path.extname(name).toLowerCase()] || 'application/octet-stream';
     const data = await fs.readFile(path.join(dir, name));
     if (!/^text\/html/.test(type)) return { data, type };
-    const html =
-      name === manifest.page.entry
-        ? widgetPage({
-            html: data.toString('utf8'),
-            settings: settingsFor(manifest, s.plugins[id]?.settings),
-            page: manifest.page,
-          })
-        : data.toString('utf8').replace(/\r\n?/g, '\n');
+    const kind =
+      name === manifest.page?.entry ? 'page' : name === manifest.background ? 'background' : '';
+    const html = kind
+      ? widgetPage({
+          html: data.toString('utf8'),
+          settings: settingsFor(manifest, s.plugins[id]?.settings),
+          kind,
+          manifest,
+        })
+      : data.toString('utf8').replace(/\r\n?/g, '\n');
     return { data: Buffer.from(html), type, csp: pageCspFor(id, html) };
   }
   // A widget's or a page's own storage (folio.storage): read it, or replace it with a new value.
   const widgetData = (id) => path.join(userDir, 'plugin-data', `${id}.json`);
   async function widgetStorage({ id, value, set }) {
     const { manifest } = await find(String(id));
-    if (!manifest.widget && !manifest.page) fail('这个插件没有挂件或页面');
+    if (!manifest.widget && !manifest.page && !manifest.background)
+      fail('这个插件没有挂件、页面或后台脚本');
     const file = widgetData(manifest.id);
     if (!set)
       return fs

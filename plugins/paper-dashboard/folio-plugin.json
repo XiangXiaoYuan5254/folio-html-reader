@@ -4,23 +4,38 @@
   "name": "论文仪表盘",
   "version": "1.0.0",
   "author": "页间",
-  "description": "把文献库画成一张仪表盘：总体进度、书墙、阅读日历，按类别、发表渠道与 CCF 等级、年份看读了多少，还有能多选筛选的论文浏览器。点一篇先看自己的总结和划的重点，再打开原文。",
+  "description": "把文献库画成一张仪表盘：总体进度、书墙、阅读日历，按分类、发表渠道、年份看读了多少，还有能多选筛选的论文浏览器。渠道可以按 CCF 或你自己的等级分级。点一篇先看自己的总结和划的重点，再打开原文。",
   "engines": {
     "folio": ">=0.33.0"
   },
+  "dependencies": ["library"],
   "icon": "icon.svg",
   "files": ["index.html", "app.js", "adapter.js", "venues.js", "icon.svg"],
   "page": {
     "entry": "index.html",
-    "title": "论文仪表盘",
+    "title": "论文仪表盘"
+  },
+  "permissions": {
     "library": "write"
   },
   "settings": [
     {
+      "key": "ranking",
+      "type": "select",
+      "label": "渠道分级",
+      "hint": "",
+      "options": [
+        { "value": "none", "label": "不分级" },
+        { "value": "ccf", "label": "CCF 等级（计算机方向）" },
+        { "value": "custom", "label": "只用下面我写的等级" }
+      ],
+      "default": "none"
+    },
+    {
       "key": "venues",
       "type": "textarea",
-      "label": "补充或更正渠道等级",
-      "hint": "一行一个：渠道名=等级，等级写 A、B、C 或 -（无评级），如 KDD=A。内置的是 AI 方向常见渠道的 CCF 等级。",
+      "label": "自己写的渠道等级",
+      "hint": "一行一个：渠道名=等级（A、B、C 或 -），如 Cell=A。选 CCF 时用来补充和更正。",
       "default": ""
     }
   ]

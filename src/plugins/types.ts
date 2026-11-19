@@ -1,10 +1,12 @@
 // Plugins as electron/plugins.cjs describes them.
 export type PluginSetting = {
   key: string;
-  type: 'text' | 'textarea' | 'folder';
+  type: 'text' | 'textarea' | 'folder' | 'select';
   label: string;
   hint: string;
   default: string;
+  // A select's choices.
+  options?: { value: string; label: string }[];
 };
 export type PluginTrigger = { type: 'daily'; time: string } | { type: 'button'; label: string };
 // What a widget hears about (src/plugins/widget-events.ts): states only, and with 'document' the
@@ -20,10 +22,21 @@ export type PluginWidget = {
   art: { author: string; license: string };
 };
 // A page of the plugin's own, shown as a tab in the reading area (a dashboard, say).
-// `library`: whether it may read, or also change, the project's library.
-export type PluginPage = { entry: string; title: string; library: '' | 'read' | 'write' };
+export type PluginPage = { entry: string; title: string };
+// A tool the plugin gives the AI, run by its background script. `write`: the assistant shows
+// the user what it will do and waits for a yes. `mcp`: other AI tools on this computer may call
+// it too, once the reader lets them (设置 › 插件).
+export type PluginAiTool = {
+  name: string;
+  title: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  write: boolean;
+  mcp: boolean;
+};
+export type LibraryAccess = '' | 'read' | 'write';
 export type PluginManifest = {
-  // 2 when it has a widget or a page.
+  // 2 when it has a widget, a page, a background script or tools for the AI.
   folio: 1 | 2;
   id: string;
   name: string;
@@ -45,12 +58,25 @@ export type PluginManifest = {
     where: 'project' | 'folder';
   };
   triggers: PluginTrigger[];
-  permissions: { network: string[]; write: string[] };
+  permissions: {
+    network: string[];
+    write: string[];
+    // For its page and background script: the project's library, reading the project's
+    // documents, marks and menu items on the file tree.
+    library: LibraryAccess;
+    documents: '' | 'read';
+    fileTree: boolean;
+  };
   settings: PluginSetting[];
   // A widget in the window (folio: 2); a plugin with only a widget has an empty run (no prompt)
   // and no triggers.
   widget: PluginWidget | null;
   page: PluginPage | null;
+  // A page no one sees, running while the plugin is on and a project is open ('' for none).
+  background: string;
+  aiTools: PluginAiTool[];
+  // Other plugins (ids) it needs.
+  dependencies: string[];
 };
 export type PluginSource =
   | { type: 'bundled' }
@@ -121,8 +147,13 @@ export type PluginAdded = {
   widget: boolean;
   events: string[];
   page: boolean;
-  // The page's hold on the library grew: to this.
-  library: '' | 'read' | 'write';
+  background: boolean;
+  // Its hold on the library grew: to this.
+  library: LibraryAccess;
+  documents: boolean;
+  fileTree: boolean;
+  // Tools for the AI it newly gives, or that may now change things or be called by others.
+  aiTools: string[];
 };
 // A plugin read from a link and waiting to be installed.
 export type PluginInspection = {

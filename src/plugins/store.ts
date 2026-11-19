@@ -22,8 +22,13 @@ export function loadPlugins(force = false): Promise<PluginList | null> {
 }
 export const currentPlugins = () => list;
 // A plugin loaded from a folder was changed there: read the list again (electron/plugins.cjs).
+// Counted, so a background script being written loads again when it's saved.
+let devChanges = 0;
+export const devVersion = () => devChanges;
 subscribe((e) => {
-  if (e.type === 'plugins-changed') void loadPlugins(true);
+  if (e.type !== 'plugins-changed') return;
+  devChanges++;
+  void loadPlugins(true);
 });
 export function usePlugins() {
   return useSyncExternalStore(
@@ -86,8 +91,6 @@ export const toolNames: Record<string, string> = {
   read_html_source: '查看 HTML 源码',
   open_document: '在阅读区打开文档',
   search_papers: '查找学术论文（OpenAlex、PubMed、arXiv）',
-  list_library: '查看文献库（论文、阅读状态、标签）',
-  update_library: '修改文献库（新增论文、改信息、排书单）',
   fetch_url: '读取允许的网站上的网页',
   read_feed: '读取允许的网站上的 RSS 订阅',
   create_html: '新建 HTML 文档',

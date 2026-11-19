@@ -39,7 +39,7 @@ export type SettingsPage =
 const pages = [
   { id: 'appearance', name: '外观与阅读', icon: Palette, detail: '让页间更适合你的阅读习惯。' },
   { id: 'ai', name: 'AI', icon: Sparkles, detail: '连接自己的服务，为不同功能选择合适的模型。' },
-  { id: 'plugins', name: '插件', icon: Puzzle, detail: '让 AI 定时或一键替你干活。' },
+  { id: 'plugins', name: '插件', icon: Puzzle, detail: '给页间添上新的功能，或者让 AI 替你干活。' },
   {
     id: 'voices',
     name: '语音',

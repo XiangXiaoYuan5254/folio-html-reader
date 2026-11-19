@@ -1245,18 +1245,18 @@ function StepPreview({ step }: { step: AgentStep }) {
         ))}
       </ul>
     );
-  if (v.kind === 'library')
-    return (
-      <ul className="agent-library">
+  if (v.kind === 'plugin')
+    return v.items.length ? (
+      <ul className="agent-plugin">
         {v.items.slice(0, 60).map((item, i) => (
           <li key={i}>
-            <span>{item.title}</span>
-            <em>{item.change}</em>
+            <span>{item.label}</span>
+            {item.detail ? <em>{item.detail}</em> : null}
           </li>
         ))}
-        {v.items.length > 60 ? <li>……另有 {v.items.length - 60} 篇</li> : null}
+        {v.items.length > 60 ? <li>……另有 {v.items.length - 60} 项</li> : null}
       </ul>
-    );
+    ) : null;
   if (v.kind === 'download')
     return (
       <div className="agent-create">

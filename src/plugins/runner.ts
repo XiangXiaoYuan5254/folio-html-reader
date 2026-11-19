@@ -5,7 +5,8 @@ import type { Assistant, PluginOutcome } from '../ai/assistant';
 import { errorText } from '../ai/client';
 import { openSandbox } from './sandbox';
 import type { ScriptSandbox } from './sandbox';
-import { loadPlugins, pluginRan } from './store';
+import { currentPlugins, loadPlugins, pluginRan } from './store';
+import { runtime } from './runtime';
 import type { PluginLoaded } from './types';
 import { prepareWebTool, webTools } from './web-tools';
 import { folderTools, prepareFolderTool } from './folder-tools';
@@ -129,6 +130,27 @@ export async function runPluginNow(
     // Pages read in this run, so reading on (offset) doesn't download them again.
     const pages = new Map();
     const ours = new Set(scriptTools.map((t) => t.name));
+    // Tools other plugins give the AI (or this one's, from its background script): ready only
+    // while those plugins are on and their background scripts have implemented them.
+    const installed = currentPlugins()?.plugins || [];
+    const given = installed
+      .filter((x) => x.enabled && x.manifest)
+      .flatMap((x) =>
+        x.manifest!.aiTools.filter(
+          (t) => m.run.tools.includes(t.name) && runtime.hasTool(x.id, t.name),
+        ),
+      );
+    const missing = m.run.tools.filter(
+      (t) => !reserved.has(t) && !ours.has(t) && !given.some((g) => g.name === t),
+    );
+    if (missing.length) {
+      const names = m.dependencies.map(
+        (d) => `「${installed.find((x) => x.id === d)?.manifest?.name || d}」`,
+      );
+      throw Error(
+        `用到的工具 ${missing.join('、')} 还不能用${names.length ? `：请先装上并打开${names.join('、')}插件` : ''}`,
+      );
+    }
     const outcome = await host.assistant.runPlugin({
       title: `${m.name} · ${vars.today}`,
       label: `${m.name} · ${how.label}`,
@@ -141,6 +163,11 @@ export async function runPluginNow(
             m.run.tools.includes(t.name) && !(own && folderTools.some((f) => f.name === t.name)),
         ),
         ...webTools.filter((t) => m.run.tools.includes(t.name)),
+        ...given.map((t) => ({
+          name: t.name,
+          description: t.description,
+          parameters: t.parameters,
+        })),
         ...scriptTools,
       ],
       web: m.run.web,

@@ -1,0 +1,124 @@
+{
+  "folio": 2,
+  "id": "library",
+  "name": "文献库",
+  "version": "1.0.0",
+  "author": "页间",
+  "description": "把项目里的论文记成一张表：作者、年份、出处，读没读过、哪天读完。文件树上标出已读和在读，读到结尾问一声要不要标为已读；AI 助手能按文献库回答和整理，也能让 Claude Code、Codex 等读它。BibTeX 导入导出。",
+  "engines": {
+    "folio": ">=0.33.0"
+  },
+  "icon": "icon.svg",
+  "files": ["index.html", "page.js", "page.css", "background.html", "background.js", "icon.svg"],
+  "page": {
+    "entry": "index.html",
+    "title": "文献库"
+  },
+  "background": "background.html",
+  "permissions": {
+    "library": "write",
+    "documents": "read",
+    "fileTree": true
+  },
+  "aiTools": [
+    {
+      "name": "list_library",
+      "title": "查看文献库",
+      "description": "列出项目文献库里的论文：标题、作者、年份、出处、读没读过（哪天读完）、标签、分类、一句话总结和它在项目里的文件，以及书单。可以按关键词、阅读状态、标签筛选。回答“我读过哪些”“还有哪些没读”“关于某个方向我有哪些论文”，或要基于文献库写综述、排书单时先用它。想看某一篇里读者划的重点和笔记，用 get_paper。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "可选，在标题、作者、出处、标签、分类、总结里找"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["unread", "reading", "done"],
+            "description": "可选"
+          },
+          "tag": { "type": "string", "description": "可选，只要带这个标签的" },
+          "offset": { "type": "integer", "minimum": 0 },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 200, "description": "默认 60" }
+        },
+        "additionalProperties": false
+      },
+      "mcp": true
+    },
+    {
+      "name": "get_paper",
+      "title": "看一篇论文",
+      "description": "文献库里一篇论文的全部：信息、摘要、读者的总结和笔记，以及它每个文件里读者划的重点（和写在上面的批注）、便签、文档笔记。id 是 list_library 给出的。",
+      "parameters": {
+        "type": "object",
+        "properties": { "id": { "type": "string" } },
+        "required": ["id"],
+        "additionalProperties": false
+      },
+      "mcp": true
+    },
+    {
+      "name": "update_library",
+      "title": "修改文献库",
+      "description": "修改文献库：新增论文、修改已有论文的信息、移出论文，或者排一个书单。papers 里每一项：带 id（list_library 给出的）是修改那一篇，只写要改的字段；不带 id 是新增，必须有 title，找到但还没下载的论文也可以这样先记下来。files 会加到这篇论文名下。一次调用里把要改的都写上。只有读者明确说读完了，才把论文标为已读。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "papers": {
+            "type": "array",
+            "maxItems": 200,
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string", "description": "list_library 里的 id；不写就是新增" },
+                "remove": {
+                  "type": "boolean",
+                  "description": "true：把这一篇移出文献库（文件不动）"
+                },
+                "title": { "type": "string" },
+                "alias": { "type": "string", "description": "别名：中文译名或通用简称" },
+                "authors": { "type": "array", "items": { "type": "string" } },
+                "year": { "type": "integer" },
+                "venue": { "type": "string", "description": "发表的会议或期刊" },
+                "doi": { "type": "string" },
+                "arxiv": { "type": "string", "description": "arXiv 编号，如 1706.03762" },
+                "url": { "type": "string" },
+                "tags": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "description": "替换原有标签"
+                },
+                "category": {
+                  "type": "string",
+                  "description": "分类，一篇一个，层级用 / 分开，如 大模型/Transformer"
+                },
+                "summary": { "type": "string", "description": "几句话的要点总结" },
+                "status": { "type": "string", "enum": ["unread", "reading", "done"] },
+                "files": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "description": "它在项目里的文件（项目内路径）"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "list": {
+            "type": "object",
+            "description": "可选：新建或替换一个书单，ids 按阅读顺序排列；ids 为空则删除这个书单",
+            "properties": {
+              "name": { "type": "string" },
+              "note": { "type": "string", "description": "书单的说明，比如挑选标准" },
+              "ids": { "type": "array", "items": { "type": "string" } }
+            },
+            "required": ["name", "ids"],
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      "write": true,
+      "mcp": true
+    }
+  ]
+}

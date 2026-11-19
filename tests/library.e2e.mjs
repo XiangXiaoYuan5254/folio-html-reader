@@ -1,9 +1,12 @@
-// 文献库, end to end in the real Electron app: the library tab opens from the sidebar; a
-// document joins the library from its menu with its record looked up (OpenAlex stood in for);
-// a folder's documents join at once; a paper is marked read from the list and shows so in the
-// file tree; its record is edited; its file is followed when moved; BibTeX is imported; and a
-// plugin's page (a dashboard) reads the library, hears it change, opens a paper's document,
-// may go online by itself and runs no code from elsewhere. No real network.
+// 文献库, the official plugin (plugins/library), end to end in the real Electron app, built on
+// nothing but what any plugin may use: its page opens from the sidebar; a document joins the
+// library from the file tree's menu (an item its background script put there) with its record
+// looked up (OpenAlex stood in for); a folder's documents join at once, and the notice's button
+// opens the library; a paper is marked read from the list and its background script marks the
+// file tree; its record is edited; its file is followed when moved; BibTeX is imported; its
+// tools answer other AI tools over MCP while that's turned on; and another plugin's page reads
+// the library, hears it change, opens a paper's document, may go online by itself and runs no
+// code from elsewhere. Turned off, the library leaves the tree and the sidebar. No real network.
 import { _electron as electron } from 'playwright';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -52,7 +55,8 @@ await fs.writeFile(
     version: '0.1.0',
     description: '读文献库的页面',
     files: ['index.html', 'page.js'],
-    page: { entry: 'index.html', title: '阅读概览', library: 'read' },
+    page: { entry: 'index.html', title: '阅读概览' },
+    permissions: { library: 'read' },
   }),
 );
 await fs.writeFile(
@@ -112,7 +116,13 @@ await fs.writeFile(
   JSON.stringify({
     version: 1,
     thirdParty: true,
-    plugins: { 'probe-page': { enabled: true, source: { type: 'folder', path: plugin } } },
+    plugins: {
+      library: {
+        enabled: true,
+        source: { type: 'folder', path: path.join(root, 'plugins', 'library') },
+      },
+      'probe-page': { enabled: true, source: { type: 'folder', path: plugin } },
+    },
   }),
 );
 
@@ -145,6 +155,7 @@ try {
       FOLIO_WORKSPACE: project,
       FOLIO_DOCUMENTS: path.join(temp, 'Documents'),
       FOLIO_NO_SPEECH_HELPER: '1',
+      FOLIO_APP_VERSION: '0.33.0',
     },
   });
   // OpenAlex and arXiv, stood in for.
@@ -197,8 +208,11 @@ try {
         window.folio.invoke(action, payload, (await window.folio.invoke('workspace')).token),
       [action, payload],
     );
-  const library = page.locator('.library-view');
+  // The library's page, in a frame of its own like any plugin's.
+  const frame = page.frameLocator('.plugin-page[data-plugin-page="library"] iframe');
+  const library = frame.locator('.library-view');
   const row = (title) => library.locator('.library-row', { hasText: title });
+  const badge = (name, kind) => tree(name).locator(`.tree-badge${kind ? `.${kind}` : ''}`);
 
   // Empty at first, a click away in the sidebar.
   await page.locator('.page-shelf').getByRole('button', { name: '文献库' }).click();
@@ -209,7 +223,7 @@ try {
   // A document joins from its menu; its record is found by its name.
   await tree('Attention Is All You Need.html').click({ button: 'right' });
   await menuItem('加入文献库…').click();
-  const dialog = page.getByRole('dialog', { name: '加入文献库' });
+  const dialog = frame.getByRole('dialog', { name: '加入文献库' });
   await waitFor(
     async () => (await dialog.getByLabel('作者').inputValue()).includes('Vaswani'),
     'record looked up',
@@ -232,22 +246,24 @@ try {
   console.log('PASS: a document joins the library with its record looked up');
 
   // A folder's documents join at once; the one already there isn't doubled.
+  await page.locator('.document-tab.page-tab', { hasText: '阅读概览' }).count();
   await tree('智能体').first().click({ button: 'right' });
   await menuItem('里面的文档加入文献库').click();
-  await row('ReAct').waitFor();
-  await row('Reflexion').waitFor();
+  await waitFor(async () => (await saved()).papers.length === 3, 'folder added');
   await tree('大模型').first().click({ button: 'right' });
   await menuItem('里面的文档加入文献库').click();
+  await waitFor(async () => (await saved()).papers.length === 4, 'second folder added');
+  // The notice's button (folio.notify with an action) brings the library to the front.
+  await page.locator('.document-tab').first().click();
+  await page.getByRole('button', { name: '打开文献库' }).click();
   await row('BERT').waitFor();
-  assert.equal((await saved()).papers.length, 4);
-  console.log('PASS: a folder joins at once');
+  await row('ReAct').waitFor();
+  await row('Reflexion').waitFor();
+  console.log('PASS: a folder joins at once, and the notice opens the library');
 
   // Marked read in the list: the day is kept, the file tree shows it.
   await row('ReAct').getByLabel('标为已读').click();
-  await waitFor(
-    async () => (await tree('ReAct.html').locator('.tree-read.done').count()) === 1,
-    'tree mark',
-  );
+  await waitFor(async () => (await badge('ReAct.html', 'check').count()) === 1, 'tree mark');
   data = await saved();
   const react = data.papers.find((p) => p.title === 'ReAct');
   assert.deepEqual([react.status, react.readAt], ['done', today]);
@@ -255,16 +271,10 @@ try {
   // From the tree, back to unread and then being read.
   await tree('ReAct.html').click({ button: 'right' });
   await menuItem('标为未读').click();
-  await waitFor(
-    async () => (await tree('ReAct.html').locator('.tree-read').count()) === 0,
-    'unmarked',
-  );
+  await waitFor(async () => (await badge('ReAct.html').count()) === 0, 'unmarked');
   await tree('BERT.html').click({ button: 'right' });
   await menuItem('标为在读').click();
-  await waitFor(
-    async () => (await tree('BERT.html').locator('.tree-read.reading').count()) === 1,
-    'reading',
-  );
+  await waitFor(async () => (await badge('BERT.html', 'half').count()) === 1, 'reading');
   await row('Attention Is All You Need').getByLabel('标为已读').click();
   await waitFor(async () => (await library.locator('.library-row.done').count()) === 1, 'read');
   console.log('PASS: read and reading show in the list and the tree');
@@ -278,8 +288,8 @@ try {
   await library.getByLabel('搜索文献').fill('');
   await row('BERT').hover();
   await row('BERT').getByLabel('「BERT」的操作').click();
-  await menuItem('文献信息…').click();
-  const info = page.getByRole('dialog', { name: '文献信息' });
+  await frame.getByRole('menuitem', { name: '文献信息…', exact: true }).click();
+  const info = frame.getByRole('dialog', { name: '文献信息' });
   await info.getByLabel('标题').fill('BERT: Pre-training of Deep Bidirectional Transformers');
   await info.getByLabel('作者').fill('Jacob Devlin; Ming-Wei Chang');
   await info.getByLabel('年份').fill('2019');
@@ -296,6 +306,18 @@ try {
   assert.match(await page.locator('.document-tab.selected').innerText(), /ReAct\.html/);
   await page.locator('.document-tab.page-tab', { hasText: '文献库' }).getByRole('tab').click();
   await library.waitFor();
+  // 文献信息… from the file tree: the background script asks the page to show it.
+  await tree('BERT.html').click({ button: 'right' });
+  await menuItem('文献信息…').click();
+  await frame.getByRole('dialog', { name: '文献信息' }).getByLabel('别名').waitFor();
+  assert.equal(
+    await frame.getByRole('dialog', { name: '文献信息' }).getByLabel('别名').inputValue(),
+    'BERT',
+  );
+  await frame
+    .getByRole('dialog', { name: '文献信息' })
+    .getByRole('button', { name: '取消' })
+    .click();
 
   // A file moved in 页间 stays its paper's; BibTeX comes in.
   await call('move', { from: '智能体/ReAct.html', to: 'ReAct.html' });
@@ -311,36 +333,41 @@ try {
   assert.equal((await saved()).papers.find((p) => p.title === 'ReAct').year, 2022);
   console.log('PASS: moved files follow, BibTeX imported');
 
-  // Other AI tools on this computer: off until turned on here; then the address answers with
-  // the library, and stops answering when turned off again.
-  await library.getByLabel('导入、导出和补全').click();
-  await page.getByRole('menuitem', { name: /让其他 AI 工具读文献库/ }).click();
-  const share = page.getByRole('dialog', { name: '让其他 AI 工具读文献库' });
-  assert.equal(await share.locator('.library-mcp-url').count(), 0, 'off at first');
-  await share.getByRole('checkbox').check();
-  await share.locator('.library-mcp-url code').first().waitFor();
-  const address = await share.locator('.library-mcp-url code').first().innerText();
+  // Other AI tools on this computer: off until turned on (设置 › 插件); then the address
+  // answers with the library's tools, run by its background script, and stops when turned off.
+  assert.equal((await call('plugin-mcp', {})).enabled, false, 'off at first');
+  const { url: address } = await call('plugin-mcp', { enabled: true });
   assert.match(address, /^http:\/\/127\.0\.0\.1:\d+\/mcp\/[\w-]{24,}$/);
-  const ask = () =>
+  const ask = (method, params) =>
     fetch(address, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'tools/call',
-        params: { name: 'list_papers', arguments: { status: 'done' } },
-      }),
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
     }).then((r) => r.json());
-  const answered = (await ask()).result.content[0].text;
-  assert.match(answered, /Project "论文库"/);
-  assert.match(answered, /Library: 5 papers — 1 read/);
+  assert.deepEqual(
+    (await ask('tools/list')).result.tools.map((t) => t.name),
+    ['list_library', 'get_paper', 'update_library'],
+  );
+  const answered = (
+    await ask('tools/call', { name: 'list_library', arguments: { status: 'done' } })
+  ).result.content[0].text;
+  assert.match(answered, /文献库共 5 篇：已读 1/);
   assert.match(answered, /Attention Is All You Need/);
-  await shot('5-mcp');
-  await share.getByRole('checkbox').uncheck();
-  await waitFor(async () => (await share.locator('.library-mcp-url').count()) === 0, 'turned off');
-  await assert.rejects(ask(), 'nothing listens once it is off');
-  await share.getByLabel('关闭').click();
+  // It may record a paper, but not say whether the reader read one.
+  const ids = (await saved()).papers;
+  const bert = ids.find((p) => p.title.startsWith('BERT'));
+  const changed = (
+    await ask('tools/call', {
+      name: 'update_library',
+      arguments: { papers: [{ id: bert.id, status: 'done', summary: '双向。' }] },
+    })
+  ).result.content[0].text;
+  assert.match(changed, /修改 1 篇/);
+  assert.match(changed, /阅读状态只能由读者自己改/);
+  const after = (await saved()).papers.find((p) => p.id === bert.id);
+  assert.deepEqual([after.status, after.summary], ['reading', '双向。']);
+  await call('plugin-mcp', { enabled: false });
+  await assert.rejects(ask('tools/list'), 'nothing listens once it is off');
   console.log('PASS: the library over MCP, only while turned on');
 
   // A plugin's page: in the sidebar, a tab of its own, reading the library.
@@ -357,8 +384,8 @@ try {
     return out;
   };
   await page.locator('.page-shelf').getByRole('button', { name: '阅读概览' }).click();
-  const frame = page.frameLocator('.plugin-page iframe');
-  await frame.locator('#count').getByText('1/5').waitFor();
+  const probe = page.frameLocator('.plugin-page[data-plugin-page="probe-page"] iframe');
+  await probe.locator('#count').getByText('1/5').waitFor();
   await waitFor(async () => {
     const r = await results();
     return r.fetch && r['script-src'] && r.eval && r.write && r.outside && r.project;
@@ -376,11 +403,11 @@ try {
   assert.deepEqual(hits, ['/data'], 'the request it made, and no script fetched');
   // It hears the library change while its tab is open.
   await call('library-add', { paper: { title: 'Toolformer', status: 'done' } });
-  await frame.locator('#count').getByText('2/6').waitFor();
+  await probe.locator('#count').getByText('2/6').waitFor();
   assert.equal((await results()).changed, 'yes');
   await shot('4-plugin-page');
   // And opens a paper's document in the reader.
-  await frame.locator('#open').click();
+  await probe.locator('#open').click();
   await waitFor(
     async () => await page.locator('.page-host').isHidden(),
     'document opened by the page',
@@ -400,6 +427,46 @@ try {
   console.log(
     'PASS: a plugin page reads the library, hears changes, opens documents, runs only its own code',
   );
+
+  // Turned off, the library's page, marks and menu items go; the papers stay in the project.
+  assert.ok((await badge('Attention Is All You Need.html').count()) > 0);
+  // In 设置 › 插件: its card, and the switch that lets other AI tools use plugins' tools.
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  const settings = page.getByRole('dialog', { name: '设置', exact: true });
+  await settings.getByRole('button', { name: '插件' }).click();
+  await settings.getByText('让其他 AI 工具使用').waitFor();
+  await settings
+    .getByText(/Claude Code、Codex 等能用：查看文献库、看一篇论文、修改文献库/)
+    .waitFor();
+  // A copy loaded from a folder is a community plugin: its card says it may send things out.
+  const libraryCard = settings
+    .locator('.plugin-card')
+    .filter({ has: page.getByLabel('开启文献库') });
+  await libraryCard.getByRole('button', { name: '展开文献库' }).click();
+  await libraryCard
+    .locator('.plugin-permissions')
+    .getByText(/页面和后台脚本可以自己访问任何网站，可能把看到的文献库、文档和笔记发出去/)
+    .waitFor({ state: 'attached' });
+  await shot('5-settings');
+  // It turns once 页间 has saved it.
+  await settings.getByLabel('开启文献库').click();
+  await waitFor(async () => !(await settings.getByLabel('开启文献库').isChecked()), 'off');
+  await waitFor(
+    async () => (await settings.getByText('让其他 AI 工具使用').count()) === 0,
+    'no plugin offers tools now',
+  );
+  await page.keyboard.press('Escape');
+  await waitFor(
+    async () =>
+      (await page.locator('.page-shelf').getByRole('button', { name: '文献库' }).count()) === 0,
+    'gone from the sidebar',
+  );
+  await waitFor(async () => (await page.locator('.tree-badge').count()) === 0, 'marks gone');
+  await tree('BERT.html').click({ button: 'right' });
+  assert.equal(await menuItem('文献信息…').count(), 0);
+  await page.keyboard.press('Escape');
+  assert.equal((await saved()).papers.length, 6);
+  console.log('PASS: turned off, the library leaves the tree and the sidebar');
 
   assert.deepEqual(errors, [], 'no page errors');
   console.log('library e2e: ok');

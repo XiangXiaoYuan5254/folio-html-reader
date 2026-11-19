@@ -10,7 +10,15 @@ import { themeInfo, useTheme } from '../theme';
 export type AiState = 'idle' | 'thinking' | 'writing' | 'tool' | 'done' | 'error';
 export type ReadingState = { state: 'reading' | 'away'; kind: DocKind | 'none' };
 export type DocumentState = { title: string; kind: DocKind | 'none' };
-export type WidgetTheme = { dark: boolean; accent: string; reducedMotion: boolean };
+// `id`: the theme's name ('default', 'night', …), and `bold` whether it's one of the bold ones,
+// for a page that styles itself as Folio does.
+export type WidgetTheme = {
+  dark: boolean;
+  accent: string;
+  reducedMotion: boolean;
+  id: string;
+  bold: boolean;
+};
 
 type AssistantState = ReturnType<Assistant['get']>;
 const threadsOf = (s: AssistantState) =>
@@ -112,6 +120,8 @@ const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 export function useWidgetTheme(): WidgetTheme {
   const { active } = useTheme();
   const read = (): WidgetTheme => ({
+    id: active,
+    bold: !!themeInfo(active).bold,
     dark: themeInfo(active).dark,
     accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(),
     reducedMotion: reducedMotion.matches,

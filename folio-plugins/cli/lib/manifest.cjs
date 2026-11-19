@@ -7,7 +7,8 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 
 const FORMAT = 1;
-// "folio": 2 加了 widget（挂件）和 page（页面）；只有 AI 任务的插件照旧写 1。
+// "folio": 2 加了 widget（挂件）、page（页面）、background（后台脚本）和 aiTools（给 AI 的工具）；
+// 只有 AI 任务的插件照旧写 1。
 const FORMATS = [1, 2];
 const MANIFEST = 'folio-plugin.json';
 // 插件可以让 AI 使用的工具：页间的项目工具，加上只能访问清单里网站的 fetch_url、read_feed。
@@ -26,8 +27,6 @@ const TOOLS = [
   'add_highlights',
   'write_note',
   'save_pdf',
-  'list_library',
-  'update_library',
 ];
 // 往项目里写东西的工具，插件运行时只能写进它声明的文件夹。
 const WRITE_TOOLS = ['create_html', 'edit_html', 'add_highlights', 'write_note', 'save_pdf'];
@@ -63,7 +62,8 @@ const WIDGET_LIMITS = {
   total: 50 * 1024 * 1024,
   manifest: LIMITS.manifest,
 };
-const limitsFor = (manifest) => (manifest?.widget || manifest?.page ? WIDGET_LIMITS : LIMITS);
+const limitsFor = (manifest) =>
+  manifest?.widget || manifest?.page || manifest?.background ? WIDGET_LIMITS : LIMITS;
 // 插件里可以放的素材：图片、字体、音频。
 const ASSET_TYPES = [
   '.png',
@@ -85,8 +85,11 @@ const ASSET_TYPES = [
 const WIDGET_EVENTS = ['ai', 'reading', 'document'];
 // 挂件放在哪：趴在 AI 助手的输入框上，或者窗口的一个角。
 const WIDGET_ANCHORS = ['assistant', 'bottom-right', 'bottom-left', 'top-right', 'top-left'];
-// 页面能不能用项目的文献库：不能（不写）、只读、能改。
-const PAGE_LIBRARY = ['read', 'write'];
+// 页面和后台脚本能不能用项目的文献库：不能（不写）、只读、能改。
+const LIBRARY_ACCESS = ['read', 'write'];
+// 插件给 AI 的工具：名字的写法，和最多几个。
+const aiToolPattern = /^[a-z][a-z0-9_]{2,39}$/;
+const AI_TOOLS_MAX = 16;
 
 class PluginError extends Error {}
 const fail = (message) => {
@@ -175,14 +178,29 @@ function validateManifest(raw, { appVersion } = {}) {
   if (hasWidget && raw.folio !== 2) fail('用到 widget（挂件）的插件，要写 "folio": 2');
   const hasPage = raw.page !== undefined && raw.page !== null;
   if (hasPage && raw.folio !== 2) fail('用到 page（页面）的插件，要写 "folio": 2');
-  const limits = hasWidget || hasPage ? WIDGET_LIMITS : LIMITS;
+  const hasBackground = raw.background !== undefined && raw.background !== null;
+  if (hasBackground && raw.folio !== 2) fail('用到 background（后台脚本）的插件，要写 "folio": 2');
+  const limits = hasWidget || hasPage || hasBackground ? WIDGET_LIMITS : LIMITS;
   if (files.length > limits.files) fail(`插件文件太多（最多 ${limits.files} 个）`);
   const widget = hasWidget ? cleanWidget(raw.widget, files) : null;
   const page = hasPage ? cleanPage(raw.page, files, name) : null;
-  // 只有挂件或页面的插件可以不写 run：它不让 AI 干活，也就没有运行按钮和定时。
+  // 后台脚本：插件开着、打开了项目时一直在跑的一页 HTML，看不见。
+  const background = hasBackground ? cleanFile(raw.background) : '';
+  if (background && (!/\.html?$/i.test(background) || !files.includes(background)))
+    fail('background 应当是 files 里列出的一个 .html 文件');
+  if (background && background === page?.entry) fail('background 和 page.entry 不能是同一个文件');
+  const aiTools = cleanAiTools(raw.aiTools, background);
+  // 依赖的其他插件（id）：没装、没开时，用到它们的地方会提示先装上。
+  const dependencies = [
+    ...new Set((Array.isArray(raw.dependencies) ? raw.dependencies : []).map((d) => text(d, 40))),
+  ];
+  for (const d of dependencies)
+    if (!idPattern.test(d) || d === id) fail(`dependencies 里的插件 id 无效：${d}`);
+  if (dependencies.length > 8) fail('dependencies 最多写 8 个插件');
+  // 只有挂件、页面或后台脚本的插件可以不写 run：它不让 AI 干活，也就没有运行按钮和定时。
   const hasRun = raw.run !== undefined && raw.run !== null;
-  if (!hasRun && !widget && !page)
-    fail('插件要有 run（交给 AI 的任务）、widget（挂件）或 page（页面）');
+  if (!hasRun && !widget && !page && !background)
+    fail('插件要有 run（交给 AI 的任务）、widget（挂件）、page（页面）或 background（后台脚本）');
   const run = raw.run || {};
   const prompt = hasRun ? cleanFile(run.prompt) : '';
   if (hasRun && !/\.md$/i.test(prompt)) fail('run.prompt 应当是一个 .md 文件');
@@ -192,11 +210,18 @@ function validateManifest(raw, { appVersion } = {}) {
   const script = run.script ? cleanFile(run.script) : '';
   if (script && (!/\.js$/i.test(script) || !files.includes(script)))
     fail('run.script 应当是 files 里列出的一个 .js 文件');
-  // 只有 run.script 指向的那个文件可以是脚本；带挂件或页面的插件里，其余的 .js 是它们的代码。
-  if (!widget && !page)
+  // 只有 run.script 指向的那个文件可以是脚本；带挂件、页面或后台脚本的插件里，其余的 .js 是它们的代码。
+  if (!widget && !page && !background)
     for (const f of files) if (/\.js$/i.test(f) && f !== script) fail(`插件里多了脚本文件：${f}`);
   const tools = [...new Set((Array.isArray(run.tools) ? run.tools : []).map((t) => text(t, 40)))];
-  for (const t of tools) if (!TOOLS.includes(t)) fail(`不认识的工具：${t}`);
+  // 页间自己的工具，或者插件给 AI 的工具：自己的，或 dependencies 里的插件的。
+  for (const t of tools)
+    if (
+      !TOOLS.includes(t) &&
+      !aiTools.some((a) => a.name === t) &&
+      !(dependencies.length && aiToolPattern.test(t))
+    )
+      fail(`不认识的工具：${t}`);
   const triggers = [];
   for (const t of hasRun && Array.isArray(raw.triggers) ? raw.triggers.slice(0, 6) : []) {
     if (t?.type === 'daily') {
@@ -222,6 +247,21 @@ function validateManifest(raw, { appVersion } = {}) {
     ...new Set((Array.isArray(permissions.write) ? permissions.write : []).map(cleanFolder)),
   ];
   if (write.length > 5) fail('写入文件夹太多（最多 5 个）');
+  if (permissions.library !== undefined && !LIBRARY_ACCESS.includes(permissions.library))
+    fail('permissions.library 只能是 "read" 或 "write"');
+  if (permissions.documents !== undefined && permissions.documents !== 'read')
+    fail('permissions.documents 只能是 "read"');
+  if (permissions.fileTree !== undefined && typeof permissions.fileTree !== 'boolean')
+    fail('permissions.fileTree 只能是 true 或 false');
+  if (raw.page?.library !== undefined)
+    fail('文献库的权限写在 permissions.library 里，不是 page.library');
+  const library = permissions.library || '';
+  const documents = permissions.documents || '';
+  const fileTree = permissions.fileTree === true;
+  if ((library || documents || fileTree) && !page && !background)
+    fail(
+      'permissions 里的 library、documents、fileTree 是给页面和后台脚本用的，插件要有 page 或 background',
+    );
   if (tools.some((t) => WRITE_TOOLS.includes(t)) && !write.length)
     fail('用到写入工具的插件，要在 permissions.write 里写明能写哪些文件夹');
   const settings = [];
@@ -230,13 +270,27 @@ function validateManifest(raw, { appVersion } = {}) {
     if (!/^[a-z][a-z0-9_]{0,29}$/.test(key)) fail(`设置项名称无效：${s?.key}`);
     if (RESERVED_KEYS.includes(key)) fail(`设置项不能叫 ${key}`);
     if (settings.some((x) => x.key === key)) fail(`设置项重复：${key}`);
-    const type = ['text', 'textarea', 'folder'].includes(s.type) ? s.type : 'text';
+    const type = ['text', 'textarea', 'folder', 'select'].includes(s.type) ? s.type : 'text';
+    // A select: one of a few values, each with the words shown for it.
+    const options = [];
+    if (type === 'select') {
+      for (const o of Array.isArray(s.options) ? s.options.slice(0, 20) : []) {
+        const value = text(typeof o === 'string' ? o : o?.value, 60);
+        if (!value || options.some((x) => x.value === value)) continue;
+        options.push({ value, label: text(typeof o === 'string' ? o : o?.label, 40) || value });
+      }
+      if (options.length < 2) fail(`设置项 ${key} 是 select，要有至少两个 options`);
+    }
+    const fallback = text(s.default, 2000);
+    if (type === 'select' && fallback && !options.some((o) => o.value === fallback))
+      fail(`设置项 ${key} 的 default 不在 options 里`);
     settings.push({
       key,
       type,
       label: text(s.label, 40) || key,
       hint: text(s.hint, 160),
-      default: text(s.default, 2000),
+      default: type === 'select' ? fallback || options[0].value : fallback,
+      ...(type === 'select' ? { options } : {}),
     });
   }
   // 写入范围里引用的设置必须存在，且应当是文件夹。
@@ -278,22 +332,56 @@ function validateManifest(raw, { appVersion } = {}) {
       where,
     },
     triggers,
-    permissions: { network, write },
+    permissions: { network, write, library, documents, fileTree },
     settings,
     widget,
     page,
+    background,
+    aiTools,
+    dependencies,
   };
 }
 
-// 页面：在阅读区里开成一个标签页的 HTML，比如仪表盘。library 写明它能不能读、能不能改文献库。
+// 插件给 AI 的工具：AI 助手（以及打开了 MCP 时，电脑上的其他 AI 工具）可以调用，由后台脚本
+// 用 folio.tools.handle 实现。write 的工具，AI 助手先给用户看预览，用户同意才执行。
+function cleanAiTools(raw, background) {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) fail('aiTools 应当是一个数组');
+  if (raw.length && !background) fail('有 aiTools 的插件要有 background（后台脚本），工具由它实现');
+  if (raw.length > AI_TOOLS_MAX) fail(`aiTools 最多 ${AI_TOOLS_MAX} 个`);
+  const out = [];
+  for (const t of raw) {
+    const name = text(t?.name, 40);
+    if (!aiToolPattern.test(name))
+      fail(`aiTools 的名字只能用小写字母、数字和 _，3–40 个字符：${t?.name}`);
+    if (TOOLS.includes(name)) fail(`aiTools 不能和页间自己的工具同名：${name}`);
+    if (out.some((x) => x.name === name)) fail(`aiTools 重名：${name}`);
+    const description = text(t.description, 1500);
+    if (!description) fail(`aiTools 的 ${name} 没有 description，AI 不知道什么时候用它`);
+    const parameters =
+      t.parameters === undefined ? { type: 'object', properties: {} } : t.parameters;
+    if (!parameters || typeof parameters !== 'object' || parameters.type !== 'object')
+      fail(`aiTools 的 ${name}：parameters 应当是 type 为 "object" 的 JSON Schema`);
+    if (JSON.stringify(parameters).length > 16 * 1024) fail(`aiTools 的 ${name}：parameters 太长`);
+    out.push({
+      name,
+      title: text(t.title, 24) || name,
+      description,
+      parameters,
+      write: t.write === true,
+      mcp: t.mcp === true,
+    });
+  }
+  return out;
+}
+
+// 页面：在阅读区里开成一个标签页的 HTML，比如仪表盘。
 function cleanPage(raw, files, name) {
   if (typeof raw !== 'object' || Array.isArray(raw)) fail('page 应当是一个对象');
   const entry = cleanFile(raw.entry);
   if (!/\.html?$/i.test(entry) || !files.includes(entry))
     fail('page.entry 应当是 files 里列出的一个 .html 文件');
-  if (raw.library !== undefined && !PAGE_LIBRARY.includes(raw.library))
-    fail('page.library 只能是 "read" 或 "write"');
-  return { entry, title: text(raw.title, 24) || name, library: raw.library || '' };
+  return { entry, title: text(raw.title, 24) || name };
 }
 
 // 挂件：入口页面、大小、放在哪、要订阅的事件，以及可选的美术署名。
@@ -335,11 +423,21 @@ function newPermissions(before, after) {
     widget: !!after.widget && !before.widget,
     events: (after.widget?.events || []).filter((e) => !(before.widget?.events || []).includes(e)),
     page: !!after.page && !before.page,
-    // 页面对文献库的权限变大了：'' → read → write。
+    background: !!after.background && !before.background,
+    // 对文献库的权限变大了：'' → read → write。
     library:
-      PAGE_LIBRARY.indexOf(after.page?.library) > PAGE_LIBRARY.indexOf(before.page?.library)
-        ? after.page.library
+      LIBRARY_ACCESS.indexOf(after.permissions.library) >
+      LIBRARY_ACCESS.indexOf(before.permissions.library || '')
+        ? after.permissions.library
         : '',
+    documents: !!after.permissions.documents && !before.permissions.documents,
+    fileTree: after.permissions.fileTree && !before.permissions.fileTree,
+    aiTools: after.aiTools
+      .filter((t) => {
+        const was = (before.aiTools || []).find((b) => b.name === t.name);
+        return !was || (t.write && !was.write) || (t.mcp && !was.mcp);
+      })
+      .map((t) => t.name),
   };
   return added.network.length ||
     added.write.length ||
@@ -349,7 +447,11 @@ function newPermissions(before, after) {
     added.widget ||
     added.events.length ||
     added.page ||
-    added.library
+    added.background ||
+    added.library ||
+    added.documents ||
+    added.fileTree ||
+    added.aiTools.length
     ? added
     : null;
 }
@@ -486,7 +588,9 @@ module.exports = {
   WIDGET_LIMITS,
   WIDGET_EVENTS,
   WIDGET_ANCHORS,
-  PAGE_LIBRARY,
+  LIBRARY_ACCESS,
+  AI_TOOLS_MAX,
+  aiToolPattern,
   limitsFor,
   PluginError,
   fail,

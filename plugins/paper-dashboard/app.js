@@ -1,6 +1,9 @@
 // 论文仪表盘：各个视图。数据来自页间的文献库（adapter.js），不联网。
 const RAW_COLORS=['#34d3c0','#60a5fa','#f472b6','#fbbf24','#a78bfa','#4ade80','#fb923c','#f87171'];
-const CCF_COLORS={'CCF-A':'#f6c453','CCF-B':'#8fb3ff','CCF-C':'#7ee0a0','无CCF评级':'#9aa6c4','预印本':'#b69bff','未知':'#8590ac'};
+const CCF_COLORS={'CCF-A':'#f6c453','CCF-B':'#8fb3ff','CCF-C':'#7ee0a0','无CCF评级':'#9aa6c4',
+  'A 级':'#f6c453','B 级':'#8fb3ff','C 级':'#7ee0a0','未分级':'#9aa6c4','预印本':'#b69bff','未知':'#8590ac'};
+// 分级的名字：CCF，或读者自己写的等级；不分级时没有。
+const tierName=()=>DATA.ranking==='ccf'?'CCF 等级':'等级';
 let DATA=null, lastStamp=null, sortMode='order', venueTypeFilter=null, wallSort='time', wallQ='';
 let catListView='all';  // 'all'，或文献库里一个书单的名字
 let catQ='';
@@ -53,7 +56,11 @@ function render(){
 /* hero */
 function heroHTML(t,pct){
   const C=2*Math.PI*86;
-  const a=DATA.ccf.find(c=>c.name==='CCF-A')||{total:0,read:0};
+  const a=DATA.ccf[0]||{name:'',total:0,read:0};
+  // 不分级时，这张卡片换成今年读完了几篇。
+  const year=String(new Date().getFullYear()), month=year+'-'+String(new Date().getMonth()+1).padStart(2,'0');
+  const thisYear=DATA.papers.filter(p=>p.done&&(p.read_date||'').startsWith(year)).length;
+  const thisMonth=DATA.papers.filter(p=>p.done&&(p.read_date||'').startsWith(month)).length;
   return `<div class="hero">
     <div class="card ring-card"><div class="ring-wrap">
       <svg width="200" height="200" viewBox="0 0 200 200">
@@ -67,7 +74,9 @@ function heroHTML(t,pct){
     </div><div class="ring-label">总体阅读进度</div></div>
     <div class="kpis">
       ${kpi('k-total','📚 论文总数',t.total,'文献库里的全部论文',null)}
-      ${kpi('k-ccf','🏆 CCF-A 论文',a.total,`已读 ${a.read} / ${a.total}（${pctOf(a.read,a.total)}%）`,pctOf(a.read,a.total))}
+      ${DATA.ranking==='none'
+        ?kpi('k-ccf','📅 今年读完',thisYear,`本月 ${thisMonth} 篇`,null)
+        :kpi('k-ccf',`🏆 ${a.name} 论文`,a.total,`已读 ${a.read} / ${a.total}（${pctOf(a.read,a.total)}%）`,pctOf(a.read,a.total))}
       ${kpi('k-read','✅ 已读',t.read,`占总量 ${pct}%`,pct)}
       ${kpi('k-unread','📖 未读',t.unread,`还剩 ${t.unread} 篇待阅读`,null)}
     </div></div>`;
@@ -303,7 +312,7 @@ function catRowsHTML(m){
 function catsHTML(){
   const m=catViewModel();
   const search=catListView==='all'?'':`<input id="catQ" class="cat-search" type="search" placeholder="在这个书单里搜索…" value="${esc(catQ)}">`;
-  return `<div class="section" id="catSection"><div class="section-head"><h2>按知识类别</h2>
+  return `<div class="section" id="catSection"><div class="section-head"><h2>按分类</h2>
     <span class="sub" id="catMeta">${catMetaHTML(m)}</span><span class="spacer"></span>
     <div class="seg" id="catSort">
       <button data-s="order" class="${sortMode==='order'?'on':''}">默认顺序</button>
@@ -348,11 +357,11 @@ function donutHTML(ccf){
       data-tip="${esc(c.name)}：${c.total} 篇（占 ${pctOf(c.total,total)}%）· 已读 ${c.read}"/>`;
     off+=len; return s;
   }).join('');
-  const a=ccf.find(c=>c.name==='CCF-A')||{total:0};
+  const a=DATA.ccf[0]||{name:'',total:0};
   return `<div class="donut-wrap"><div class="donut">
     <svg width="180" height="180" viewBox="0 0 180 180">${segs}</svg>
-    <div class="donut-center"><div class="da" style="color:${CCF_COLORS['CCF-A']}">${pctOf(a.total,total)}%</div>
-    <div class="db">为 CCF-A</div></div></div></div>`;
+    <div class="donut-center"><div class="da" style="color:${CCF_COLORS[a.name]||'#f6c453'}">${pctOf(a.total,total)}%</div>
+    <div class="db">为 ${esc(a.name)}</div></div></div></div>`;
 }
 function venuesHTML(){
   const ccf=DATA.ccf.filter(c=>c.total>0);
@@ -388,13 +397,22 @@ function venuesHTML(){
   }).join('')||'<div class="empty">该类型暂无渠道</div>';
   const listTitle=venueTypeFilter?`热门${venueTypeFilter} Top ${vlist.length}`:`热门发表渠道 Top ${vlist.length}`;
 
-  return `<div class="section"><div class="section-head"><h2>按发表渠道与 CCF 等级</h2>
-    <span class="sub">依 CCF 2026 第七版（ICLR 已升 A）；Nature / COLM / TMLR 等未列入目录，归为「无CCF评级」</span></div>
-    <div class="vgrid">
-      <div class="card vcard"><h3>CCF 等级分布<span class="hint">点击等级展开渠道，再点论文预览笔记</span></h3>${donutHTML(ccf)}${ccfRows}</div>
-      <div class="card vcard"><h3>发表类型<span class="hint">点击可筛选下方渠道</span></h3>
+  const types=`<div class="card vcard"><h3>发表类型<span class="hint">点击可筛选下方渠道</span></h3>
         <div class="typestat">${typeBoxes}</div>
-        <h3>${listTitle}<span class="hint">蓝条 = 已读占比</span></h3><div class="tvlist">${tv}</div></div>
+        <h3>${listTitle}<span class="hint">蓝条 = 已读占比</span></h3><div class="tvlist">${tv}</div></div>`;
+  // 不分级：只看发表渠道。要按等级看，在插件设置里选「渠道分级」。
+  if(DATA.ranking==='none')
+    return `<div class="section"><div class="section-head"><h2>按发表渠道</h2>
+      <span class="sub">想按 CCF 或自己的等级看，在插件设置里选「渠道分级」</span></div>
+      <div class="vgrid single">${types}</div></div>`;
+  const sub=DATA.ranking==='ccf'
+    ?'依 CCF 2026 第七版（ICLR 已升 A）；Nature / COLM / TMLR 等未列入目录，归为「无CCF评级」'
+    :'等级来自插件设置里你写的表';
+  return `<div class="section"><div class="section-head"><h2>按发表渠道与${tierName()}</h2>
+    <span class="sub">${sub}</span></div>
+    <div class="vgrid">
+      <div class="card vcard"><h3>${tierName()}分布<span class="hint">点击等级展开渠道，再点论文预览笔记</span></h3>${donutHTML(ccf)}${ccfRows}</div>
+      ${types}
     </div></div>`;
 }
 
@@ -435,8 +453,8 @@ function filterDefs(){
   return [
     {key:'status', all:'全部状态', base:'状态',
       opts:[{value:'done',text:'已读'},{value:'todo',text:'未读'}]},
-    {key:'ccf', all:'全部CCF等级', base:'CCF',
-      opts:DATA.ccf.filter(c=>c.total>0).map(c=>({value:c.name,text:`${c.name}（${c.total}）`}))},
+    ...(DATA.ranking==='none'?[]:[{key:'ccf', all:'全部'+tierName(), base:DATA.ranking==='ccf'?'CCF':'等级',
+      opts:DATA.ccf.filter(c=>c.total>0).map(c=>({value:c.name,text:`${c.name}（${c.total}）`}))}]),
     {key:'vtype', all:'全部类型', base:'类型',
       opts:DATA.vtypes.filter(c=>c.total>0).map(c=>({value:c.name,text:`${c.name}（${c.total}）`}))},
     {key:'venue', all:'全部渠道', base:'渠道', opts:venueOpts()},
@@ -461,7 +479,7 @@ function msWidget(def){
 }
 function explorerHTML(){
   const widgets=filterDefs().map(msWidget).join('');
-  return `<div class="section"><div class="section-head"><h2>论文浏览器</h2><span class="sub">搜索 / 多选筛选并点开伴读笔记</span></div>
+  return `<div class="section"><div class="section-head"><h2>论文浏览器</h2><span class="sub">搜索 / 多选筛选并点开笔记</span></div>
     <div class="card exp-card"><div class="filters">
       <input id="fq" type="text" placeholder="🔍 搜索标题、简称或渠道（如 LSTM、NeurIPS）…" value="${esc(fState.q)}">
       ${widgets}

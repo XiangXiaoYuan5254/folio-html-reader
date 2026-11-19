@@ -26,15 +26,22 @@ await fs.writeFile(
 );
 await fs.writeFile(
   path.join(temp, 'publish.json'),
-  JSON.stringify({ plugins: [{ dir: path.join(root, 'plugins/ai-daily'), listed: true }] }),
+  JSON.stringify({
+    plugins: [
+      { dir: path.join(root, 'plugins/ai-daily'), listed: true },
+      { dir: path.join(root, 'plugins/library'), listed: true },
+    ],
+  }),
 );
-const [officialEntry] = (
+const published = (
   await buildWebsitePlugins({
     outputDir: pluginDownloads,
     sourcesFile: path.join(temp, 'publish.json'),
     keyFile: path.join(temp, 'key.pem'),
   })
 ).listed;
+const officialEntry = published.find((e) => e.id === 'ai-daily');
+const libraryEntry = published.find((e) => e.id === 'library');
 const project = path.join(temp, '项目');
 const userData = path.join(temp, 'user-data');
 const documents = path.join(temp, 'Documents');
@@ -243,6 +250,8 @@ try {
       FOLIO_WORKSPACE: project,
       FOLIO_DOCUMENTS: documents,
       FOLIO_NO_SPEECH_HELPER: '1',
+      // 文献库 needs the release after 0.32.1.
+      FOLIO_APP_VERSION: '0.33.0',
       FOLIO_PLUGIN_DIRECTORY: `http://127.0.0.1:${port}/directory.json`,
       FOLIO_OFFICIAL_KEY: signing.publicKey
         .export({ type: 'spki', format: 'der' })
@@ -251,7 +260,7 @@ try {
   });
   // The plugin's one site, and a GitHub with the directory's plugin in it.
   await app.evaluate(
-    ({ net }, { sha, listed, pluginUrl, pluginZip }) => {
+    ({ net }, { sha, listed, pluginUrl, pluginZip, libraryUrl, libraryZip }) => {
       globalThis.pluginDownloads = 0;
       const real = net.fetch.bind(net);
       const json = (body, type = 'application/json') =>
@@ -262,6 +271,8 @@ try {
           globalThis.pluginDownloads++;
           return Promise.resolve(new Response(Buffer.from(pluginZip, 'base64')));
         }
+        if (url === libraryUrl)
+          return Promise.resolve(new Response(Buffer.from(libraryZip, 'base64')));
         if (url === 'https://api.example.com/config')
           return Promise.resolve(json('v1', 'text/plain'));
         if (url.startsWith('https://api.github.com/repos/me/listed/commits/'))
@@ -280,6 +291,12 @@ try {
       pluginZip: (
         await fs.readFile(
           path.join(pluginDownloads, path.basename(new URL(officialEntry.url).pathname)),
+        )
+      ).toString('base64'),
+      libraryUrl: libraryEntry.url,
+      libraryZip: (
+        await fs.readFile(
+          path.join(pluginDownloads, path.basename(new URL(libraryEntry.url).pathname)),
         )
       ).toString('base64'),
     },
@@ -304,7 +321,10 @@ try {
   // installing it needs no community switch.
   const official = dialog.getByRole('list', { name: '官方插件' });
   await official.getByText('AI 前沿日报').waitFor();
-  assert.match(await official.locator('img.plugin-icon').getAttribute('src'), /^data:image\/svg/);
+  assert.match(
+    await official.locator('img.plugin-icon').first().getAttribute('src'),
+    /^data:image\/svg/,
+  );
   await page.screenshot({ path: path.join(evidence, 'optional-plugin-recommended.png') });
   assert.equal((await page.evaluate(() => window.folio.invoke('plugins'))).plugins.length, 0);
   assert.equal(await app.evaluate(() => globalThis.pluginDownloads), 0);
@@ -314,7 +334,11 @@ try {
     .filter({ has: page.getByLabel('开启AI 前沿日报') });
   await dailyCard.getByText('官方', { exact: true }).waitFor();
   assert.equal(await app.evaluate(() => globalThis.pluginDownloads), 1);
-  assert.equal(await official.count(), 0, 'installed, it leaves the official list');
+  assert.equal(
+    await official.getByText('AI 前沿日报').count(),
+    0,
+    'installed, it leaves the official list',
+  );
   assert.equal(await dailyCard.getByLabel('开启AI 前沿日报').isChecked(), false);
   assert.equal((await page.evaluate(() => window.folio.invoke('plugins'))).thirdParty, false);
   await page.screenshot({ path: path.join(evidence, 'optional-plugin-installed.png') });
@@ -322,6 +346,21 @@ try {
   await dailyCard.getByRole('button', { name: '卸载', exact: true }).click();
   await official.getByRole('button', { name: '安装AI 前沿日报' }).waitFor();
   assert.equal(await app.evaluate(() => globalThis.pluginDownloads), 1);
+
+  // An official plugin with a page and a background script: its card says what it may see and
+  // do, but not that it may send any of it out — that warning is for community plugins.
+  await official.getByRole('button', { name: '安装文献库' }).click();
+  const libraryCard = dialog.locator('.plugin-card').filter({ has: page.getByLabel('开启文献库') });
+  await libraryCard.getByText('官方', { exact: true }).waitFor();
+  const can = libraryCard.locator('.plugin-permissions');
+  await can.getByText(/看到并修改项目的文献库/).waitFor({ state: 'attached' });
+  const says = await can.textContent();
+  assert.match(says, /在文件树上给文件加标记和右键菜单/);
+  assert.match(says, /给 AI 助手提供工具：查看文献库、看一篇论文、修改文献库/);
+  assert.doesNotMatch(says, /发出去|可以自己访问任何网站/);
+  await page.screenshot({ path: path.join(evidence, 'official-library-card.png') });
+  await libraryCard.getByRole('button', { name: '卸载', exact: true }).click();
+  await official.getByRole('button', { name: '安装文献库' }).waitFor();
 
   // Community plugins: on only after the warning.
   await dialog.getByLabel('允许社区插件').click();

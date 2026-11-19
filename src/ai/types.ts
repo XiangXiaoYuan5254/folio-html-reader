@@ -187,6 +187,20 @@ export const PAPER_FIELDS = [
 ];
 
 // A paper found by search_papers (electron/papers.cjs).
+// What is known of a paper saved into the project (save_pdf), kept with its file by a plugin
+// that keeps a library.
+export type SavedPaper = {
+  title: string;
+  authors?: string[];
+  year?: number;
+  venue?: string;
+  doi?: string;
+  arxiv?: string;
+  pmid?: string;
+  url?: string;
+  abstract?: string;
+  citations?: number;
+};
 export type Paper = {
   title: string;
   authors: string[];
@@ -239,8 +253,8 @@ export type AgentPreview =
   | { kind: 'source'; path: string; before: string; after: string }
   | { kind: 'create'; path: string; content: string }
   | { kind: 'download'; path: string; url: string; title: string }
-  // Changes to the library: each paper and what happens to it. `path` is its name, 文献库.
-  | { kind: 'library'; path: string; items: { title: string; change: string }[] };
+  // What a plugin's tool will change, as the plugin says it. `path` is the plugin's name.
+  | { kind: 'plugin'; path: string; items: { label: string; detail: string }[] };
 export type AgentStep = {
   id: string;
   tool: string;

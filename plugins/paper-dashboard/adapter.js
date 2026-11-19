@@ -1,11 +1,20 @@
 // 把页间的文献库（folio.library.list()）整理成仪表盘各个视图要的数据。
 // 一篇论文：标题、别名（中文名或简称）、分类（没填就按所在文件夹）、年份、出处、读没读过、哪天读完。
-// 出处先认成渠道简称（venues.js），再由渠道得到发表类型和 CCF 等级。
+// 出处先认成渠道简称（venues.js），再由渠道得到发表类型；分级（插件设置的「渠道分级」）默认不分，
+// 可以选 CCF（计算机方向），或只用读者自己写的等级表。
 const stripNo = (name) => String(name || '').replace(/^\d+[_.\s]\s*/, '').trim();
 const norm = (s) => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 const hasCjk = (s) => /[㐀-鿿]/.test(s);
 
-// 插件设置里补充的渠道等级：一行一个 “渠道名=等级”，等级是 A、B、C 或 -。
+// 渠道分级：none 不分级，ccf 用 CCF 目录（加上读者写的），custom 只用读者写的。
+const RANKING = ['ccf', 'custom'].includes(folio.settings.ranking) ? folio.settings.ranking : 'none';
+// 每种分级的档位，从高到低。
+const TIERS = {
+  ccf: ['CCF-A', 'CCF-B', 'CCF-C', '无CCF评级', '预印本', '未知'],
+  custom: ['A 级', 'B 级', 'C 级', '未分级', '预印本', '未知'],
+  none: [],
+};
+// 插件设置里写的渠道等级：一行一个 “渠道名=等级”，等级是 A、B、C 或 -。
 function venueOverrides() {
   const out = {};
   for (const line of String(folio.settings.venues || '').split(/\n+/)) {
@@ -29,7 +38,12 @@ function venueOf(paper, overrides) {
   return raw;
 }
 const typeOf = (venue) => (JOURNALS.has(venue) ? '期刊' : PREPRINTS.has(venue) ? '预印本' : '会议');
-const bucketOf = (rank, type) => (['A', 'B', 'C'].includes(rank) ? 'CCF-' + rank : type === '预印本' ? '预印本' : '无CCF评级');
+const bucketOf = (rank, type) =>
+  RANKING === 'none'
+    ? ''
+    : ['A', 'B', 'C'].includes(rank)
+      ? RANKING === 'ccf' ? 'CCF-' + rank : rank + ' 级'
+      : type === '预印本' ? '预印本' : TIERS[RANKING][3];
 // 像期刊的名字按期刊算（不在上面的表里时）。
 const looksJournal = (venue) => /\b(journal|transactions|review|letters|annals|bulletin|magazine)\b/i.test(venue);
 
@@ -65,7 +79,10 @@ async function buildData() {
     const label = names.find((n) => !hasCjk(n)) || '';
     const venue = venueOf(p, overrides);
     const type = venue === '未知' ? '未知' : looksJournal(venue) && !PREPRINTS.has(venue) ? '期刊' : typeOf(venue);
-    const rank = venue === '未知' ? '?' : overrides[norm(venue)]?.rank || VENUE_RANK[venue] || '-';
+    const rank =
+      RANKING === 'none' || venue === '未知'
+        ? '?'
+        : overrides[norm(venue)]?.rank || (RANKING === 'ccf' && VENUE_RANK[venue]) || '-';
     const authors = p.authors.length > 4 ? p.authors.slice(0, 4).join('、') + ' 等' : p.authors.join('、');
     return {
       id: p.id,
@@ -110,7 +127,7 @@ async function buildData() {
   const undated = papers.filter((p) => !p.year);
   if (undated.length) years.push({ year: '未知', total: undated.length, read: undated.filter((p) => p.done).length });
 
-  const ccf = agg(papers, (p) => p.ccfBucket, ['CCF-A', 'CCF-B', 'CCF-C', '无CCF评级', '预印本', '未知']);
+  const ccf = RANKING === 'none' ? [] : agg(papers, (p) => p.ccfBucket, TIERS[RANKING]);
   const vtypes = agg(papers, (p) => p.vtype, ['会议', '期刊', '预印本', '未知']);
   const meta = {};
   for (const p of papers) meta[p.venue] = meta[p.venue] || { rank: p.ccf, vtype: p.vtype };
@@ -119,7 +136,7 @@ async function buildData() {
       .map((v) => ({ ...v, ...meta[v.name] }))
       .sort((a, b) => b.total - a.total);
     // 只有在收了 CCF 评级的论文时，才提示还没覆盖的核心顶会顶刊。
-    if (c.name === 'CCF-A')
+    if (RANKING === 'ccf' && c.name === 'CCF-A')
       for (const name of CORE_A)
         if (!venues.some((v) => v.name === name))
           venues.push({ name, total: 0, read: 0, rank: 'A', vtype: typeOf(name), uncovered: true });
@@ -133,8 +150,9 @@ async function buildData() {
   return {
     totals: { total: papers.length, read, unread: papers.length - read },
     categories, years, ccf, vtypes, venuesAll, papers,
+    ranking: RANKING,
     lists: (lib.lists || []).map((l) => ({ name: l.name, note: l.note, count: l.papers.length })),
     // 文献库或渠道设置变了，这个就变。
-    stamp: JSON.stringify([lib, folio.settings.venues || '']),
+    stamp: JSON.stringify([lib, folio.settings.venues || '', RANKING]),
   };
 }

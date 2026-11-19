@@ -435,7 +435,7 @@ function createLibrary({ atomicWrite, now = () => new Date() }) {
     return { ...paper, documents: files };
   }
 
-  return { list, add, addMany, update, remove, moved, setList, detail, read };
+  return { list, add, addMany, update, remove, moved, setList, detail, read, marks };
 }
 
 // ---- BibTeX ---------------------------------------------------------------------------

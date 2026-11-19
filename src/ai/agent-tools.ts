@@ -1,12 +1,10 @@
 import type { Annotation } from '../types';
 import type { AiHost } from './host';
-import type { AgentPreview, DocText, Paper, ToolDef } from './types';
+import type { AgentPreview, DocText, Paper, SavedPaper, ToolDef } from './types';
 import { PAPER_FIELDS } from './types';
 import { docBody, fileName } from './context';
 import { annotationsList } from './prompts';
 import { applyEdits } from './edits';
-import { authorsShort, statusName } from '../library';
-import type { LibraryPaper, PaperPatch, PaperStatus } from '../library';
 
 export const agentColors: Record<string, string> = {
   yellow: '#d49b00',
@@ -216,76 +214,6 @@ export const agentTools: ToolDef[] = [
       additionalProperties: false,
     },
   },
-  {
-    name: 'list_library',
-    description:
-      '列出项目文献库里的论文：标题、作者、年份、出处、读没读过（哪天读完）、标签、分类、一句话总结和它在项目里的文件，以及书单。可以按关键词、阅读状态、标签筛选。回答“我读过哪些”“还有哪些没读”“关于某个方向我有哪些论文”，或要基于文献库写综述、排书单时用。想看某一篇里用户划的重点和笔记，再用 read_annotations 读它的文件。',
-    parameters: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: '可选，在标题、作者、出处、标签、分类、总结里找' },
-        status: { type: 'string', enum: ['unread', 'reading', 'done'], description: '可选' },
-        tag: { type: 'string', description: '可选，只要带这个标签的' },
-        offset: { type: 'integer', minimum: 0 },
-        limit: { type: 'integer', minimum: 1, maximum: 200, description: '默认 60' },
-      },
-      additionalProperties: false,
-    },
-  },
-  {
-    name: 'update_library',
-    description:
-      '修改文献库（需要用户确认）：新增论文、修改已有论文的信息、移出论文，或者排一个书单。papers 里每一项：带 id（list_library 给出的）是修改那一篇，只写要改的字段；不带 id 是新增，必须有 title，search_papers 找到但还没下载的论文也可以这样先记下来。一次调用里把要改的都写上。',
-    parameters: {
-      type: 'object',
-      properties: {
-        papers: {
-          type: 'array',
-          maxItems: 200,
-          items: {
-            type: 'object',
-            properties: {
-              id: { type: 'string', description: 'list_library 里的 id；不写就是新增' },
-              remove: { type: 'boolean', description: 'true：把这一篇移出文献库（文件不动）' },
-              title: { type: 'string' },
-              alias: { type: 'string', description: '别名：中文译名或通用简称' },
-              authors: { type: 'array', items: { type: 'string' } },
-              year: { type: 'integer' },
-              venue: { type: 'string', description: '发表的会议或期刊' },
-              doi: { type: 'string' },
-              arxiv: { type: 'string', description: 'arXiv 编号，如 1706.03762' },
-              url: { type: 'string' },
-              tags: { type: 'array', items: { type: 'string' }, description: '替换原有标签' },
-              category: {
-                type: 'string',
-                description: '分类，层级用 / 分开，如 大模型/Transformer',
-              },
-              summary: { type: 'string', description: '几句话的要点总结' },
-              status: { type: 'string', enum: ['unread', 'reading', 'done'] },
-              files: {
-                type: 'array',
-                items: { type: 'string' },
-                description: '它在项目里的文件（项目内路径），会加到这篇论文名下',
-              },
-            },
-            additionalProperties: false,
-          },
-        },
-        list: {
-          type: 'object',
-          description: '可选：新建或替换一个书单，ids 按阅读顺序排列；ids 为空则删除这个书单',
-          properties: {
-            name: { type: 'string' },
-            note: { type: 'string', description: '书单的说明，比如挑选标准' },
-            ids: { type: 'array', items: { type: 'string' } },
-          },
-          required: ['name', 'ids'],
-          additionalProperties: false,
-        },
-      },
-      additionalProperties: false,
-    },
-  },
 ];
 
 // The open document(s) only, for a long one the reading conversation holds just the start of.
@@ -328,12 +256,13 @@ export const writeTools = new Set([
   'edit_html',
   'create_html',
   'save_pdf',
-  'update_library',
 ]);
 
 export type ToolOutcome = { content: string; isError?: boolean; detail?: string };
 export type PreparedTool = {
   title: string;
+  // Changes something, so it's shown to the user first (writeTools, or a plugin's write tool).
+  write?: boolean;
   // Read tools run at once; write tools show a preview and wait for the user.
   preview?: AgentPreview;
   run: () => Promise<ToolOutcome>;
@@ -567,14 +496,9 @@ export function prepareTool(name: string, input: any, ctx: Context): PreparedToo
       return prepareCreate(input, ctx);
     case 'save_pdf':
       return prepareSave(input, ctx);
-    case 'list_library':
-      return {
-        title: '查看文献库',
-        run: async () => listLibrary(input, host),
-      };
-    case 'update_library':
-      return prepareLibrary(input, ctx);
   }
+  const plugin = host.pluginTools().find((t) => t.tool.name === name);
+  if (plugin) return preparePluginTool(plugin, input, ctx);
   return { title: `未知工具 ${name}`, run: async () => fail(`没有名为 ${name} 的工具。`) };
 }
 
@@ -816,7 +740,7 @@ function remember(papers: Paper[]) {
     found.delete(key);
   }
 }
-function known(url: string, title: string): (PaperPatch & { title: string }) | undefined {
+function known(url: string, title: string): SavedPaper | undefined {
   const p = found.get(url) || (title && found.get(`title:${titleKey(title)}`));
   if (!p) return undefined;
   return {
@@ -833,207 +757,48 @@ function known(url: string, title: string): (PaperPatch & { title: string }) | u
   };
 }
 
-// A paper by the id list_library showed: all of it, or its first eight characters.
-const shortId = (p: LibraryPaper) => p.id.slice(0, 8);
-function paperById(papers: LibraryPaper[], value: unknown) {
-  const id = String(value ?? '').trim();
-  if (!id) return undefined;
-  const exact = papers.find((p) => p.id === id);
-  if (exact) return exact;
-  const starts = papers.filter((p) => p.id.startsWith(id));
-  return id.length >= 6 && starts.length === 1 ? starts[0] : undefined;
+// A tool a plugin gives the AI (its manifest's aiTools), run by its background script. One that
+// changes things first shows what it will do, as the plugin describes it, and waits for a yes.
+export function pluginToolDefs(host: AiHost): ToolDef[] {
+  return host.pluginTools().map(({ tool }) => ({
+    name: tool.name,
+    description: tool.description,
+    parameters: tool.parameters,
+  }));
 }
-async function listLibrary(input: any, host: AiHost): Promise<ToolOutcome> {
-  const { papers, lists } = await host.library();
-  if (!papers.length)
-    return {
-      content:
-        '文献库还是空的。用 save_pdf 下载的论文会自动记进来；项目里已有的论文，可以用 update_library 记进来（files 写它的文件）。',
-      detail: '空',
-    };
-  const count = (s: PaperStatus) => papers.filter((p) => p.status === s).length;
-  const query = String(input?.query || '')
-    .trim()
-    .toLowerCase();
-  const tag = String(input?.tag || '')
-    .trim()
-    .toLowerCase();
-  const status = ['unread', 'reading', 'done'].includes(input?.status) ? input.status : '';
-  const matched = papers.filter((p) => {
-    if (status && p.status !== status) return false;
-    if (tag && !p.tags.some((t) => t.toLowerCase() === tag)) return false;
-    if (!query) return true;
-    const hay = [
-      p.title,
-      p.alias,
-      p.authors.join(' '),
-      p.venue,
-      p.tags.join(' '),
-      p.category,
-      p.summary,
-    ]
-      .join('\n')
-      .toLowerCase();
-    return query.split(/\s+/).every((word) => hay.includes(word));
-  });
-  const offset = Math.max(0, Math.round(Number(input?.offset)) || 0);
-  const limit = Math.min(200, Math.max(1, Math.round(Number(input?.limit)) || 60));
-  const shown = matched.slice(offset, offset + limit);
-  const lines = shown.map((p, i) => {
-    const facts = [p.year || '', p.venue].filter(Boolean).join('，');
-    const read =
-      p.status === 'done' ? `已读${p.readAt ? ` ${p.readAt}` : ''}` : statusName[p.status];
-    const more = [
-      p.tags.length ? `标签：${p.tags.join('、')}` : '',
-      p.category ? `分类：${p.category}` : '',
-      p.doi ? `DOI ${p.doi}` : '',
-      p.arxiv ? `arXiv ${p.arxiv}` : '',
-    ].filter(Boolean);
-    const files = p.files.filter((f) => !p.gone.includes(f));
-    return [
-      `${offset + i + 1}. [${shortId(p)}] ${p.title}${p.alias ? `（${p.alias}）` : ''}${facts ? ` — ${facts}` : ''}${p.authors.length ? ` — ${authorsShort(p)}` : ''} · ${read}`,
-      more.length ? `   ${more.join(' · ')}` : '',
-      files.length ? `   文件：${files.join('、')}` : '   （项目里没有它的文件）',
-      p.summary ? `   总结：${p.summary.replace(/\s+/g, ' ').slice(0, 300)}` : '',
-    ]
-      .filter(Boolean)
-      .join('\n');
-  });
-  const listLines = lists.map(
-    (l) =>
-      `- 书单「${l.name}」（${l.papers.length} 篇）：${l.papers
-        .map((id) => papers.find((p) => p.id === id))
-        .filter(Boolean)
-        .slice(0, 30)
-        .map((p) => `[${shortId(p!)}]`)
-        .join(' ')}`,
-  );
-  const rest = matched.length - offset - shown.length;
-  return {
-    content: [
-      `文献库共 ${papers.length} 篇：已读 ${count('done')}，在读 ${count('reading')}，未读 ${count('unread')}。${
-        matched.length === papers.length ? '' : `符合条件的 ${matched.length} 篇。`
-      }`,
-      '',
-      ...lines,
-      rest > 0 ? `\n……还有 ${rest} 篇，用 offset: ${offset + shown.length} 继续看。` : '',
-      listLines.length ? `\n${listLines.join('\n')}` : '',
-    ]
-      .filter((line) => line !== '')
-      .join('\n'),
-    detail: `${matched.length} 篇`,
+const asText = (value: unknown) =>
+  typeof value === 'string' ? value : JSON.stringify(value ?? null, null, 1);
+function preparePluginTool(
+  { plugin, pluginName, tool }: ReturnType<AiHost['pluginTools']>[number],
+  input: any,
+  ctx: Context,
+): Deferred {
+  const call = (phase: 'preview' | 'run') => ctx.host.callPluginTool(plugin, tool.name, input, phase);
+  const prepared: Deferred = {
+    title: `${pluginName}：${tool.title}`,
+    write: tool.write,
+    run: async () => {
+      const out = asText(await call('run')).slice(0, 200_000);
+      return { content: out || '完成。', detail: out.split('\n')[0].slice(0, 120) };
+    },
   };
-}
-
-const fieldNames: Record<string, string> = {
-  title: '标题',
-  alias: '别名',
-  authors: '作者',
-  year: '年份',
-  venue: '出处',
-  doi: 'DOI',
-  arxiv: 'arXiv',
-  url: '链接',
-  tags: '标签',
-  category: '分类',
-  summary: '总结',
-  status: '阅读状态',
-  files: '文件',
-};
-function prepareLibrary(input: any, ctx: Context): Deferred {
-  const tool: Deferred = { title: '修改文献库', run: async () => fail('没有要修改的内容。') };
-  tool.prepare = async () => {
-    const { papers } = await ctx.host.library();
-    const items: { title: string; change: string }[] = [];
-    const errors: string[] = [];
-    const upserts: (PaperPatch & { id?: string })[] = [];
-    const removals: string[] = [];
-    const docs = new Set(ctx.host.files().map((f) => f.path));
-    for (const raw of Array.isArray(input?.papers) ? input.papers.slice(0, 200) : []) {
-      if (!raw || typeof raw !== 'object') continue;
-      const { id, remove, ...fields } = raw;
-      const patch: Record<string, unknown> = {};
-      for (const key of Object.keys(fieldNames))
-        if (fields[key] !== undefined) patch[key] = fields[key];
-      if (Array.isArray(patch.files)) {
-        const paths = (patch.files as unknown[]).map(cleanPath);
-        const missing = paths.filter((f) => !docs.has(f));
-        if (missing.length) {
-          errors.push(`项目里没有这些文件：${missing.join('、')}`);
-          continue;
-        }
-        patch.files = paths;
-      }
-      const names = Object.keys(patch).map((key) => fieldNames[key]);
-      if (id !== undefined) {
-        const paper = paperById(papers, id);
-        if (!paper) {
-          errors.push(`文献库里没有 id 为 ${id} 的论文`);
-          continue;
-        }
-        if (remove) {
-          removals.push(paper.id);
-          items.push({ title: paper.title, change: '移出文献库' });
-        } else if (names.length) {
-          upserts.push({ ...patch, id: paper.id });
-          const status = patch.status as PaperStatus | undefined;
-          items.push({
-            title: paper.title,
-            change:
-              status && names.length === 1
-                ? `标为${statusName[status]}`
-                : `修改${names.join('、')}`,
-          });
-        }
-      } else if (String(patch.title || '').trim()) {
-        upserts.push(patch);
-        items.push({ title: String(patch.title).trim(), change: '新增' });
-      } else errors.push('新增的论文需要 title');
-    }
-    let list: { name: string; note?: string; papers: string[] } | null = null;
-    if (input?.list && String(input.list.name || '').trim()) {
-      const ids: string[] = [];
-      for (const id of Array.isArray(input.list.ids) ? input.list.ids : []) {
-        const paper = paperById(papers, id);
-        if (paper) ids.push(paper.id);
-        else errors.push(`书单里的 ${id} 不在文献库里`);
-      }
-      list = { name: String(input.list.name).trim(), note: input.list.note, papers: ids };
-      items.push({
-        title: `书单「${list.name}」`,
-        change: ids.length ? `${ids.length} 篇，按顺序` : '删除',
-      });
-    }
-    const problems = errors.length ? `\n没有处理的：${errors.join('；')}。` : '';
-    if (!items.length) {
-      tool.run = async () => fail(`没有可以修改的内容。${problems}`);
-      return;
-    }
-    tool.title = `修改文献库（${items.length} 项）`;
-    tool.preview = { kind: 'library', path: '文献库', items };
-    tool.run = async () => {
-      // An id makes it that paper whatever its title becomes; a new one may turn out to be
-      // there already (same DOI or title), and is then filled in rather than doubled.
-      const changed = upserts.filter((p) => p.id);
-      const added = upserts.filter((p) => !p.id);
-      if (changed.length) await ctx.host.libraryAdd(changed, true);
-      const made = added.length ? await ctx.host.libraryAdd(added) : null;
-      if (removals.length) await ctx.host.libraryRemove(removals);
-      if (list) await ctx.host.librarySetList(list);
-      const done = [
-        made?.created ? `新增 ${made.created} 篇` : '',
-        made?.updated ? `${made.updated} 篇已在文献库里，补上了空着的信息` : '',
-        changed.length ? `修改 ${changed.length} 篇` : '',
-        removals.length ? `移出 ${removals.length} 篇` : '',
-        list
-          ? `书单「${list.name}」${list.papers.length ? `${list.papers.length} 篇` : '已删除'}`
-          : '',
-      ].filter(Boolean);
-      return {
-        content: `文献库已更新：${done.join('，')}。${problems}`,
-        detail: done.join('，'),
-      };
+  if (tool.write)
+    prepared.prepare = async () => {
+      // What it will change, in the plugin's words: { title?, items: [{ label, detail? }] }, or
+      // a line of text.
+      const raw: any = await call('preview').catch(() => null);
+      const items: { label: string; detail: string }[] = (
+        Array.isArray(raw?.items) ? raw.items : typeof raw === 'string' ? [{ label: raw }] : []
+      )
+        .slice(0, 200)
+        .map((x: any) => ({
+          label: String(x?.label ?? x ?? '').slice(0, 200),
+          detail: String(x?.detail ?? '').slice(0, 300),
+        }))
+        .filter((x: { label: string }) => x.label);
+      if (typeof raw?.title === 'string' && raw.title.trim())
+        prepared.title = `${pluginName}：${raw.title.trim().slice(0, 60)}`;
+      prepared.preview = { kind: 'plugin', path: pluginName, items };
     };
-  };
-  return tool;
+  return prepared;
 }

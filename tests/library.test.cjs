@@ -264,27 +264,27 @@ test('自动补全：按 arXiv 号找到论文，再按标题补上发表的会�
   assert.ok(found[1].match < 1, 'a near miss comes after');
 });
 
-test('其他 AI 工具通过 MCP 读文献库：要对上地址里的口令，能查能记，改不了阅读状态', async (t) => {
-  const { createLibraryMcp } = require('../electron/library-mcp.cjs');
-  const { w, library } = await setup(t);
-  const d = await w.document('伴读.html');
-  await w.saveData({
-    id: d.id,
-    data: {
-      ...d.data,
-      note: '起点。',
-      annotations: [
-        { id: 'a', type: 'highlight', note: '关键', quote: { exact: '注意力就是全部' } },
-      ],
-    },
-  });
-  const { paper } = await library.add(w, { ...attention, files: ['伴读.html'], status: 'done' });
-  let changes = 0;
-  const mcp = createLibraryMcp({
-    library,
-    workspace: w,
+test('其他 AI 工具通过 MCP 调用插件的工具：要对上地址里的口令，一个名字一个工具', async (t) => {
+  const { createPluginMcp } = require('../electron/plugin-mcp.cjs');
+  const calls = [];
+  const mcp = createPluginMcp({
     version: '1.0.0',
-    onChange: () => changes++,
+    tools: async () => [
+      {
+        plugin: 'library',
+        name: 'list_library',
+        title: '查看文献库',
+        description: '列出论文',
+        parameters: { type: 'object', properties: { query: { type: 'string' } } },
+      },
+      // The same name from a second plugin: the first one's is offered.
+      { plugin: 'other', name: 'list_library', title: 'x', description: 'x', parameters: {} },
+    ],
+    call: async (plugin, name, input) => {
+      calls.push([plugin, name, input]);
+      if (input.fail) throw Error('出错了');
+      return `共 1 篇（${input.query || ''}）`;
+    },
   });
   // A port of the test's own, so a 页间 that is running isn't in the way.
   const port = await mcp.start({
@@ -301,7 +301,6 @@ test('其他 AI 工具通过 MCP 读文献库：要对上地址里的口令，�
     });
   const rpc = async (method, params) =>
     (await post(mcp.url(), { jsonrpc: '2.0', id: 1, method, params })).json();
-  const tool = async (name, args) => (await rpc('tools/call', { name, arguments: args })).result;
 
   // Not without the secret, not by another name for this computer, not by GET.
   assert.equal((await post(`http://127.0.0.1:${port}/mcp/wrong-token`, {})).status, 404);
@@ -323,67 +322,49 @@ test('其他 AI 工具通过 MCP 读文献库：要对上地址里的口令，�
   assert.equal(rebound, 404);
 
   const hello = await rpc('initialize', { protocolVersion: '2025-06-18' });
-  assert.equal(hello.result.serverInfo.name, 'folio-library');
+  assert.equal(hello.result.serverInfo.name, 'folio');
   assert.equal(
     (await post(mcp.url(), { jsonrpc: '2.0', method: 'notifications/initialized' })).status,
     202,
   );
   const { tools } = (await rpc('tools/list')).result;
   assert.deepEqual(
-    tools.map((x) => x.name),
-    ['list_papers', 'get_paper', 'add_paper', 'update_paper'],
+    tools.map((x) => [x.name, x.title, x.inputSchema.type]),
+    [['list_library', '查看文献库', 'object']],
   );
-  assert.ok(
-    tools.every(
-      (x) => !JSON.stringify(x.inputSchema).includes('"status"') || x.name === 'list_papers',
-    ),
-  );
-
-  const listed = (await tool('list_papers', {})).content[0].text;
-  assert.match(listed, /Library: 1 papers — 1 read/);
-  assert.match(
-    listed,
-    new RegExp(
-      `\\[${paper.id.slice(0, 8)}\\] Attention Is All You Need — Ashish Vaswani, Noam Shazeer · 2017`,
-    ),
-  );
-  assert.match(listed, /已读 2026-11-15/);
-  const got = (await tool('get_paper', { id: paper.id.slice(0, 8) })).content[0].text;
-  assert.match(got, /Highlighted by the reader:\n- "注意力就是全部"\n  note: 关键/);
-  assert.match(got, /Document note:\n起点。/);
-
-  // A paper it found goes in; the status it tries to set does not.
-  const added = await tool('add_paper', {
-    title: 'BERT',
-    year: 2019,
-    files: [require('node:path').join(w.root, '论文', 'bert.pdf')],
-    status: 'done',
-  });
-  assert.match(
-    added.content[0].text,
-    /Added to the library: \[\w{8}\] BERT \(files: 论文\/bert\.pdf\)/,
-  );
-  const updated = await tool('update_paper', {
-    id: paper.id,
-    summary: '只用注意力。',
-    status: 'unread',
-  });
-  assert.match(updated.content[0].text, /^Updated:/);
-  const after = (await library.list(w)).papers;
-  assert.deepEqual(
-    after.map((p) => [p.title, p.status]),
-    [
-      ['Attention Is All You Need', 'done'],
-      ['BERT', 'unread'],
-    ],
-  );
-  assert.equal(after[0].summary, '只用注意力。');
-  assert.equal(changes, 2);
-  const missing = await tool('get_paper', { id: 'nope-nope' });
-  assert.equal(missing.isError, true);
-  assert.equal((await rpc('resources/list')).error.code, -32601);
+  const listed = (await rpc('tools/call', { name: 'list_library', arguments: { query: 'bert' } }))
+    .result;
+  assert.deepEqual(listed.content, [{ type: 'text', text: '共 1 篇（bert）' }]);
+  assert.deepEqual(calls, [['library', 'list_library', { query: 'bert' }]]);
+  const failed = (await rpc('tools/call', { name: 'list_library', arguments: { fail: true } }))
+    .result;
+  assert.equal(failed.isError, true);
+  assert.equal(failed.content[0].text, '出错了');
+  const unknown = (await rpc('tools/call', { name: 'rm_rf', arguments: {} })).result;
+  assert.equal(unknown.isError, true);
+  assert.equal((await rpc('nope')).error.code, -32601);
 
   await mcp.stop();
-  assert.equal(mcp.url(), '');
-  await assert.rejects(post(`http://127.0.0.1:${port}/mcp/secret-token`, {}));
+  assert.equal(mcp.url(), '', 'stopped, it has no address');
+});
+
+test('一篇文档里读者留下的：文档笔记、划的重点和写在上面的字、便签', async (t) => {
+  const { w, library } = await setup(t);
+  const d = await w.document('伴读.html');
+  await w.saveData({
+    id: d.id,
+    data: {
+      ...d.data,
+      note: '起点。',
+      annotations: [
+        { id: 'a', type: 'highlight', note: '关键', quote: { exact: '注意力就是全部' } },
+        { id: 'b', type: 'sticky', note: '回头再看' },
+      ],
+    },
+  });
+  const marks = await library.marks(w, '伴读.html');
+  assert.equal(marks.note, '起点。');
+  assert.deepEqual(marks.highlights, [{ text: '注意力就是全部', note: '关键' }]);
+  assert.deepEqual(marks.notes, ['回头再看']);
+  assert.equal(await library.marks(w, '论文/bert.pdf'), null, 'a document never opened');
 });

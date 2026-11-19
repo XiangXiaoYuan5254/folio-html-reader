@@ -34,7 +34,7 @@ const { createHearing } = require('./hearing.cjs');
 const { limiter } = require('./cloud-voice.cjs');
 const papers = require('./papers.cjs');
 const { createLibrary, toBibtex, fromBibtex } = require('./library.cjs');
-const { createLibraryMcp } = require('./library-mcp.cjs');
+const { createPluginMcp } = require('./plugin-mcp.cjs');
 const { createPlugins } = require('./plugins.cjs');
 const isMac = process.platform === 'darwin';
 const workspace = new Workspace();
@@ -64,28 +64,46 @@ let voiceHushes = 0;
 const toWindow = (event) => {
   if (win && !win.isDestroyed()) win.webContents.send('folio:event', event);
 };
-// The library changed: the window and the plugin pages showing it read it again.
+// The library changed: the plugin pages and background scripts using it read it again.
 const libraryChanged = () => toWindow({ type: 'library-changed' });
-// The library for other AI tools on this computer, over MCP (electron/library-mcp.cjs). Off
-// until the reader turns it on; its address keeps the same secret and port from then on.
-const libraryMcp = createLibraryMcp({
-  library,
-  workspace,
+// Plugins' tools for other AI tools on this computer, over MCP (electron/plugin-mcp.cjs). Off
+// until the reader turns it on; its address keeps the same secret and port from then on. A call
+// is answered by the plugin's background script in the window (src/plugins/runtime.ts).
+const toolCalls = new Map();
+let toolCallSeq = 0;
+function callPluginTool(plugin, name, input) {
+  if (!win || win.isDestroyed()) return Promise.reject(Error('页间的窗口没有打开'));
+  const callId = ++toolCallSeq;
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      toolCalls.delete(callId);
+      reject(Error(`${name} 两分钟没有回应`));
+    }, 120_000);
+    toolCalls.set(callId, { resolve, reject, timer });
+    toWindow({ type: 'plugin-tool', callId, plugin, name, input });
+  });
+}
+const pluginMcp = createPluginMcp({
   version: app.getVersion(),
-  onChange: libraryChanged,
+  tools: async () =>
+    plugins
+      ? (await plugins.list()).plugins
+          .filter((p) => p.enabled && p.manifest?.aiTools?.length)
+          .flatMap((p) =>
+            p.manifest.aiTools.filter((t) => t.mcp).map((t) => ({ plugin: p.id, ...t })),
+          )
+      : [],
+  call: callPluginTool,
 });
-async function applyLibraryMcp(config) {
-  if (!config?.enabled || typeof config.token !== 'string') return void (await libraryMcp.stop());
-  const port = await libraryMcp.start({
+async function applyPluginMcp(config) {
+  if (!config?.enabled || typeof config.token !== 'string') return void (await pluginMcp.stop());
+  const port = await pluginMcp.start({
     secret: config.token,
     ...(Number.isInteger(config.port) ? { preferred: config.port } : {}),
   });
   if (port !== config.port) {
     const settings = await readSettings();
-    await atomicWrite(
-      settingsFile(),
-      JSON.stringify({ ...settings, libraryMcp: { ...config, port } }),
-    );
+    await atomicWrite(settingsFile(), JSON.stringify({ ...settings, mcp: { ...config, port } }));
   }
 }
 const speech = createSpeech({ app, systemPreferences, send: toWindow });
@@ -372,7 +390,7 @@ function menu() {
 }
 app.on('before-quit', () => {
   quitting = true;
-  void libraryMcp.stop();
+  void pluginMcp.stop();
   ai?.shutdown();
   speech.stop();
   hearing.stop();
@@ -488,7 +506,7 @@ app
     });
     void plugins.cleanup();
     void readSettings()
-      .then((settings) => applyLibraryMcp(settings.libraryMcp))
+      .then((settings) => applyPluginMcp(settings.mcp))
       .catch(() => {});
     protocol.handle('app', async (request) => {
       const url = new URL(request.url);
@@ -719,7 +737,8 @@ app
           'plugin-log',
           'plugin-directory',
           'plugin-widget-storage',
-          'library-mcp',
+          'plugin-mcp',
+          'plugin-tool-reply',
         ].includes(action) &&
         token !== workspace.token
       )
@@ -841,11 +860,21 @@ app
           libraryChanged();
           return count;
         }
-        // Whether other AI tools on this computer may read the library, and at which address.
-        // `enabled` turns it on or off; `renew` gives the address a new secret.
-        case 'library-mcp': {
+        // What the reader left in one of the project's documents (folio.documents.annotations).
+        case 'plugin-annotations':
+          return (
+            (await library.marks(workspace, String(payload?.path || ''))) || {
+              note: '',
+              highlights: [],
+              notes: [],
+              progress: 0,
+            }
+          );
+        // Whether other AI tools on this computer may use the plugins' tools, and at which
+        // address. `enabled` turns it on or off; `renew` gives the address a new secret.
+        case 'plugin-mcp': {
           const settings = await readSettings();
-          let config = settings.libraryMcp || {};
+          let config = settings.mcp || {};
           let error = '';
           if (typeof payload?.enabled === 'boolean' || payload?.renew) {
             config = {
@@ -856,10 +885,20 @@ app
                   ? require('node:crypto').randomBytes(24).toString('base64url')
                   : config.token,
             };
-            await atomicWrite(settingsFile(), JSON.stringify({ ...settings, libraryMcp: config }));
-            await applyLibraryMcp(config).catch((e) => (error = e.message));
+            await atomicWrite(settingsFile(), JSON.stringify({ ...settings, mcp: config }));
+            await applyPluginMcp(config).catch((e) => (error = e.message));
           }
-          return { enabled: !!config.enabled, url: libraryMcp.url(), error };
+          return { enabled: !!config.enabled, url: pluginMcp.url(), error };
+        }
+        // The window's answer to a tool called over MCP.
+        case 'plugin-tool-reply': {
+          const pending = toolCalls.get(payload?.callId);
+          if (!pending) return false;
+          toolCalls.delete(payload.callId);
+          clearTimeout(pending.timer);
+          if (payload.error) pending.reject(Error(String(payload.error).slice(0, 2000)));
+          else pending.resolve(String(payload.value ?? '').slice(0, 400_000));
+          return true;
         }
         // What OpenAlex and arXiv know of a paper, to fill in its record.
         case 'library-lookup':

@@ -1,63 +1,17 @@
-/* 文献库：阅读区里的文献库标签页、论文信息对话框、文件树上的已读标记、侧栏里的页面入口，
-   以及插件页面（src/components/PluginPageView.tsx）。颜色都取自主题变量。 */
+/* 文献库插件的页面：论文列表、筛选、论文信息对话框。按钮、菜单、对话框和颜色用的是页间自己的
+   样式（page.tsx 里引入的 themes.css、styles.css），所以和页间其他地方一个样子。 */
 
-/* A page in the reading area: the library, or a plugin's page. It covers the reader, which
-   stays as it was underneath. */
-.page-host {
-  position: absolute;
-  inset: 0;
-  z-index: 12;
+html,
+body {
+  height: 100%;
+  margin: 0;
   background: var(--bg);
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
 }
-.page-host[hidden] {
-  display: none;
-}
-.page-slot {
-  flex: 1;
-  min-height: 0;
+#root {
+  height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-}
-.page-slot[hidden] {
-  display: none;
-}
-.plugin-page {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  display: flex;
-}
-.plugin-page[hidden] {
-  display: none;
-}
-.plugin-page iframe {
-  flex: 1;
-  width: 100%;
-  height: 100%;
-  border: 0;
-  background: var(--bg);
-}
-.plugin-page-reload {
-  position: absolute;
-  right: 14px;
-  bottom: 14px;
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  border: 1px solid var(--line-strong);
-  background: var(--surface);
-  color: var(--text-4);
-  opacity: 0.55;
-}
-.plugin-page-reload:hover {
-  opacity: 1;
-  color: var(--accent);
 }
 
 .library-view {
@@ -591,173 +545,30 @@
   color: var(--danger, #c0392b);
 }
 
-/* The mark on a file of the library, in the file tree. */
-/* It sits where the row's ⋯ button appears on hover, and gives way to it. */
-.tree-read {
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 13px;
-  height: 13px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  border: 1.5px solid var(--track);
-  color: var(--on-accent, #fff);
+/* A short message at the bottom of the page. */
+.library-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  max-width: min(560px, calc(100% - 40px));
+  padding: 9px 16px;
+  border-radius: 8px;
+  background: var(--text-strong);
+  color: var(--bg);
+  font-size: 13px;
+  line-height: 1.5;
+  box-shadow: var(--shadow-pop, 0 8px 24px rgba(0, 0, 0, 0.18));
+  z-index: 50;
+  animation: library-toast var(--dur-pop) var(--ease-out);
 }
-.tree-read.reading {
-  border-color: var(--accent);
-  background: linear-gradient(90deg, var(--accent) 50%, transparent 50%);
+.library-toast.error {
+  background: var(--danger, #d93b4b);
+  color: #fff;
 }
-.tree-read.done {
-  border-color: var(--accent);
-  background: var(--accent);
-}
-.tree-row:hover > .tree-read,
-.tree-row:focus-within > .tree-read,
-.tree-row[data-menu-open] > .tree-read {
-  display: none;
-}
-
-/* The library and the plugins' pages, in the sidebar under the files. */
-.page-shelf {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: 6px 4px;
-  border-top: 1px solid var(--line-soft);
-}
-.page-shelf button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 30px;
-  padding: 0 9px;
-  border-radius: 6px;
-  font-size: 12.5px;
-  color: var(--text-2);
-  text-align: left;
-}
-.page-shelf button:hover {
-  background: var(--hover);
-}
-.page-shelf button.selected {
-  background: var(--accent-soft);
-  color: var(--accent-text);
-}
-.page-shelf button > svg,
-.page-shelf button > img {
-  flex: none;
-  width: 15px;
-  height: 15px;
-  color: var(--accent-muted);
-}
-.page-shelf button > span {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.page-shelf button > em {
-  font-style: normal;
-  font-size: 11px;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
-/* A page's tab, among the documents'. */
-.document-tab.page-tab > button > svg,
-.document-tab.page-tab > button > img {
-  width: 14px;
-  height: 14px;
-  color: var(--accent-muted);
-}
-
-/* The library's changes an AI proposes, before they are agreed to. */
-.agent-library {
-  list-style: none;
-  margin: 0;
-  padding: 6px 2px;
-  max-height: 260px;
-  overflow-y: auto;
-  font-size: 12.5px;
-}
-.agent-library li {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  padding: 3px 6px;
-}
-.agent-library li span {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-2);
-}
-.agent-library li em {
-  flex: none;
-  font-style: normal;
-  color: var(--accent-text);
-}
-
-/* 让其他 AI 工具读文献库 */
-.library-mcp {
-  width: 560px;
-}
-.library-mcp-switch {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  margin: 4px 0 14px;
-  font-size: 13.5px;
-  color: var(--text-strong);
-}
-.library-mcp-switch input {
-  width: 15px;
-  height: 15px;
-  accent-color: var(--accent);
-}
-.library-mcp-url {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 8px 0;
-}
-.library-mcp-url code {
-  flex: 1;
-  min-width: 0;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--fill);
-  font:
-    12px/1.5 ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    Consolas,
-    monospace;
-  color: var(--text-2);
-  overflow-x: auto;
-  white-space: nowrap;
-  user-select: all;
-}
-.library-mcp-url .secondary-button {
-  flex: none;
-  padding: 6px 12px;
-  font-size: 12.5px;
-}
-.dialog > p.library-mcp-how {
-  margin: 12px 0 4px;
-  font-size: 12.5px;
-  line-height: 1.8;
-}
-.library-mcp-how button {
-  color: var(--accent-text);
-  text-decoration: underline;
-  font-size: 12.5px;
+@keyframes library-toast {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
 }

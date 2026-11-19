@@ -6,33 +6,23 @@ import {
   FileCode2,
   FileText,
   FileType,
-  LayoutDashboard,
   MoreHorizontal,
   Plus,
   Search,
   Sparkles,
   X,
 } from 'lucide-react';
-import { invoke } from '../api';
+// 页间's own menu and button, so the page feels like the rest of the app.
+import { IconButton } from '../../../src/components/IconButton';
 import {
-  arxivIdIn,
-  authorsShort,
-  categoryOf,
-  libraryApi,
-  mainFile,
-  statusName,
-  useLibrary,
-} from '../library';
-import type { LibraryPaper, PaperCandidate, PaperPatch, PaperStatus } from '../library';
-import { IconButton } from './IconButton';
-import { belowButton, PopupMenu, type MenuAnchor, type MenuItem } from './PopupMenu';
-
-const clean = (e: unknown) =>
-  String((e as Error)?.message || e).replace(/Error invoking remote method '[^']+': Error: /, '');
-const today = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
+  belowButton,
+  PopupMenu,
+  type MenuAnchor,
+  type MenuItem,
+} from '../../../src/components/PopupMenu';
+import { arxivIdIn, authorsShort, categoryOf, mainFile, statusName, today } from './shared';
+import type { LibraryPaper, PaperCandidate, PaperPatch, PaperStatus } from './shared';
+import { clean, libraryApi, notify, openFile, useLibrary } from './store';
 const fileIcon = (path: string) =>
   /\.pdf$/i.test(path) ? (
     <FileText className="tree-icon-pdf" size={14} />
@@ -43,7 +33,6 @@ const fileIcon = (path: string) =>
   );
 const fileName = (path: string) => path.slice(path.lastIndexOf('/') + 1);
 
-type Notify = (text: string, error?: boolean, action?: { label: string; run: () => void }) => void;
 type Sort = 'added' | 'read' | 'year' | 'title' | 'category';
 const sortNames: Record<Sort, string> = {
   added: '最近添加',
@@ -72,38 +61,22 @@ const lookupFor = (p: { title: string; doi?: string; arxiv?: string; files?: str
   arxiv: p.arxiv || arxivIdIn(p.title) || (p.files || []).map(arxivIdIn).find(Boolean) || '',
 });
 
-// 文献库, a tab in the reading area: the project's papers to search, filter, open and mark
-// read; their records to fill in and export.
-export function LibraryView(p: {
-  onOpen: (path: string) => void;
-  onEdit: (id: string) => void;
-  onNew: () => void;
-  notify: Notify;
-  // Plugin pages that show the library their own way (a dashboard), a click away.
-  pages: { id: string; title: string }[];
-  onOpenPage: (id: string) => void;
-}) {
+// 文献库, the plugin's page: the project's papers to search, filter, open and mark read; their
+// records to fill in and export.
+export function LibraryView(p: { onEdit: (id: string) => void; onNew: () => void }) {
   const { papers, lists } = useLibrary();
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<PaperStatus | ''>('');
   const [category, setCategory] = useState('');
   const [tag, setTag] = useState('');
   const [list, setList] = useState('');
-  const [sort, setSort] = useState<Sort>(() => {
-    try {
-      const saved = localStorage.getItem('folio.library-sort') as Sort;
-      return saved in sortNames ? saved : 'added';
-    } catch {
-      return 'added';
-    }
-  });
+  const [sort, setSort] = useState<Sort>('added');
   const [menu, setMenu] = useState<{ kind: string; at: MenuAnchor; paper?: LibraryPaper } | null>(
     null,
   );
   const [filling, setFilling] = useState<{ done: number; total: number; filled: number } | null>(
     null,
   );
-  const [sharing, setSharing] = useState(false);
   const stopFill = useRef(false);
 
   const count = (s: PaperStatus) => papers.filter((x) => x.status === s).length;
@@ -163,11 +136,16 @@ export function LibraryView(p: {
 
   function chooseSort(next: Sort) {
     setSort(next);
-    try {
-      localStorage.setItem('folio.library-sort', next);
-    } catch {}
+    void folio.storage.set({ sort: next }).catch(() => {});
   }
-  const act = (run: () => Promise<unknown>) => void run().catch((e) => p.notify(clean(e), true));
+  // The order chosen last time (a page has no localStorage: its own storage instead).
+  useEffect(() => {
+    void folio.storage
+      .get()
+      .then((saved: any) => saved?.sort in sortNames && setSort(saved.sort))
+      .catch(() => {});
+  }, []);
+  const act = (run: () => Promise<unknown>) => void run().catch((e) => notify(clean(e), true));
   const mark = (paper: LibraryPaper, next: PaperStatus) =>
     act(() => libraryApi.update(paper.id, { status: next }));
 
@@ -191,7 +169,7 @@ export function LibraryView(p: {
       } catch (e) {
         // The libraries asked too often: no use going on.
         if (/429|繁忙|额度/.test(clean(e))) {
-          p.notify(clean(e), true);
+          notify(clean(e), true);
           break;
         }
       }
@@ -199,7 +177,7 @@ export function LibraryView(p: {
       await new Promise((resolve) => setTimeout(resolve, 350));
     }
     setFilling(null);
-    p.notify(
+    notify(
       filled
         ? `补全了 ${filled} 篇的信息${filled < bare.length ? `，另外 ${bare.length - filled} 篇没有找到对得上的` : ''}`
         : '没有找到标题对得上的论文，可以在「文献信息」里手动查找',
@@ -217,7 +195,7 @@ export function LibraryView(p: {
             label: '在浏览器里打开',
             onSelect: () =>
               act(() =>
-                invokeExternal(
+                folio.openExternal(
                   paper.doi
                     ? `https://doi.org/${paper.doi}`
                     : paper.arxiv
@@ -238,7 +216,7 @@ export function LibraryView(p: {
       onSelect: () =>
         act(async () => {
           await libraryApi.remove([paper.id]);
-          p.notify(`已把「${paper.title}」移出文献库，文件没有动`);
+          notify(`已把「${paper.title}」移出文献库，文件没有动`);
         }),
     },
   ];
@@ -250,7 +228,7 @@ export function LibraryView(p: {
         act(async () => {
           const r = await libraryApi.importBibtex();
           if (r)
-            p.notify(`导入了 ${r.created} 篇${r.updated ? `，${r.updated} 篇已在文献库里` : ''}`);
+            notify(`导入了 ${r.created} 篇${r.updated ? `，${r.updated} 篇已在文献库里` : ''}`);
         }),
     },
     {
@@ -259,13 +237,13 @@ export function LibraryView(p: {
       onSelect: () =>
         act(async () => {
           const n = await libraryApi.exportBibtex(shown.map((x) => x.id));
-          if (n) p.notify(`已导出 ${n} 篇`);
+          if (n) notify(`已导出 ${n} 篇`);
         }),
     },
     {
       label: '让其他 AI 工具读文献库…',
-      help: 'OpenScience、Claude Code 等支持 MCP 的工具',
-      onSelect: () => setSharing(true),
+      help: '在「设置 › 插件」里打开，Claude Code、Codex 等就能读',
+      onSelect: () => void folio.openSettings(),
     },
     ...(bare.length
       ? [
@@ -296,17 +274,6 @@ export function LibraryView(p: {
           ) : null}
         </div>
         <div className="library-actions">
-          {p.pages.map((page) => (
-            <button
-              key={page.id}
-              type="button"
-              className="secondary-button"
-              onClick={() => p.onOpenPage(page.id)}
-            >
-              <LayoutDashboard size={14} />
-              {page.title}
-            </button>
-          ))}
           <button type="button" className="secondary-button" onClick={p.onNew}>
             <Plus size={14} />
             添加论文
@@ -434,7 +401,7 @@ export function LibraryView(p: {
                       type="button"
                       className="library-main"
                       title={file ? `打开 ${file}` : '项目里还没有它的文件，点击查看文献信息'}
-                      onClick={() => (file ? p.onOpen(file) : p.onEdit(paper.id))}
+                      onClick={() => (file ? openFile(file) : p.onEdit(paper.id))}
                     >
                       <span className="library-paper-title">
                         {picked ? <b>{i + 1}</b> : null}
@@ -460,7 +427,7 @@ export function LibraryView(p: {
                             type="button"
                             title={`打开 ${f}`}
                             aria-label={`打开 ${fileName(f)}`}
-                            onClick={() => p.onOpen(f)}
+                            onClick={() => openFile(f)}
                           >
                             {fileIcon(f)}
                           </button>
@@ -505,7 +472,6 @@ export function LibraryView(p: {
           </div>
         </div>
       )}
-      {sharing ? <LibraryMcpDialog onClose={() => setSharing(false)} notify={p.notify} /> : null}
       {menu ? (
         <PopupMenu
           at={menu.at}
@@ -531,7 +497,6 @@ export function LibraryView(p: {
     </section>
   );
 }
-const invokeExternal = (url: string) => invoke('external', { url });
 
 // 文献信息: one paper's record, to fill in by hand or from what OpenAlex and arXiv know.
 // `target` is a paper of the library, or a new one being added (not kept until saved).
@@ -541,9 +506,7 @@ export function PaperDialog(p: {
   target: PaperTarget;
   // The project's documents, to tie more files to the paper.
   files: string[];
-  onOpen: (path: string) => void;
   onClose: () => void;
-  notify: Notify;
 }) {
   const { papers } = useLibrary();
   const existing =
@@ -639,7 +602,7 @@ export function PaperDialog(p: {
       if (existing) await libraryApi.update(existing.id, patch);
       else {
         const { created, paper } = await libraryApi.add({ ...patch, title });
-        p.notify(
+        notify(
           created ? `已加入文献库：${paper.title}` : `文献库里已有这一篇，已更新：${paper.title}`,
         );
       }
@@ -671,17 +634,24 @@ export function PaperDialog(p: {
         if (e.target === e.currentTarget && !busy) p.onClose();
       }}
     >
-      <form
+      {/* Not a <form>: a plugin's page is a sandboxed frame, where forms never submit. */}
+      <div
         className="dialog paper-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="paper-dialog-title"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void save();
-        }}
         onKeyDown={(e) => {
           if (e.key === 'Escape' && !busy) p.onClose();
+          // Enter in a one-line field saves, as a form would.
+          if (
+            e.key === 'Enter' &&
+            !busy &&
+            !e.nativeEvent.isComposing &&
+            (e.target as HTMLElement).tagName === 'INPUT'
+          ) {
+            e.preventDefault();
+            void save();
+          }
         }}
       >
         <div className="dialog-heading">
@@ -745,8 +715,8 @@ export function PaperDialog(p: {
           </div>
           {field('alias', '别名', '中文译名或通用简称')}
           <div className="paper-pair">
-            {field('category', '分类', '层级用 / 分开；不填就按所在文件夹')}
-            {field('tags', '标签', '用顿号隔开')}
+            {field('category', '分类', '一篇归一类，如 NLP/Agent；不填按文件夹')}
+            {field('tags', '标签', '可以有多个，如 必读、要复现')}
           </div>
           <label className="paper-field summary">
             <span>一句话总结</span>
@@ -791,7 +761,7 @@ export function PaperDialog(p: {
                     type="button"
                     title={existing?.gone.includes(f) ? '这个文件已经不在项目里了' : `打开 ${f}`}
                     onClick={() => {
-                      p.onOpen(f);
+                      openFile(f);
                       p.onClose();
                     }}
                   >
@@ -842,7 +812,7 @@ export function PaperDialog(p: {
               disabled={busy}
               onClick={async () => {
                 if (!confirmRemove) return setConfirmRemove(true);
-                await libraryApi.remove([existing.id]).catch((e) => p.notify(clean(e), true));
+                await libraryApi.remove([existing.id]).catch((e) => notify(clean(e), true));
                 p.onClose();
               }}
             >
@@ -852,108 +822,15 @@ export function PaperDialog(p: {
           <button type="button" className="secondary-button" disabled={busy} onClick={p.onClose}>
             取消
           </button>
-          <button className="primary-button" disabled={busy}>
+          <button
+            type="button"
+            className="primary-button"
+            disabled={busy}
+            onClick={() => void save()}
+          >
             {busy ? '保存中…' : existing ? '保存' : '加入文献库'}
           </button>
         </div>
-      </form>
-    </div>
-  );
-}
-
-// 让其他 AI 工具读文献库: the library over MCP for tools on this computer, off until turned on
-// here (electron/library-mcp.cjs).
-function LibraryMcpDialog(p: { onClose: () => void; notify: Notify }) {
-  const [state, setState] = useState<{ enabled: boolean; url: string; error: string } | null>(null);
-  const [busy, setBusy] = useState(false);
-  const ask = (payload: { enabled?: boolean; renew?: boolean } = {}) => {
-    setBusy(true);
-    // The switch moves at once; the address comes when the answer does.
-    if (typeof payload.enabled === 'boolean')
-      setState((now) => (now ? { ...now, enabled: payload.enabled!, url: '', error: '' } : now));
-    invoke<{ enabled: boolean; url: string; error: string }>('library-mcp', payload)
-      .then(setState)
-      .catch((e) => p.notify(clean(e), true))
-      .finally(() => setBusy(false));
-  };
-  useEffect(() => ask(), []);
-  const copy = (text: string, what: string) =>
-    navigator.clipboard.writeText(text).then(
-      () => p.notify(`已复制${what}`),
-      () => p.notify('没有复制成功', true),
-    );
-  const url = state?.url || '';
-  return (
-    <div
-      className="modal-backdrop"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) p.onClose();
-      }}
-    >
-      <div
-        className="dialog library-mcp"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="library-mcp-title"
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') p.onClose();
-        }}
-      >
-        <div className="dialog-heading">
-          <h2 id="library-mcp-title">让其他 AI 工具读文献库</h2>
-          <button type="button" className="icon-button" aria-label="关闭" onClick={p.onClose}>
-            <X size={18} />
-          </button>
-        </div>
-        <p>
-          打开后，这台电脑上支持 MCP 的 AI 工具（OpenScience、Claude Code
-          等）可以查你的文献库：有哪些论文、读没读过、你划的重点和笔记；也可以把它们找到的论文记进来。它们改不了阅读状态。
-        </p>
-        <label className="library-mcp-switch">
-          <input
-            type="checkbox"
-            checked={!!state?.enabled}
-            disabled={busy || !state}
-            onChange={(e) => ask({ enabled: e.target.checked })}
-          />
-          允许这台电脑上的其他 AI 工具读文献库
-        </label>
-        {state?.error ? (
-          <p className="dialog-error" role="alert">
-            {state.error}
-          </p>
-        ) : null}
-        {state?.enabled && url ? (
-          <>
-            <div className="library-mcp-url">
-              <code>{url}</code>
-              <button type="button" className="secondary-button" onClick={() => copy(url, '地址')}>
-                复制
-              </button>
-            </div>
-            <p className="library-mcp-how">
-              在那个工具里添加一个 MCP 服务器，类型选 HTTP（Streamable
-              HTTP），地址填上面这个。Claude Code 里是：
-            </p>
-            <div className="library-mcp-url">
-              <code>claude mcp add --transport http folio {url}</code>
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => copy(`claude mcp add --transport http folio ${url}`, '命令')}
-              >
-                复制
-              </button>
-            </div>
-            <p className="library-mcp-how">
-              页间开着、并且打开了项目时才查得到。地址只在这台电脑上有效，别发给别人；
-              <button type="button" disabled={busy} onClick={() => ask({ renew: true })}>
-                换一个地址
-              </button>
-              后旧的立刻失效。
-            </p>
-          </>
-        ) : null}
       </div>
     </div>
   );

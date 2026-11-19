@@ -1,7 +1,7 @@
 import type { Anchor, Annotation, DocumentData } from '../types';
-import type { DocText, Paper, PdfFigure } from './types';
+import type { DocText, Paper, PdfFigure, SavedPaper } from './types';
 import type { DocKind } from '../doc-kind';
-import type { Library, LibraryPaper, PaperPatch } from '../library';
+import type { PluginAiTool } from '../plugins/types';
 
 // What the AI features may do in the app. App.tsx implements it on top of the open
 // documents, the readers and the workspace; everything goes through the same paths as
@@ -43,16 +43,18 @@ export type AiHost = {
     venues?: string[];
   }): Promise<{ papers: Paper[]; notes: string[]; searched: string[] }>;
   // Downloads a PDF into the project, creating folders on the way; resolves with its size.
-  // `paper`: what is known of it, kept in the library with the file.
-  savePdf(url: string, path: string, paper?: PaperPatch & { title: string }): Promise<number>;
-  // 文献库: the project's papers and reading lists.
-  library(): Promise<Library>;
-  libraryAdd(
-    papers: (PaperPatch & { id?: string })[],
-    overwrite?: boolean,
-  ): Promise<{ papers: LibraryPaper[]; created: number; updated: number }>;
-  libraryRemove(ids: string[]): Promise<number>;
-  librarySetList(list: { name: string; note?: string; papers: string[] }): Promise<number>;
+  // `paper`: what is known of it, kept in the library with the file when a plugin keeps one.
+  savePdf(url: string, path: string, paper?: SavedPaper): Promise<number>;
+  // A document Folio made (a 精读笔记, a translation) from `source`: plugins hear of it.
+  created(path: string, source: string, by: 'companion' | 'translation'): void;
+  // The tools plugins give the AI, as far as their background scripts have implemented them.
+  pluginTools(): { plugin: string; pluginName: string; tool: PluginAiTool }[];
+  callPluginTool(
+    plugin: string,
+    name: string,
+    input: unknown,
+    phase: 'preview' | 'run',
+  ): Promise<unknown>;
   open(path: string): Promise<void>;
   // Shows `path` in two-column reading next to `beside` (e.g. a notes page next to its paper);
   // `linked` also turns on 同步滚动, for a translation and its PDF.

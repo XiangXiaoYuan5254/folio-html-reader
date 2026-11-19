@@ -8,12 +8,13 @@
   "engines": {
     "folio": ">=0.33.0"
   },
+  "dependencies": ["library"],
   "icon": "icon.svg",
   "files": ["prompt.md", "template.html", "icon.svg"],
   "run": {
     "prompt": "prompt.md",
     "template": "template.html",
-    "tools": ["list_files", "list_library", "read_annotations", "read_document", "search", "create_html"],
+    "tools": ["list_files", "list_library", "get_paper", "read_annotations", "read_document", "search", "create_html"],
     "where": "project"
   },
   "triggers": [

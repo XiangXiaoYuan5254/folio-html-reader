@@ -1064,24 +1064,28 @@ test("pages run only the inline scripts Folio served: no 'unsafe-inline', no eva
   assert.ok(bare.startsWith('<!DOCTYPE html><script>'));
 });
 
-test('a page: its manifest, what it asks of the library, and code only its own', async () => {
+test('a page and a background script: their manifest, their permissions, code only their own', async () => {
   const { pageCspFor } = require('../electron/plugins.cjs');
   const base = {
     folio: 2,
     id: 'reading-stats',
     name: '阅读统计',
     version: '0.1.0',
-    files: ['index.html', 'page.js', 'chart.js', 'logo.png'],
-    page: { entry: 'index.html', library: 'read' },
+    files: ['index.html', 'page.js', 'chart.js', 'logo.png', 'bg.html', 'bg.js'],
+    page: { entry: 'index.html' },
+    permissions: { library: 'read' },
   };
   const m = validateManifest(base);
   // A page alone needs no task for the AI; its title is the plugin's name unless given.
-  assert.deepEqual(m.page, { entry: 'index.html', title: '阅读统计', library: 'read' });
-  assert.deepEqual([m.run.prompt, m.triggers, m.widget], ['', [], null]);
-  assert.equal(
-    validateManifest({ ...base, page: { entry: 'index.html', title: '概览' } }).page.library,
-    '',
-  );
+  assert.deepEqual(m.page, { entry: 'index.html', title: '阅读统计' });
+  assert.deepEqual([m.run.prompt, m.triggers, m.widget, m.background], ['', [], null, '']);
+  assert.deepEqual(m.permissions, {
+    network: [],
+    write: [],
+    library: 'read',
+    documents: '',
+    fileTree: false,
+  });
   assert.throws(() => validateManifest({ ...base, folio: 1 }), /要写 "folio": 2/);
   assert.throws(() => validateManifest({ ...base, page: { entry: 'page.js' } }), /page\.entry/);
   assert.throws(
@@ -1089,57 +1093,165 @@ test('a page: its manifest, what it asks of the library, and code only its own',
     /page\.entry/,
   );
   assert.throws(
-    () => validateManifest({ ...base, page: { entry: 'index.html', library: 'all' } }),
-    /page\.library/,
+    () => validateManifest({ ...base, page: { entry: 'index.html', library: 'read' } }),
+    /写在 permissions\.library 里，不是 page\.library/,
+  );
+  assert.throws(
+    () => validateManifest({ ...base, permissions: { library: 'all' } }),
+    /permissions\.library/,
+  );
+  assert.throws(
+    () => validateManifest({ ...base, permissions: { documents: 'write' } }),
+    /permissions\.documents/,
   );
   assert.throws(
     () => validateManifest({ folio: 2, id: 'x-y', name: 'x', version: '1.0.0', files: [] }),
-    /run（交给 AI 的任务）、widget（挂件）或 page（页面）/,
+    /run（交给 AI 的任务）、widget（挂件）、page（页面）或 background（后台脚本）/,
   );
-  // The library's tools are a plugin's to ask for; changing the library needs no folder.
-  const task = validateManifest({
-    folio: 1,
-    id: 'tidy',
-    name: '整理',
-    version: '1.0.0',
-    files: ['prompt.md'],
-    run: { prompt: 'prompt.md', tools: ['list_library', 'update_library'] },
-  });
-  assert.deepEqual(task.run.tools, ['list_library', 'update_library']);
-  assert.deepEqual(task.permissions.write, []);
+  // What a page or background script may do is theirs: a task alone can't ask for it.
   assert.throws(
     () =>
       validateManifest({
         folio: 1,
-        id: 'own',
-        name: 'own',
+        id: 'tidy',
+        name: '整理',
         version: '1.0.0',
         files: ['prompt.md'],
-        run: { prompt: 'prompt.md', tools: ['list_library'], where: 'folder' },
-        permissions: { write: ['{{out}}'] },
-        settings: [{ key: 'out', type: 'folder', label: 'x' }],
+        run: { prompt: 'prompt.md' },
+        permissions: { library: 'write' },
       }),
-    /在自己文件夹里运行的插件不能用 list_library/,
+    /要有 page 或 background/,
   );
-  // An update that adds a page, or widens its hold on the library, says so.
-  const none = validateManifest({ ...base, page: { entry: 'index.html' } });
-  const write = validateManifest({ ...base, page: { entry: 'index.html', library: 'write' } });
-  assert.equal(newPermissions(task, m).page, true);
+
+  // A background script, with tools for the AI.
+  const tool = {
+    name: 'list_stats',
+    title: '统计',
+    description: '按月统计读了几篇。',
+    parameters: { type: 'object', properties: { month: { type: 'string' } } },
+  };
+  const bg = validateManifest({
+    ...base,
+    background: 'bg.html',
+    permissions: { library: 'write', documents: 'read', fileTree: true },
+    aiTools: [tool, { ...tool, name: 'set_goal', title: '定目标', write: true, mcp: true }],
+  });
+  assert.equal(bg.background, 'bg.html');
+  assert.deepEqual(
+    bg.aiTools.map((t) => [t.name, t.title, t.write, t.mcp]),
+    [
+      ['list_stats', '统计', false, false],
+      ['set_goal', '定目标', true, true],
+    ],
+  );
+  assert.throws(
+    () => validateManifest({ ...base, aiTools: [tool] }),
+    /有 aiTools 的插件要有 background/,
+  );
+  assert.throws(
+    () => validateManifest({ ...base, background: 'bg.js' }),
+    /background 应当是 files 里列出的一个 \.html/,
+  );
+  for (const [bad, why] of [
+    [{ ...tool, name: 'Bad-Name' }, /aiTools 的名字/],
+    [{ ...tool, name: 'read_document' }, /不能和页间自己的工具同名/],
+    [{ ...tool, description: '' }, /没有 description/],
+    [{ ...tool, parameters: { type: 'array' } }, /parameters 应当是 type 为 "object"/],
+  ])
+    assert.throws(() => validateManifest({ ...base, background: 'bg.html', aiTools: [bad] }), why);
+  assert.throws(
+    () => validateManifest({ ...base, background: 'bg.html', aiTools: [tool, tool] }),
+    /aiTools 重名/,
+  );
+
+  // A task may use another plugin's tools when it names that plugin among its dependencies.
+  const task = {
+    folio: 1,
+    id: 'review',
+    name: '综述',
+    version: '1.0.0',
+    files: ['prompt.md'],
+    run: { prompt: 'prompt.md', tools: ['list_library', 'read_document'] },
+  };
+  assert.throws(() => validateManifest(task), /不认识的工具：list_library/);
+  const needs = validateManifest({ ...task, dependencies: ['library'] });
+  assert.deepEqual(needs.dependencies, ['library']);
+  assert.deepEqual(needs.run.tools, ['list_library', 'read_document']);
+  assert.throws(
+    () => validateManifest({ ...task, dependencies: ['review'] }),
+    /dependencies 里的插件 id 无效/,
+  );
+
+  // A select setting: one of its values.
+  const select = validateManifest({
+    ...base,
+    settings: [
+      {
+        key: 'ranking',
+        type: 'select',
+        label: '分级',
+        options: [{ value: 'none', label: '不分级' }, 'ccf'],
+      },
+    ],
+  });
+  assert.deepEqual(select.settings[0].options, [
+    { value: 'none', label: '不分级' },
+    { value: 'ccf', label: 'ccf' },
+  ]);
+  assert.equal(select.settings[0].default, 'none');
+  assert.throws(
+    () =>
+      validateManifest({
+        ...base,
+        settings: [{ key: 'r', type: 'select', options: ['a', 'b'], default: 'c' }],
+      }),
+    /default 不在 options 里/,
+  );
+
+  // An update that adds a page, a background script or tools, or widens what they may do,
+  // says so.
+  const none = validateManifest({ ...base, permissions: {} });
+  const write = validateManifest({ ...base, permissions: { library: 'write' } });
+  assert.equal(newPermissions(needs, m).page, true);
   assert.equal(newPermissions(none, m).library, 'read');
   assert.equal(newPermissions(m, write).library, 'write');
   assert.equal(newPermissions(write, m), null, 'asking for less is nothing new');
+  const added = newPermissions(m, bg);
+  assert.equal(added.background, true);
+  assert.equal(added.documents, true);
+  assert.equal(added.fileTree, true);
+  assert.deepEqual(added.aiTools, ['list_stats', 'set_goal']);
+  const louder = validateManifest({
+    ...base,
+    background: 'bg.html',
+    permissions: { library: 'write', documents: 'read', fileTree: true },
+    aiTools: [
+      { ...tool, mcp: true },
+      { ...tool, name: 'set_goal', title: '定目标', write: true, mcp: true },
+    ],
+  });
+  assert.deepEqual(newPermissions(bg, louder).aiTools, ['list_stats'], 'now also for others');
 
-  // Its page: Folio's folio.library ahead of its own code. Like a widget it may reach any
-  // website, and runs no code but its own files and the inline scripts served.
+  // Its page: Folio's `folio` ahead of its own code, with what its permissions give.
   const html = widgetPage({
     html: '<!doctype html><html><head></head><body><script src="page.js"></script></body></html>',
     settings: {},
-    page: m.page,
+    kind: 'page',
+    manifest: m,
   });
-  assert.match(html, /library: Object\.freeze\(\{/);
   assert.match(html, /"library":"read"/);
+  assert.match(html, /library: frozen\(\{/);
+  assert.match(html, /"kind":"page"/);
+  const worker = widgetPage({
+    html: '<html></html>',
+    settings: {},
+    kind: 'background',
+    manifest: bg,
+  });
+  assert.match(worker, /"tools":\["list_stats","set_goal"\]/);
+  assert.match(worker, /"fileTree":true/);
   const without = widgetPage({ html: '<html></html>', settings: {}, events: ['ai'] });
-  assert.match(without, /const page = null;/);
+  assert.match(without, /const caps = null;/);
   const csp = pageCspFor('reading-stats', html);
   assert.match(csp, /script-src app:\/\/page\/reading-stats\/ 'sha256-/);
   assert.doesNotMatch(
@@ -1149,15 +1261,15 @@ test('a page: its manifest, what it asks of the library, and code only its own',
   assert.match(csp, /connect-src app:\/\/page\/reading-stats\/ http: https: ws: wss:/);
   assert.match(csp, /img-src app:\/\/page\/reading-stats\/ http: https:/);
 
-  // The official page plugin is a plugin like any other: it reads as one.
+  // The official plugins built on these are plugins like any other: they read as one.
   const { readPluginDir } = require('../electron/plugin-manifest.cjs');
-  for (const id of ['paper-dashboard', 'paper-companion', 'literature-review']) {
+  for (const id of ['library', 'paper-dashboard', 'literature-review']) {
     const read = await readPluginDir(path.join(__dirname, '..', 'plugins', id), {
       appVersion: '0.33.0',
     });
     assert.equal(read.manifest.id, id);
     assert.deepEqual(read.warnings, []);
-    // 0.32.1, the last release without the library, is told to update.
+    // 0.32.1, the last release without these, is told to update.
     await assert.rejects(
       readPluginDir(path.join(__dirname, '..', 'plugins', id), { appVersion: '0.32.1' }),
       /需要页间 >=0\.33\.0/,

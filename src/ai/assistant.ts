@@ -68,7 +68,13 @@ import {
   withDocuments,
   withSummary,
 } from './prompts';
-import { agentTools, prepareTool, readingTools, writeTools } from './agent-tools';
+import {
+  agentTools,
+  pluginToolDefs,
+  prepareTool,
+  readingTools,
+  writeTools,
+} from './agent-tools';
 import {
   cleanCompanion,
   companionChunkPrompt,
@@ -1656,6 +1662,7 @@ export class Assistant {
       let target = `${dir}${stem}-精读笔记.html`;
       for (let n = 2; taken.has(target); n++) target = `${dir}${stem}-精读笔记（${n}）.html`;
       await this.host.createHtml(target, page);
+      this.host.created(target, source, 'companion');
       await this.host.openBeside(target, source);
       const text = [
         `已生成精读笔记 **${fileName(target)}**，保存在原文旁边，并在右栏打开。`,
@@ -1874,6 +1881,7 @@ export class Assistant {
           let target = `${dir}${stem}-译文.html`;
           for (let k = 2; taken.has(target); k++) target = `${dir}${stem}-译文（${k}）.html`;
           await this.host.createHtml(target, page);
+          this.host.created(target, source, 'translation');
           work.target = target;
           work.created = true;
         }
@@ -2271,7 +2279,7 @@ export class Assistant {
         provider,
         system: fitted.system,
         wire,
-        tools: agentTools,
+        tools: [...agentTools, ...pluginToolDefs(this.host)],
         web: true,
         signal,
         usage: fitted.usage ?? { input: 0, output: 0, cached: 0 },
@@ -2632,17 +2640,18 @@ export class Assistant {
         progress,
       });
     ui.add({ id: stepId, tool: name, title: tool.title, status: 'running' });
+    const writes = writeTools.has(name) || tool.write === true;
     try {
       await tool.prepare?.();
-      if (policy && writeTools.has(name) && tool.preview) {
-        // The library isn't a folder: a plugin given update_library may change it.
-        const verdict = tool.preview.kind === 'library' ? true : policy.writable(tool.preview.path);
+      if (policy && writes && tool.preview) {
+        // A plugin's tool changes what that plugin keeps, not a folder: a plugin given it may.
+        const verdict = tool.preview.kind === 'plugin' ? true : policy.writable(tool.preview.path);
         if (verdict !== true) {
           ui.patch(stepId, (s) => ({ ...s, status: 'skipped', detail: '不在插件能写的文件夹里' }));
           return { content: verdict, isError: true };
         }
         ui.patch(stepId, (s) => ({ ...s, title: tool.title, preview: tool.preview }));
-      } else if (writeTools.has(name) && tool.preview) {
+      } else if (writes && tool.preview) {
         ui.patch(stepId, (s) => ({
           ...s,
           title: tool.title,
@@ -2668,9 +2677,9 @@ export class Assistant {
         status: outcome.isError ? 'error' : 'done',
         detail: outcome.detail || (outcome.isError ? outcome.content.slice(0, 120) : s.detail),
       }));
-      if (writeTools.has(name) && !outcome.isError) {
+      if (writes && !outcome.isError) {
         this.forgetText();
-        if (tool.preview && tool.preview.kind !== 'library')
+        if (tool.preview && tool.preview.kind !== 'plugin')
           policy?.written.push(tool.preview.path);
       }
       return outcome;

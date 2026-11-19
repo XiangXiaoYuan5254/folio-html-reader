@@ -1,0 +1,247 @@
+/* 插件加在页间里的东西：阅读区里的插件页面、侧栏里的页面入口、文件树上的标记、
+   AI 助手里插件工具的预览，以及「设置 › 插件」里的 MCP。颜色都取自主题变量。 */
+
+/* A plugin's page in the reading area. It covers the reader, which stays as it was
+   underneath. */
+.page-host {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.page-host[hidden] {
+  display: none;
+}
+.plugin-page {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.plugin-page[hidden] {
+  display: none;
+}
+.plugin-page iframe {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--bg);
+}
+.plugin-page-reload {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--text-4);
+  opacity: 0.55;
+}
+.plugin-page-reload:hover {
+  opacity: 1;
+  color: var(--accent);
+}
+
+/* Marks a plugin puts on a file in the tree (folio.tree.set). They sit where the row's ⋯
+   button appears on hover, and give way to it. */
+.tree-badges {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  pointer-events: none;
+}
+.tree-row:hover > .tree-badges,
+.tree-row:focus-within > .tree-badges,
+.tree-row[data-menu-open] > .tree-badges {
+  display: none;
+}
+.tree-badge {
+  --badge: var(--accent);
+  width: 13px;
+  height: 13px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--badge);
+  pointer-events: auto;
+}
+.tree-badge.check {
+  border: 1.5px solid var(--badge);
+  background: var(--badge);
+  color: var(--on-accent, #fff);
+}
+.tree-badge.half {
+  border: 1.5px solid var(--badge);
+  background: linear-gradient(90deg, var(--badge) 50%, transparent 50%);
+}
+.tree-badge.dot::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--badge);
+}
+.tree-badge.text {
+  width: auto;
+  min-width: 13px;
+  padding: 0 3px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 13px;
+  background: color-mix(in srgb, var(--badge) 16%, transparent);
+}
+
+/* Plugins' pages, in the sidebar under the files. */
+.page-shelf {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 4px;
+  border-top: 1px solid var(--line-soft);
+}
+.page-shelf button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 9px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--text-2);
+  text-align: left;
+}
+.page-shelf button:hover {
+  background: var(--hover);
+}
+.page-shelf button.selected {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.page-shelf button > svg,
+.page-shelf button > img {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  color: var(--accent-muted);
+}
+.page-shelf button > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.page-shelf button > em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A page's tab, among the documents'. */
+.document-tab.page-tab > button > svg,
+.document-tab.page-tab > button > img {
+  width: 14px;
+  height: 14px;
+  color: var(--accent-muted);
+}
+
+/* What a plugin's tool will change, before it's agreed to. */
+.agent-plugin {
+  list-style: none;
+  margin: 0;
+  padding: 6px 2px;
+  max-height: 260px;
+  overflow-y: auto;
+  font-size: 12.5px;
+}
+.agent-plugin li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 6px;
+}
+.agent-plugin li span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+.agent-plugin li em {
+  flex: none;
+  font-style: normal;
+  color: var(--accent-text);
+}
+
+/* 让其他 AI 工具使用插件的工具（设置 › 插件） */
+.plugin-mcp {
+  width: 560px;
+}
+.plugin-mcp-switch {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 4px 0 14px;
+  font-size: 13.5px;
+  color: var(--text-strong);
+}
+.plugin-mcp-switch input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+}
+.plugin-mcp-url {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+.plugin-mcp-url code {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--fill);
+  font:
+    12px/1.5 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  color: var(--text-2);
+  overflow-x: auto;
+  white-space: nowrap;
+  user-select: all;
+}
+.plugin-mcp-url .secondary-button {
+  flex: none;
+  padding: 6px 12px;
+  font-size: 12.5px;
+}
+.dialog > p.plugin-mcp-how {
+  margin: 12px 0 4px;
+  font-size: 12.5px;
+  line-height: 1.8;
+}
+.plugin-mcp-how button {
+  color: var(--accent-text);
+  text-decoration: underline;
+  font-size: 12.5px;
+}

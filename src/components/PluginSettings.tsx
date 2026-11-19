@@ -188,6 +188,9 @@ export function PluginSettings(p: {
           {errorAt('installed')}
         </section>
       ) : null}
+      {list.plugins.some((x) => x.enabled && x.manifest?.aiTools.some((t) => t.mcp)) ? (
+        <McpSection plugins={list.plugins} />
+      ) : null}
       {available.length ? (
         <section className="settings-group">
           <h4>官方插件</h4>
@@ -364,6 +367,86 @@ export function PluginSettings(p: {
         ) : null}
       </section>
     </div>
+  );
+}
+
+// 让其他 AI 工具使用：this computer's other AI tools (Claude Code, Codex, OpenScience…) may call
+// the plugins' tools marked for it, over MCP at a local address with a secret in it
+// (electron/plugin-mcp.cjs).
+function McpSection({ plugins }: { plugins: PluginInfo[] }) {
+  const [state, setState] = useState<{ enabled: boolean; url: string; error: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState('');
+  const ask = (payload: { enabled?: boolean; renew?: boolean } = {}) => {
+    setBusy(true);
+    // The switch moves at once; the address comes when the answer does.
+    if (typeof payload.enabled === 'boolean')
+      setState((now) => (now ? { ...now, enabled: payload.enabled!, url: '', error: '' } : now));
+    invoke<{ enabled: boolean; url: string; error: string }>('plugin-mcp', payload)
+      .then(setState)
+      .catch((e) => setState((now) => ({ enabled: false, url: '', ...now, error: errorText(e) })))
+      .finally(() => setBusy(false));
+  };
+  useEffect(() => ask(), []);
+  const copy = (text: string, what: string) =>
+    void navigator.clipboard.writeText(text).then(
+      () => setCopied(what),
+      () => setCopied(''),
+    );
+  const tools = plugins
+    .filter((x) => x.enabled)
+    .flatMap((x) => (x.manifest?.aiTools || []).filter((t) => t.mcp).map((t) => t.title));
+  const url = state?.url || '';
+  const command = `claude mcp add --transport http folio ${url}`;
+  return (
+    <section className="settings-group plugin-mcp-section">
+      <h4>让其他 AI 工具使用</h4>
+      <label className="settings-row">
+        <span>
+          <strong>允许电脑上的其他 AI 工具调用插件</strong>
+          <small>{`Claude Code、Codex 等能用：${tools.join('、')}`}</small>
+        </span>
+        <input
+          type="checkbox"
+          role="switch"
+          aria-label="允许电脑上的其他 AI 工具调用插件"
+          checked={!!state?.enabled}
+          disabled={busy || !state}
+          onChange={(e) => ask({ enabled: e.target.checked })}
+        />
+      </label>
+      {state?.error ? (
+        <p className="plugin-error" role="alert">
+          <CircleAlert size={14} />
+          {state.error}
+        </p>
+      ) : null}
+      {state?.enabled && url ? (
+        <div className="plugin-mcp">
+          <p className="plugin-mcp-how">在那个工具里添加 MCP 服务器（HTTP），地址：</p>
+          <div className="plugin-mcp-url">
+            <code>{url}</code>
+            <button type="button" className="secondary-button" onClick={() => copy(url, 'url')}>
+              {copied === 'url' ? '已复制' : '复制'}
+            </button>
+          </div>
+          <p className="plugin-mcp-how">Claude Code 里运行：</p>
+          <div className="plugin-mcp-url">
+            <code>{command}</code>
+            <button type="button" className="secondary-button" onClick={() => copy(command, 'cmd')}>
+              {copied === 'cmd' ? '已复制' : '复制'}
+            </button>
+          </div>
+          <p className="plugin-mcp-how">
+            页间开着、打开了项目时才能用。地址别发给别人；
+            <button type="button" disabled={busy} onClick={() => ask({ renew: true })}>
+              换一个地址
+            </button>
+            后旧的立刻失效。
+          </p>
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -654,7 +737,7 @@ function PluginCard(p: {
             <p className="plugin-hint">开发版：页间直接读这个文件夹，保存后马上生效。</p>
           ) : null}
           <Warnings warnings={plugin.warnings} />
-          <Permissions manifest={m} anySite={trusted} />
+          <Permissions manifest={m} official={trusted} />
           <PluginLog id={plugin.id} />
         </div>
       ) : null}
@@ -762,6 +845,17 @@ function PluginCard(p: {
                     value={draft[s.key] ?? ''}
                     onChange={(e) => setDraft({ ...draft, [s.key]: e.target.value })}
                   />
+                ) : s.type === 'select' ? (
+                  <select
+                    value={draft[s.key] ?? s.default}
+                    onChange={(e) => setDraft({ ...draft, [s.key]: e.target.value })}
+                  >
+                    {(s.options || []).map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
                 ) : (
                   <input
                     type="text"
@@ -959,16 +1053,34 @@ function Permissions({
   manifest: m,
   added,
   open = false,
-  anySite = false,
+  official = false,
 }: {
   manifest: PluginManifest;
   added?: PluginInspection['added'];
   open?: boolean;
-  // Bundled and official plugins aren't held to their list of sites.
-  anySite?: boolean;
+  // A bundled or official plugin: 页间's own. It isn't held to its list of sites, and its code,
+  // which 页间 checks before publishing, sends nothing of the reader's anywhere, so the warnings
+  // about code that may go online are for community plugins only.
+  official?: boolean;
 }) {
   const isNew = (kind: 'network' | 'write' | 'tools', value: string) =>
     !!added && (added[kind] as string[]).includes(value);
+  const list = usePlugins();
+  // A tool another plugin (or this one) gives the AI.
+  const pluginTool = (name: string) => {
+    const owner = [m, ...(list?.plugins || []).map((x) => x.manifest)].find((x) =>
+      x?.aiTools.some((t) => t.name === name),
+    );
+    const tool = owner?.aiTools.find((t) => t.name === name);
+    return owner && tool ? `用「${owner.name}」的工具：${tool.title}` : `用其他插件的工具 ${name}`;
+  };
+  // Another plugin by its name, if Folio knows it.
+  const nameOf = (id: string) =>
+    `「${
+      list?.plugins.find((x) => x.id === id)?.manifest?.name ||
+      list?.recommendations.find((x) => x.id === id)?.name ||
+      id
+    }」`;
   return (
     <details className="plugin-permissions" open={open}>
       <summary>
@@ -978,7 +1090,7 @@ function Permissions({
       <ul>
         {m.run.tools.map((t) => (
           <li key={t} className={isNew('tools', t) ? 'new' : ''}>
-            {(m.run.where === 'folder' && folderToolNames[t]) || toolNames[t] || t}
+            {(m.run.where === 'folder' && folderToolNames[t]) || toolNames[t] || pluginTool(t)}
           </li>
         ))}
         {m.run.web ? (
@@ -994,10 +1106,12 @@ function Permissions({
                 {widgetEventNames[e] || e}
               </li>
             ))}
-            <li className={added?.widget ? 'new' : ''}>
-              挂件可以自己访问任何网站，可能把上面这些发出去；页间从来不会在挂件里问你要密码或 API
-              Key
-            </li>
+            {official ? null : (
+              <li className={added?.widget ? 'new' : ''}>
+                挂件可以自己访问任何网站，可能把上面这些发出去；页间从来不会在挂件里问你要密码或 API
+                Key
+              </li>
+            )}
             {m.widget.art.author || m.widget.art.license ? (
               <li>
                 美术素材：
@@ -1007,31 +1121,64 @@ function Permissions({
           </>
         ) : null}
         {m.page ? (
-          <>
-            <li className={added?.page ? 'new' : ''}>
-              {`在阅读区开一个标签页「${m.page.title}」（入口在左边文件树下面）`}
-            </li>
-            {m.page.library ? (
-              <li className={added?.page || added?.library ? 'new' : ''}>
-                {m.page.library === 'write'
-                  ? '页面能看到并修改你的文献库：论文、阅读状态、总结，以及你在这些论文的文件里划的重点和笔记'
-                  : '页面能看到你的文献库：论文、阅读状态、总结，以及你在这些论文的文件里划的重点和笔记'}
-              </li>
-            ) : null}
-            <li className={added?.page ? 'new' : ''}>
-              {m.page.library
-                ? '页面可以自己访问任何网站，可能把它看到的文献库和笔记发出去；页间从来不会在页面里问你要密码或 API Key'
-                : '页面可以自己访问任何网站；页间从来不会在页面里问你要密码或 API Key'}
-            </li>
-          </>
+          <li className={added?.page ? 'new' : ''}>
+            {`在阅读区开一个标签页「${m.page.title}」（入口在左边文件树下面）`}
+          </li>
+        ) : null}
+        {m.background ? (
+          <li className={added?.background ? 'new' : ''}>
+            在后台运行：打开项目时一直开着，知道你正在读哪篇文档、读到了哪里
+          </li>
+        ) : null}
+        {m.permissions.library ? (
+          <li className={added?.library ? 'new' : ''}>
+            {m.permissions.library === 'write'
+              ? '看到并修改项目的文献库：论文、阅读状态、总结，以及你在这些论文的文件里划的重点和笔记'
+              : '看到项目的文献库：论文、阅读状态、总结，以及你在这些论文的文件里划的重点和笔记'}
+          </li>
+        ) : null}
+        {m.permissions.documents ? (
+          <li className={added?.documents ? 'new' : ''}>
+            读取项目里的文档，以及你在上面划的重点和写的笔记
+          </li>
+        ) : null}
+        {m.permissions.fileTree ? (
+          <li className={added?.fileTree ? 'new' : ''}>在文件树上给文件加标记和右键菜单</li>
+        ) : null}
+        {m.aiTools.length ? (
+          <li className={added?.aiTools?.length ? 'new' : ''}>
+            {`给 AI 助手提供工具：${m.aiTools.map((t) => t.title).join('、')}`}
+            {m.aiTools.some((t) => t.write) ? '（会改东西的，先给你看要改什么）' : ''}
+          </li>
+        ) : null}
+        {m.aiTools.some((t) => t.mcp) ? (
+          <li>
+            {`你允许后，电脑上的其他 AI 工具（Claude Code、Codex 等）也能调用：${m.aiTools
+              .filter((t) => t.mcp)
+              .map((t) => t.title)
+              .join('、')}`}
+          </li>
+        ) : null}
+        {(m.page || m.background) && !official ? (
+          <li className={added?.page || added?.background ? 'new' : ''}>
+            {`${m.page && m.background ? '页面和后台脚本' : m.page ? '页面' : '后台脚本'}可以自己访问任何网站${
+              m.permissions.library || m.permissions.documents
+                ? '，可能把看到的文献库、文档和笔记发出去'
+                : ''
+            }；页间从来不会在里面问你要密码或 API Key`}
+          </li>
+        ) : null}
+        {m.dependencies.length ? (
+          <li>{`要和这些插件一起用：${m.dependencies.map(nameOf).join('、')}`}</li>
         ) : null}
         {m.run.script ? (
           <li className={added?.script ? 'new' : ''}>
-            运行插件自带的脚本：脚本可以自己访问任何网站，可能把它经手的内容（包括 AI
-            交给它的文档内容）发出去
+            {official
+              ? '运行插件自带的脚本'
+              : '运行插件自带的脚本：脚本可以自己访问任何网站，可能把它经手的内容（包括 AI 交给它的文档内容）发出去'}
           </li>
         ) : null}
-        {!m.permissions.network.length ? null : anySite ? (
+        {!m.permissions.network.length ? null : official ? (
           <li>
             <Globe size={12} /> 访问任何网站（本机和局域网除外）
           </li>
@@ -1145,7 +1292,7 @@ function InstallConfirm(p: {
         </p>
       ) : null}
       <Warnings warnings={warnings} />
-      <Permissions manifest={m} added={added} open anySite={source.type === 'official'} />
+      <Permissions manifest={m} added={added} open official={source.type === 'official'} />
       {source.type === 'official' ? null : (
         <p className="settings-footnote">
           {source.type === 'folder'

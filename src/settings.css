@@ -832,6 +832,7 @@
 }
 .plugin-install input,
 .plugin-field input[type='text'],
+.plugin-field select,
 .plugin-field textarea {
   flex: 1;
   min-width: 0;
@@ -845,6 +846,7 @@
 }
 .plugin-install input:focus,
 .plugin-field input[type='text']:focus,
+.plugin-field select:focus,
 .plugin-field textarea:focus {
   outline: 2px solid var(--accent-focus);
   outline-offset: -1px;

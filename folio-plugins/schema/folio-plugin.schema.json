@@ -4,22 +4,13 @@
   "title": "页间（Folio）插件清单 folio-plugin.json",
   "description": "页间插件的清单。完整说明见 https://github.com/XiangXiaoYuan5254/folio-plugins/blob/main/docs/manifest.md 。这个 Schema 帮编辑器补全和提示；最终以 `folio-plugin validate` 和页间的检查为准（比如“用到联网工具就要写 permissions.network”这类跨字段规则只有它们会查）。",
   "type": "object",
-  "required": [
-    "folio",
-    "id",
-    "name",
-    "version",
-    "files"
-  ],
+  "required": ["folio", "id", "name", "version", "files"],
   "properties": {
     "$schema": {
       "type": "string"
     },
     "folio": {
-      "enum": [
-        1,
-        2
-      ],
+      "enum": [1, 2],
       "description": "插件格式版本：1；用到 widget（挂件）时写 2。"
     },
     "id": {
@@ -80,9 +71,7 @@
     },
     "run": {
       "type": "object",
-      "required": [
-        "prompt"
-      ],
+      "required": ["prompt"],
       "additionalProperties": false,
       "properties": {
         "prompt": {
@@ -102,25 +91,32 @@
         "tools": {
           "type": "array",
           "uniqueItems": true,
-          "description": "AI 运行时能用的页间工具。在自己文件夹里工作的插件（where: \"folder\"）只能用 list_files、read_document、create_html、fetch_url、read_feed、search_papers。",
+          "description": "AI 运行时能用的页间工具。在自己文件夹里工作的插件（where: \"folder\"）只能用 list_files、read_document、create_html、fetch_url、read_feed、search_papers。 也可以写其他插件给 AI 的工具，并把那个插件写进 dependencies。",
           "items": {
-            "enum": [
-              "list_files",
-              "search",
-              "read_document",
-              "read_annotations",
-              "read_html_source",
-              "open_document",
-              "search_papers",
-              "fetch_url",
-              "read_feed",
-              "create_html",
-              "edit_html",
-              "add_highlights",
-              "write_note",
-              "save_pdf",
-              "list_library",
-              "update_library"
+            "anyOf": [
+              {
+                "enum": [
+                  "list_files",
+                  "search",
+                  "read_document",
+                  "read_annotations",
+                  "read_html_source",
+                  "open_document",
+                  "search_papers",
+                  "fetch_url",
+                  "read_feed",
+                  "create_html",
+                  "edit_html",
+                  "add_highlights",
+                  "write_note",
+                  "save_pdf"
+                ]
+              },
+              {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{2,39}$",
+                "description": "其他插件给 AI 的工具（它们的 aiTools），要把那个插件写进 dependencies。"
+              }
             ]
           }
         },
@@ -129,10 +125,7 @@
           "description": "为 true 时，模型还能用服务自带的联网搜索（服务支持时）。"
         },
         "where": {
-          "enum": [
-            "project",
-            "folder"
-          ],
+          "enum": ["project", "folder"],
           "description": "project（默认）：在用户打开的项目里工作；folder：在插件自己的文件夹里工作，看不到用户的项目，permissions.write 要写成一个文件夹设置，如 [\"{{output}}\"]。"
         }
       }
@@ -145,10 +138,7 @@
         "oneOf": [
           {
             "type": "object",
-            "required": [
-              "type",
-              "time"
-            ],
+            "required": ["type", "time"],
             "additionalProperties": false,
             "properties": {
               "type": {
@@ -163,9 +153,7 @@
           },
           {
             "type": "object",
-            "required": [
-              "type"
-            ],
+            "required": ["type"],
             "additionalProperties": false,
             "properties": {
               "type": {
@@ -203,6 +191,18 @@
           "items": {
             "type": "string"
           }
+        },
+        "library": {
+          "enum": ["read", "write"],
+          "description": "页面和后台脚本能不能用项目的文献库：read 只读，write 还能改。"
+        },
+        "documents": {
+          "enum": ["read"],
+          "description": "页面和后台脚本能不能读项目里的文档、文档的文字和读者的批注。"
+        },
+        "fileTree": {
+          "type": "boolean",
+          "description": "后台脚本（或页面）能不能在文件树上给文件加标记和右键菜单。"
         }
       }
     },
@@ -212,9 +212,7 @@
       "description": "用户可以在插件卡片上改的设置。值是字符串，在任务说明、模板和写入文件夹里用 {{key}} 引用，脚本里是 folio.settings.key。",
       "items": {
         "type": "object",
-        "required": [
-          "key"
-        ],
+        "required": ["key"],
         "additionalProperties": false,
         "properties": {
           "key": {
@@ -235,11 +233,7 @@
             "description": "设置项名称；不能和内置变量重名。"
           },
           "type": {
-            "enum": [
-              "text",
-              "textarea",
-              "folder"
-            ],
+            "enum": ["text", "textarea", "folder", "select"],
             "description": "text：一行字；textarea：多行；folder：文件夹（可以点“选择…”挑）。"
           },
           "label": {
@@ -253,6 +247,32 @@
           "default": {
             "type": "string",
             "maxLength": 2000
+          },
+          "options": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 20,
+            "description": "select 的选项。",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "object",
+                  "required": ["value"],
+                  "properties": {
+                    "value": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string",
+                      "maxLength": 40
+                    }
+                  }
+                }
+              ]
+            }
           }
         }
       }
@@ -260,9 +280,7 @@
     "widget": {
       "type": "object",
       "description": "挂件：常驻在窗口里的小页面（要写 \"folio\": 2）。见 docs/widget-api.md。",
-      "required": [
-        "entry"
-      ],
+      "required": ["entry"],
       "properties": {
         "entry": {
           "type": "string",
@@ -286,24 +304,14 @@
           }
         },
         "anchor": {
-          "enum": [
-            "assistant",
-            "bottom-right",
-            "bottom-left",
-            "top-right",
-            "top-left"
-          ],
+          "enum": ["assistant", "bottom-right", "bottom-left", "top-right", "top-left"],
           "description": "放在哪：assistant 是 AI 助手输入框的右上角；其余是窗口的一个角。默认 bottom-right。"
         },
         "events": {
           "type": "array",
           "uniqueItems": true,
           "items": {
-            "enum": [
-              "ai",
-              "reading",
-              "document"
-            ]
+            "enum": ["ai", "reading", "document"]
           },
           "description": "要订阅的事件：ai（AI 的状态）、reading（是否在读）、document（当前文档的标题）。theme 和 visible 不用写。"
         },
@@ -324,9 +332,7 @@
     "page": {
       "type": "object",
       "description": "页面：插件自己的一整页 HTML，在阅读区里开成一个标签页（要写 \"folio\": 2）。见 docs/page-api.md。",
-      "required": [
-        "entry"
-      ],
+      "required": ["entry"],
       "properties": {
         "entry": {
           "type": "string",
@@ -337,32 +343,72 @@
           "type": "string",
           "maxLength": 24,
           "description": "标签页和侧栏里显示的名字；不写就用插件的名字。"
-        },
-        "library": {
-          "enum": [
-            "read",
-            "write"
-          ],
-          "description": "能不能用项目的文献库：read 只读，write 还能改。不写就用不了 folio.library。"
         }
+      }
+    },
+    "background": {
+      "type": "string",
+      "pattern": "\\.html?$",
+      "description": "后台脚本：files 里的一个 .html，插件开着、打开了项目时一直在跑，看不见（要写 \"folio\": 2）。见 docs/page-api.md。"
+    },
+    "aiTools": {
+      "type": "array",
+      "maxItems": 16,
+      "description": "给 AI 的工具，由后台脚本用 folio.tools.handle 实现（要有 background）。",
+      "items": {
+        "type": "object",
+        "required": ["name", "description"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{2,39}$"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 24
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 1500
+          },
+          "parameters": {
+            "type": "object",
+            "description": "type 为 \"object\" 的 JSON Schema。"
+          },
+          "write": {
+            "type": "boolean",
+            "description": "会改东西：AI 助手先给用户看预览，用户同意才执行。"
+          },
+          "mcp": {
+            "type": "boolean",
+            "description": "用户允许后，电脑上的其他 AI 工具也能通过 MCP 调用。"
+          }
+        }
+      }
+    },
+    "dependencies": {
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "description": "要和哪些插件一起用（插件 id）。",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9-]{1,39}$"
       }
     }
   },
   "anyOf": [
     {
-      "required": [
-        "run"
-      ]
+      "required": ["run"]
     },
     {
-      "required": [
-        "widget"
-      ]
+      "required": ["widget"]
     },
     {
-      "required": [
-        "page"
-      ]
+      "required": ["page"]
+    },
+    {
+      "required": ["background"]
     }
   ]
 }
