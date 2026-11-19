@@ -6,7 +6,7 @@
 
 | 目录 | 是什么 |
 | --- | --- |
-| [`docs/`](docs/) | 插件的完整说明：[清单字段](docs/manifest.md)、[脚本 API](docs/script-api.md)、[挂件 API](docs/widget-api.md)、[发布与收录](docs/publishing.md)、[收录审核标准](docs/review.md) |
+| [`docs/`](docs/) | 插件的完整说明：[清单字段](docs/manifest.md)、[脚本 API](docs/script-api.md)、[挂件 API](docs/widget-api.md)、[页面和后台脚本 API](docs/page-api.md)、[发布与收录](docs/publishing.md)、[收录审核标准](docs/review.md) |
 | [`template/`](template/) | 起步模板，复制一份就能改成你自己的插件 |
 | [`examples/`](examples/) | 示例插件：[AI 前沿日报](examples/ai-daily/)（官网可选下载，不随安装包分发）、[Hacker News 摘要](examples/hn-digest/)（带脚本）、[待读划重点](examples/reading-highlights/)（在项目里工作） |
 | [`schema/`](schema/folio-plugin.schema.json) | `folio-plugin.json` 的 JSON Schema，编辑器里有补全和提示 |
@@ -79,9 +79,9 @@ folio-plugin pack my-plugin       # 打成 .zip，可以直接拖进页间安装
 - **权限是写死的**：运行时只能用清单里列出的工具；AI 的联网工具只能访问列出的网站（https，跳转到别的网站也不行；官方插件不受这个限制，本机和局域网地址除外）；只能在列出的文件夹里写文件。网页里藏着的“让 AI 去改别的文件”之类的话不会生效。
 - **脚本可以自己联网**：脚本在沙箱里，读写不了文件、看不到页间界面、拿不到 API Key，但可以自己访问任何网站（`fetch`、`WebSocket` 等）。用户安装时会看到“脚本可以自己访问任何网站”。代码必须都在插件包里，不能从网上加载。
 - **挂件**：插件可以带一个常驻在窗口里的挂件（`"folio": 2` 的 `widget`），比如趴在 AI 助手输入框上的角色，跟着 AI 在想、在写、答完换动作。挂件可以自己联网，但只知道页间在干什么，不知道你在读什么（除非它要了文档标题，安装时会写明）。见 [挂件 API](docs/widget-api.md)。
-- **页面**：插件可以带一整页自己的界面（`"folio": 2` 的 `page`），在阅读区里开成一个标签页，比如把文献库画成仪表盘。页面可以读项目的文献库（论文、阅读状态、读者划的重点和笔记），清单里写明后也可以改；它和挂件一样可以自己联网，安装时会如实写明。见 [页面 API](docs/page-api.md)。
-- **文献库**：AI 任务可以用 `list_library` 看项目里有哪些论文、读没读过，用 `update_library` 新增论文、补信息、排书单；`{{document}}` 是运行时用户正在看的文档。
-- **暂时不能**：加菜单或快捷键，在打开文档等事件发生时自动运行 AI 任务。
+- **页面和后台脚本**：插件可以带一整页自己的界面（`"folio": 2` 的 `page`），在阅读区里开成一个标签页，比如把文献库画成仪表盘；也可以带一个看不见的后台脚本（`background`），在文件树上给文件加标记和右键菜单、在读者读到某处时发通知、实现给 AI 助手的工具（`aiTools`）。清单里写明后，它们可以读项目的文档、批注和文献库；它们和挂件一样可以自己联网，安装时会如实写明。见 [页面和后台脚本 API](docs/page-api.md)。
+- **用别的插件的工具**：AI 任务可以用其他插件给 AI 的工具，比如「文献库」插件的 `list_library`、`get_paper`：写进 `run.tools`，再把那个插件写进 `dependencies`。`{{document}}` 是运行时用户正在看的文档。
+- **暂时不能**：加快捷键，在打开文档等事件发生时自动运行 AI 任务。
 
 ## 用户怎么安装插件
 
