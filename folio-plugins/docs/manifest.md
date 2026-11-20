@@ -95,7 +95,7 @@
 | `read_html_source` | 读 HTML 源码（改之前先看） | | |
 | `open_document` | 在阅读区为用户打开一篇文档 | | |
 | `search_papers` | 查学术论文（OpenAlex、PubMed、arXiv），返回摘要和公开 PDF 链接 | | ✓ |
-| `fetch_url` | 读一个网页或数据接口；网页转成文字，JSON / XML 原样返回，长内容分段读 | | ✓ |
+| `fetch_url` | 读一个网页、PDF 或数据接口；网页和 PDF 转成文字（PDF 每页标页码），JSON / XML 原样返回，长内容分段读 | | ✓ |
 | `read_feed` | 读 RSS / Atom 订阅（包括 arXiv API），按时间从新到旧 | | ✓ |
 | `create_html` | 新建一个 HTML 文件（不能覆盖已有文件） | ✓ | ✓ |
 | `edit_html` | 修改 HTML 文件（查找替换） | ✓ | |

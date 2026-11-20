@@ -29,6 +29,10 @@ async function buildPDF(minify = false) {
       await fs.cp(source, path.resolve('dist/pdf', name), { recursive: true });
   }
   await fs.copyFile('node_modules/pdfjs-dist/build/pdf.worker.mjs', 'dist/pdf/pdf.worker.mjs');
+  // pdf.js's build for Node, for reading a PDF's text in the main process (electron/pdf-text.cjs).
+  await fs.mkdir('dist/pdf-node', { recursive: true });
+  for (const name of ['pdf.mjs', 'pdf.worker.mjs'])
+    await fs.copyFile(`node_modules/pdfjs-dist/legacy/build/${name}`, `dist/pdf-node/${name}`);
   await fs.copyFile('node_modules/pdfjs-dist/LICENSE', 'dist/pdf/LICENSE.pdfjs');
 }
 export default defineConfig({

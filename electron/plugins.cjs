@@ -34,8 +34,11 @@ const {
 } = require('./plugin-manifest.cjs');
 const { readZip } = require('./zip.cjs');
 const { createOfficial, OFFICIAL_URL, OFFICIAL_KEYS } = require('./official-plugins.cjs');
+const { pdfText, isPdf } = require('./pdf-text.cjs');
 
 const FETCH_LIMIT = 3 * 1024 * 1024;
+// A paper's PDF carries its figures: 40 pages of one can be 50 MB.
+const PDF_LIMIT = 64 * 1024 * 1024;
 // 插件目录：作者提交、页间收录的社区插件列表（公开仓库 folio-plugins 里的
 // community-plugins.json）。GitHub 连不上时改走 jsDelivr。
 const DIRECTORY_URLS = [
@@ -1180,8 +1183,12 @@ function createPlugins({
         continue;
       }
       const type = res.headers.get('content-type') || '';
-      if (/^(image|audio|video|font)\//.test(type) || /octet-stream|pdf|zip/.test(type))
-        fail(`这个地址是文件（${type.split(';')[0]}），不是网页或数据`);
+      const isFile = (t) => `这个地址是文件（${t.split(';')[0]}），不是网页或数据`;
+      // A PDF is read as its text; servers often send one as octet-stream.
+      const maybePdf = res.ok && /pdf|octet-stream/.test(type);
+      if (/^(image|audio|video|font)\//.test(type) || (/octet-stream|zip/.test(type) && !maybePdf))
+        fail(isFile(type));
+      const limit = maybePdf ? PDF_LIMIT : FETCH_LIMIT;
       const reader = res.body?.getReader();
       const chunks = [];
       let size = 0;
@@ -1191,21 +1198,40 @@ function createPlugins({
           const { done, value } = await reader.read();
           if (done) break;
           size += value.length;
-          if (size > FETCH_LIMIT) {
-            chunks.push(value.subarray(0, value.length - (size - FETCH_LIMIT)));
+          if (size > limit) {
+            chunks.push(value.subarray(0, value.length - (size - limit)));
             cut = true;
             await reader.cancel().catch(() => {});
             break;
           }
           chunks.push(value);
         }
+      const body = Buffer.concat(chunks.map((c) => Buffer.from(c)));
+      if (maybePdf && isPdf(body)) {
+        if (cut) fail(`这份 PDF 超过 ${PDF_LIMIT / 1024 / 1024} MB，读不了`);
+        const pdf = await pdfText(body).catch((e) => fail(e.message));
+        return {
+          url: current,
+          status: res.status,
+          ok: true,
+          contentType: 'application/pdf',
+          // Pages marked as read_document marks a PDF's, so a model can say where.
+          text: pdf.pages.map((t, i) => `[第 ${i + 1} 页]\n${t}`).join('\n\n'),
+          cut: pdf.cut,
+          title: pdf.title,
+          pages: pdf.total,
+        };
+      }
+      if (/octet-stream/.test(type)) fail(isFile(type));
       return {
         url: current,
         status: res.status,
         ok: res.ok,
         contentType: type,
-        text: Buffer.concat(chunks.map((c) => Buffer.from(c))).toString('utf8'),
+        text: body.toString('utf8'),
         cut,
+        // A bot check (Cloudflare's): passed by a browser running its script, never by a fetch.
+        challenge: !res.ok && res.headers.get('cf-mitigated') === 'challenge',
       };
     }
     fail('网站跳转次数太多');

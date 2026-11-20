@@ -315,6 +315,13 @@ test('an official plugin fetches any public https site, redirects checked too', 
     if (u.pathname === '/inside') return { status: 302, headers: new Map([['location', '/feed']]) };
     if (u.pathname === '/lan')
       return { status: 302, headers: new Map([['location', 'https://192.168.1.1/admin']]) };
+    if (u.pathname === '/guarded')
+      return {
+        status: 403,
+        ok: false,
+        headers: new Map([['cf-mitigated', 'challenge']]),
+        body: new Response('Just a moment...').body,
+      };
     const body = '<rss><channel><title>t</title></channel></rss>';
     return {
       status: 200,
@@ -333,6 +340,11 @@ test('an official plugin fetches any public https site, redirects checked too', 
     const got = await plugins.fetch({ id: 'ai-daily', url: 'https://export.arxiv.org/inside' });
     assert.equal(got.url, 'https://export.arxiv.org/feed');
     assert.match(got.text, /<rss>/);
+    assert.equal(got.challenge, false);
+    // A site behind a bot check says so, so the run can explain a 403 a browser never sees.
+    const guarded = await plugins.fetch({ id: 'ai-daily', url: 'https://openai.com/guarded' });
+    assert.equal(guarded.status, 403);
+    assert.equal(guarded.challenge, true);
     // Off its list, and where a site on it sends it: both fine for an official plugin.
     const off = await plugins.fetch({ id: 'ai-daily', url: 'https://example.org/' });
     assert.equal(off.url, 'https://example.org/');
@@ -348,6 +360,66 @@ test('an official plugin fetches any public https site, redirects checked too', 
       /不能访问 example\.org。只能访问公网上的 https 网站/,
     );
     assert.ok(!seen.some((u) => u.includes('192.168') || u.startsWith('http:')));
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+// A one-page PDF with `text` on it (none: a page with nothing to read, like a scan).
+function tinyPdf(text) {
+  const content = text ? `BT /F1 18 Tf 20 100 Td (${text}) Tj ET` : '';
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 144] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    '<< /Title (Tiny Report) >>',
+  ];
+  let pdf = '%PDF-1.4\n';
+  const offsets = objects.map((o, i) => {
+    const at = pdf.length;
+    pdf += `${i + 1} 0 obj\n${o}\nendobj\n`;
+    return at;
+  });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  pdf += offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('');
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R /Info 6 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(pdf, 'latin1');
+}
+
+test('a plugin reads a PDF as its text, page by page', async () => {
+  const fetch = async (url) => {
+    const { pathname } = new URL(url);
+    const file = (type, bytes) => ({
+      status: 200,
+      ok: true,
+      headers: new Map([['content-type', type]]),
+      body: new Response(bytes).body,
+    });
+    // Sent as octet-stream, as GitHub's raw files are.
+    if (pathname === '/report.pdf') return file('application/octet-stream', tinyPdf('Mixture of experts'));
+    if (pathname === '/scan.pdf') return file('application/pdf', tinyPdf(''));
+    return file('application/octet-stream', Buffer.from('PK\x03\x04 not a pdf'));
+  };
+  const { plugins, dir } = await tempPlugins(fetch);
+  try {
+    await plugins.set({ id: 'ai-daily', enabled: true, root: '/p' });
+    const got = await plugins.fetch({ id: 'ai-daily', url: 'https://example.org/report.pdf' });
+    assert.equal(got.contentType, 'application/pdf');
+    assert.equal(got.title, 'Tiny Report');
+    assert.equal(got.pages, 1);
+    assert.equal(got.cut, false);
+    assert.match(got.text, /^\[第 1 页\]\nMixture of experts/);
+    await assert.rejects(
+      plugins.fetch({ id: 'ai-daily', url: 'https://example.org/scan.pdf' }),
+      /没有文字，可能是扫描版/,
+    );
+    await assert.rejects(
+      plugins.fetch({ id: 'ai-daily', url: 'https://example.org/data.bin' }),
+      /这个地址是文件（application\/octet-stream）/,
+    );
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }

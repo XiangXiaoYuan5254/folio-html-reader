@@ -8,7 +8,7 @@ export const webTools: ToolDef[] = [
   {
     name: 'fetch_url',
     description:
-      '读取一个网页或数据接口（只能访问插件允许的网站）。网页转成文字，链接写成 [文字](网址)；JSON 和 XML 原样返回。内容长时分段读取：offset 是起始字符位置，length 是字数（默认 12000，最多 30000）。',
+      '读取一个网页、PDF 或数据接口（只能访问插件允许的网站）。网页转成文字，链接写成 [文字](网址)；PDF 读出文字，每页前标「[第 N 页]」；JSON 和 XML 原样返回。内容长时分段读取：offset 是起始字符位置，length 是字数（默认 12000，最多 30000）。',
     parameters: {
       type: 'object',
       properties: {
@@ -44,7 +44,16 @@ type Fetched = {
   contentType: string;
   text: string;
   cut: boolean;
+  challenge?: boolean;
+  // A PDF, read as its text: its own title and how many pages it has.
+  title?: string;
+  pages?: number;
 };
+// Why a site turned a read down, for the model and the run's log.
+const refused = (got: Fetched) =>
+  got.challenge
+    ? `${host(got.url)} 返回了 ${got.status}：这个网站要先通过人机验证，浏览器能自动通过，插件读不了。不用重试，订阅里有这一条的话用订阅的摘要。`
+    : `${host(got.url)} 返回了 ${got.status}。`;
 export const pluginFetch = (id: string, url: string, accept = '') =>
   invoke<Fetched>('plugin-fetch', { id, url, accept });
 
@@ -238,7 +247,8 @@ export function slimJson(value: unknown, depth = 0): unknown {
 }
 
 // A page as read once in a run; reading on from an offset uses it again.
-type Page = { url: string; head: string; body: string; cut: boolean };
+// `cut`: what was left out of a long one, said after the text.
+type Page = { url: string; head: string; body: string; cut: string };
 const day = 86_400_000;
 const pad = (n: number) => String(n).padStart(2, '0');
 // A time on the reader's clock, as {{now}} gives it, so "today" means the same thing to both.
@@ -264,15 +274,23 @@ export function prepareWebTool(
         if (!pending) {
           progress('正在读取…');
           pending = pluginFetch(pluginId, url).then((got) => {
-            if (!got.ok) throw Error(`${host(got.url)} 返回了 ${got.status}。`);
+            if (!got.ok) throw Error(refused(got));
             const type = got.contentType.toLowerCase();
+            const cut = got.cut ? '（网页太大，只取了前一部分）' : '';
+            if (got.pages)
+              return {
+                url: got.url,
+                head: `${got.title ? `《${got.title}》` : ''}PDF，${got.pages} 页，`,
+                body: got.text,
+                cut: got.cut ? '（PDF 太长，只读了前面的页）' : '',
+              };
             if (type.includes('html')) {
               const page = htmlToText(got.text, got.url);
               return {
                 url: got.url,
                 head: page.title ? `《${page.title}》` : '',
                 body: page.body,
-                cut: got.cut,
+                cut,
               };
             }
             let body = got.text;
@@ -280,18 +298,17 @@ export function prepareWebTool(
               try {
                 body = JSON.stringify(slimJson(JSON.parse(got.text)) ?? null);
               } catch {}
-            return { url: got.url, head: '', body, cut: got.cut };
+            return { url: got.url, head: '', body, cut };
           });
           pages.set(url, pending);
           pending.catch(() => pages.delete(url));
         }
         const { url: at, head, body, cut } = await pending;
-        const got = { url: at, cut };
         const offset = Math.max(0, Number(input?.offset) || 0);
         const length = Math.min(30_000, Math.max(500, Number(input?.length) || 12_000));
         const end = Math.min(body.length, offset + length);
         return {
-          content: `${got.url} ${head}共 ${body.length} 字，本次为第 ${offset}–${end} 字${end < body.length ? `，可用 offset=${end} 继续读取` : '（已到结尾）'}${got.cut ? '（网页太大，只取了前一部分）' : ''}：\n\n${body.slice(offset, end)}`,
+          content: `${at} ${head}共 ${body.length} 字，本次为第 ${offset}–${end} 字${end < body.length ? `，可用 offset=${end} 继续读取` : '（已到结尾）'}${cut}：\n\n${body.slice(offset, end)}`,
           detail: `${body.length.toLocaleString()} 字`,
         };
       },
@@ -307,7 +324,7 @@ export function prepareWebTool(
           url,
           'application/rss+xml,application/atom+xml,application/xml,text/xml;q=0.9,*/*;q=0.5',
         );
-        if (!got.ok) return fail(`${host(got.url)} 返回了 ${got.status}。`);
+        if (!got.ok) return fail(refused(got));
         const feed = parseFeed(got.text, got.url);
         const days = Number(input?.days) || 0;
         const limit = Math.min(50, Math.max(1, Number(input?.limit) || 20));

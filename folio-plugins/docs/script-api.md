@@ -71,13 +71,14 @@ folio.registerTool(
 const res = await folio.fetch('https://hacker-news.firebaseio.com/v0/topstories.json', {
   accept: 'application/json',
 });
-// res: { url, status, ok, contentType, text, cut }
+// res: { url, status, ok, contentType, text, cut }，PDF 还有 title、pages
 const ids = JSON.parse(res.text);
 ```
 
 - 只能是 `https://`、默认端口、不带账号密码，网站必须在 `permissions.network` 里。跳转后的地址也要在名单里，最多跳 5 次。
-- 只能 GET；不能读图片、音视频、PDF、压缩包这类文件。
+- 只能 GET；不能读图片、音视频、压缩包这类文件。
 - 返回原文（UTF-8），超过 3 MB 会截断（`cut: true`）。
+- PDF（最大 64 MB）返回读出的文字，每页前标「[第 N 页]」，`contentType` 是 `application/pdf`，另有 `title`（PDF 自己的标题，可能为空）和 `pages`（总页数）；太长时只读前面的页（`cut: true`）。扫描版没有文字，会抛出错误。
 - 每次运行最多 80 次；每次最多 25 秒。
 - 不在名单里、连不上、超时都会抛出错误，错误信息会说明原因。
 

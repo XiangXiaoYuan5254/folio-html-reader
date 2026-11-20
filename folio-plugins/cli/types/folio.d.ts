@@ -53,10 +53,14 @@ interface FolioFetchResult {
   status: number;
   ok: boolean;
   contentType: string;
-  /** 响应正文，按 UTF-8 解码。网页、JSON、XML、RSS 都是原文。 */
+  /** 响应正文，按 UTF-8 解码。网页、JSON、XML、RSS 都是原文；PDF 是读出的文字，每页前标「[第 N 页]」。 */
   text: string;
-  /** 超过 3 MB 时被截断。 */
+  /** 超过 3 MB 时被截断；PDF 太长时只读了前面的页。 */
   cut: boolean;
+  /** 仅 PDF：它自己的标题（可能为空）。 */
+  title?: string;
+  /** 仅 PDF：总页数。 */
+  pages?: number;
 }
 
 interface FolioFetchOptions {
