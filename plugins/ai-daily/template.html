@@ -27,12 +27,19 @@
   .brief li::before { content: counter(n, decimal-leading-zero); font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
   .deep { margin-top: 18px; background: #fdf6e7; border: 1px solid #f0dfb6; }
   .deep h2 { color: var(--warm); }
-  .pick + .pick { margin-top: 20px; padding-top: 20px; border-top: 1px dashed #e9d3a0; }
   .deep h3 { margin: 6px 0 4px; font-size: 21px; line-height: 1.5; color: var(--ink); }
-  .time { display: inline-block; padding: 0 8px; border-radius: 99px; background: #f6e4bb; color: var(--warm); font-size: 12px; line-height: 1.8; }
-  .deep dl { display: grid; grid-template-columns: 7.2em 1fr; gap: 8px 16px; margin: 14px 0 0; }
-  .deep dt { padding-top: 5px; font-size: 13px; line-height: 1.6; font-weight: 600; color: var(--warm); }
-  .deep dd { margin: 0; }
+  .deep h3 a { color: inherit; text-decoration: none; }
+  .deep h3 a:hover { color: var(--warm); }
+  .deep p { margin: 8px 0 0; }
+  .deep p.source { margin: 0; }
+  .deep p.source a { color: var(--muted); }
+  .deep ul { margin: 10px 0 0; padding-left: 1.2em; }
+  .deep li { margin: 4px 0; }
+  .deep li::marker { color: var(--warm); }
+  .deep .open { margin-top: 16px; }
+  .deep .open a { display: inline-block; padding: 6px 16px; border-radius: 99px; background: var(--warm); color: #fff; font-size: 15px; font-weight: 600; text-decoration: none; }
+  .deep .open a:hover { background: #7d4a05; }
+  .deep .none { margin: 0; color: var(--muted); }
   .group { margin-top: 38px; }
   .group h2 { display: flex; align-items: center; gap: 10px; margin: 0 0 2px; font-size: 20px; color: var(--ink); }
   .group h2::before { content: ""; width: 10px; height: 10px; border-radius: 3px; background: var(--c); }
@@ -44,9 +51,9 @@
   .item { padding: 18px 0; border-bottom: 1px solid var(--line); }
   .item:last-child { border-bottom: 0; }
   .item h3 { margin: 0 0 3px; font-size: 18px; line-height: 1.55; color: var(--ink); }
-  .item h3 a, .deep h3 a { color: inherit; text-decoration: none; }
-  .item h3 a:hover, .deep h3 a:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
-  .item h3 a::after, .deep h3 a::after { content: "\a0↗"; font-size: .72em; font-weight: 400; color: var(--muted); }
+  .item h3 a { color: inherit; text-decoration: none; }
+  .item h3 a:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+  .item h3 a::after { content: "\a0↗"; font-size: .72em; font-weight: 400; color: var(--muted); }
   .item p { margin: 0; font-size: 16px; }
   p.source { margin: 0 0 6px; font-size: 13px; color: var(--muted); }
   .tag { display: inline-block; margin-right: 8px; padding: 0 7px; border-radius: 6px; font-size: 12px; line-height: 1.75; font-weight: 600; color: var(--c); background: var(--c-bg); }
@@ -64,14 +71,11 @@
     h1 span { display: block; margin: 2px 0 0; font-size: 17px; }
     .brief, .deep { padding: 18px; }
     .deep h3 { font-size: 19px; }
-    .deep dl { display: block; }
-    .deep dt { padding-top: 0; }
-    .deep dd { margin-bottom: 10px; }
   }
   @media print {
     html { background: #fff; }
     .brief { box-shadow: none; }
-    .item, .pick { break-inside: avoid; }
+    .item, .deep { break-inside: avoid; }
   }
 </style>
 </head>
@@ -92,16 +96,16 @@
 </section>
 
 <section class="deep">
-  <h2>值得深读</h2>
-  <article class="pick">
-    <h3><a href="https://arxiv.org/abs/0000.00000">英文标题｜中文译名</a></h3>
-    <p class="source">机构或团队 · arXiv / 博客 · <span class="time">大约 20 分钟</span></p>
-    <dl>
-      <dt>为什么值得读</dt><dd>它解决了什么问题，为什么现在重要。</dd>
-      <dt>读完能弄懂</dt><dd>读完以后你能讲清楚的东西。</dd>
-      <dt>先了解什么</dt><dd>需要的背景知识（没有就不写这一行）。</dd>
-    </dl>
-  </article>
+  <h2>今日深度解读</h2>
+  <h3><a href="深度解读/{{today}}%20中文短标题.html">中文标题</a></h3>
+  <p class="source">机构或团队 · <a href="https://arxiv.org/abs/0000.00000">原文 ↗</a> · 发布日期</p>
+  <p>一两句话：它做了什么，为什么今天选它。</p>
+  <ul>
+    <li>读完能弄懂的第一件事。</li>
+    <li>第二件。</li>
+    <li>第三件。</li>
+  </ul>
+  <p class="open"><a href="深度解读/{{today}}%20中文短标题.html">读解读笔记 →</a></p>
 </section>
 
 <section class="group models">

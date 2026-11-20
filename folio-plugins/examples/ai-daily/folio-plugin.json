@@ -2,9 +2,9 @@
   "folio": 1,
   "id": "ai-daily",
   "name": "AI 前沿日报",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "author": "页间",
-  "description": "每天收集 AI 领域的新论文、新模型、开源项目和行业动态，挑出最值得看的，整理成一篇 HTML 日报，放进它自己的文件夹。",
+  "description": "每天收集 AI 领域的新论文、新模型、开源项目和行业动态，挑出最值得看的写成速览；再挑一篇最有分量的技术报告或论文，读完全文写成一篇深度解读笔记。都放进它自己的文件夹。",
   "engines": {
     "folio": ">=0.30.0"
   },
@@ -33,11 +33,19 @@
       "arxiv.org",
       "huggingface.co",
       "api.github.com",
+      "github.com",
+      "raw.githubusercontent.com",
+      "*.hf.co",
       "hn.algolia.com",
       "openai.com",
       "deepmind.google",
+      "blog.google",
       "research.google",
-      "www.qbitai.com"
+      "www.qbitai.com",
+      "www.microsoft.com",
+      "bair.berkeley.edu",
+      "magazine.sebastianraschka.com",
+      "lilianweng.github.io"
     ],
     "write": ["{{output}}"]
   },
