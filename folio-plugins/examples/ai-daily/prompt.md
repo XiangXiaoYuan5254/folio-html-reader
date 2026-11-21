@@ -2,14 +2,14 @@
 
 这期日报有两部分：
 
-- **速览**：AI 领域从上一期到现在新发生的、值得知道的事，每条两三句话，五分钟看完。关注方向：{{topics}}。
-- **深度解读**：挑一篇最近最有分量的技术报告、论文或技术博客，读完全文，单独写成一篇解读笔记。读者看完笔记，不读原文也能弄懂它做了什么、怎么做的、意味着什么。
+- **速览**：日报的主体。AI 领域从上一期到现在新发生的事：新模型和产品、论文、开源项目、行业动态，四类都要有。每条两三句话，读者扫一眼，自己挑感兴趣的去看，所以**宁多勿少**。关注方向：{{topics}}，这些方向的优先，但不只写这些。
+- **深度解读**：在速览之外，再挑一篇最近最有分量的技术报告、论文或技术博客，读完全文，单独写成一篇解读笔记。读者看完笔记，不读原文也能弄懂它做了什么、怎么做的、意味着什么。
 
-速览最要紧的是**只写新的、不重复**：
+速览要**只写新的、不重复**：
 
-- **只写新的**：只写上一期日报之后新发布、新发生的事，最多往前看两天（还没有上一期，就看最近 24 小时）。看事情本身的时间，不看文章的时间：几天前的大事，今天又有文章在讨论、分析、回顾，不算新闻，不写。
+- **只写新的**：只写上一期日报之后出现的内容，最多往前看两天（还没有上一期，也看最近两天）。怎么算新：论文看它出现在 arXiv 或 Hugging Face 每日论文的日期；开源项目看它这几天新建、或上了 GitHub 热门；新闻看事情发生的日期，几天前的大事今天又有文章在讨论、分析、回顾，不算新的。
 - **不重复**：最近几期写过的不再写。同一个链接不写；同一件事（同一个人、同一家公司的同一次发布、表态或事件）换了来源、换了说法也不写。只有出现了实质性的新进展（新发布、新数据、官方回应、有了结果）才写，而且只写新进展：标题说新进展本身，正文用一句话带过背景，来源后面标「后续」。
-- 这两条对「今日要点」同样适用。新内容不够就少写几条，不要拿旧闻凑数。
+- 这两条对「今日要点」同样适用。不要拿旧闻凑数，但也不要因为一条「不够技术」「不够重要」就省掉：读者会自己挑。
 
 ## 1. 先看最近写过什么
 
@@ -20,41 +20,47 @@
 
 ## 2. 读取来源
 
-按顺序读下面的来源。某个来源读取失败（网站连不上、返回错误）就跳过，继续下一个，最后在日报末尾注明。每个地址读一次就够：数据接口内容很长时，只看第一段（不带 offset）里最新、最热的条目，不要一段段读完，也不要重复读同一个地址。网页返回 403 多半是网站拦了程序访问，不用重试，订阅里有这一条就用订阅的摘要。
+按顺序读下面的来源。某个来源读取失败（网站连不上、返回错误）就跳过，继续下一个，最后在日报末尾注明。每个地址读一次就够，不要重复读同一个地址。网页返回 403 多半是网站拦了程序访问，不用重试，订阅里有这一条就用订阅的摘要。
 
-读到的每一条先看时间：早于上一期的、最近几期写过的，不进速览（可以留作深度解读的候选，见第 4 步）。订阅给的时间已经是现在的时区；数据接口里的时间（created_at、publishedAt 等）是 UTC，先换算再比较。
+订阅给的时间已经是现在的时区；数据接口里的时间（created_at、publishedAt 等）是 UTC，先换算再比较。
 
-- arXiv 最新论文：read_feed `https://export.arxiv.org/api/query?search_query=cat:cs.CL+OR+cat:cs.AI+OR+cat:cs.LG+OR+cat:cs.CV&sortBy=submittedDate&sortOrder=descending&max_results=50`，days 填 2
-- Hugging Face 每日论文（社区投票选出的热门论文，按票数从多到少）：fetch_url `https://huggingface.co/api/daily_papers?date={{yesterday}}&limit=8`，length 填 30000。每篇有票数（upvotes）和机构（organization）。
-- GitHub 新建、增长最快的 AI 项目：fetch_url `https://api.github.com/search/repositories?q=topic:llm+created:>{{week_ago}}&sort=stars&order=desc&per_page=40`。只看 created_at 在最近三天内的。同一个仓库名出现在好几个账号下、星标数也差不多的，是刷星的垃圾仓库，可能带恶意程序，一律不写。
-- 主要模型团队的新仓库（新模型、技术报告常常先在这里发布）：fetch_url `https://api.github.com/search/repositories?q=org:deepseek-ai+org:MoonshotAI+org:QwenLM+org:zai-org+org:MiniMax-AI+org:ByteDance-Seed+org:google-deepmind+org:openai+org:anthropics+org:meta-llama+org:facebookresearch+created:>{{week_ago}}&sort=stars&order=desc&per_page=20`
-- Hacker News 上热议的 AI 话题：fetch_url `https://hn.algolia.com/api/v1/search_by_date?query=LLM&tags=story&numericFilters=points%3E60&hitsPerPage=20`
-- 官方博客（各 read_feed，days 填 2）：
+- 论文：
+  - arXiv 最新论文：read_feed `https://export.arxiv.org/api/query?search_query=cat:cs.CL+OR+cat:cs.AI+OR+cat:cs.LG+OR+cat:cs.CV&sortBy=submittedDate&sortOrder=descending&max_results=50`，days 填 2
+  - Hugging Face 每日论文（社区投票选出的热门论文，按票数从多到少）：fetch_url `https://huggingface.co/api/daily_papers?date={{yesterday}}&limit=8`，length 填 30000。这些是昨天收录进每日论文的，都算新的（论文自己的 publishedAt 可能早几天，不用管）。每篇有票数（upvotes）和机构（organization）。
+- 开源项目：
+  - GitHub 今日热门：fetch_url `https://github.com/trending?since=daily` 和 `https://github.com/trending/python?since=daily`，length 都填 30000。列的是今天 star 涨得最多的项目（stars today），挑和 AI 相关的。
+  - 主要模型团队的新仓库（新模型、技术报告常常先在这里发布）：fetch_url `https://api.github.com/search/repositories?q=org:deepseek-ai+org:MoonshotAI+org:QwenLM+org:zai-org+org:MiniMax-AI+org:ByteDance-Seed+org:google-deepmind+org:openai+org:anthropics+org:meta-llama+org:facebookresearch+created:>{{week_ago}}&sort=stars&order=desc&per_page=20`
+  - 同一个仓库名出现在好几个不同账号下、描述和星标数也差不多的，是刷星的垃圾仓库，可能带恶意程序，一律不写。
+- 模型、产品和官方动态（各 read_feed，days 填 2）：
   - OpenAI：`https://openai.com/news/rss.xml`
   - Google DeepMind：`https://deepmind.google/blog/rss.xml`
   - Google Research：`https://research.google/blog/rss/`
   - Hugging Face 博客：`https://huggingface.co/blog/feed.xml`
+- 行业新闻（各 read_feed，days 填 2）：
+  - 量子位：`https://www.qbitai.com/feed`，limit 填 30
+  - TechCrunch AI：`https://techcrunch.com/category/artificial-intelligence/feed/`，limit 填 20
+  - The Verge AI：`https://www.theverge.com/rss/ai-artificial-intelligence/index.xml`，limit 填 20
+  - Hacker News 上热议的 AI 话题：fetch_url `https://hn.algolia.com/api/v1/search_by_date?query=LLM&tags=story&numericFilters=points%3E60&hitsPerPage=20`
 - 技术长文（各 read_feed，days 填 7，limit 填 5；更新不频繁，主要作深度解读的候选）：
   - Microsoft Research：`https://www.microsoft.com/en-us/research/feed/`
   - BAIR（伯克利 AI 研究院）：`https://bair.berkeley.edu/blog/feed.xml`
   - Sebastian Raschka：`https://magazine.sebastianraschka.com/feed`
   - Lilian Weng：`https://lilianweng.github.io/index.xml`
-- 中文资讯：read_feed `https://www.qbitai.com/feed`，days 填 2，limit 填 30
 
-如果你能联网搜索，可以再搜一次今天的 AI 新闻（新模型发布、重要开源、新的技术报告）。搜到的常常是这几天反复报道的大事：速览只采用发布时间在上一期之后、有可靠来源的报道，写过的事和上一期之前的事都不用。
+如果你能联网搜索，可以再搜一次今天的 AI 新闻（新模型发布、重要开源、公司动向、新的技术报告）。搜到的常常是这几天反复报道的大事：速览只采用发生在上一期之后、有可靠来源的，写过的不用。
 
-## 3. 挑选速览
+## 3. 挑选速览，写出速览清单
 
-从读到的新内容里挑出大约 {{count}} 条最值得看的（不够就少写），优先关注方向里的内容：
+从读到的新内容里挑，**至少 {{count}} 条**；新内容多就多写，不设上限。四个分组都要照顾到，哪一组今天确实没有新内容才空着：
 
-- 重要的新模型、新产品、新版本
-- 有新意或影响大的论文（Hugging Face 投票多的优先）
-- 增长快、有用的开源项目
-- 值得知道的行业动态
+- **模型与产品**：新模型、新产品、新版本、新功能。
+- **论文**：有新意或影响大的论文，Hugging Face 投票多的优先。
+- **开源项目**：GitHub 热门里和 AI 相关的、主要团队的新仓库，通常三到六个。
+- **行业动态**：公司和产品动向、合作和融资并购、人事变动、政策监管、争议和事故。不只写技术，读者也想知道行业里发生了什么。
 
-去掉最近几期写过的、纯营销的、和 AI 关系不大的。
+只去掉最近几期写过的、纯营销的、和 AI 关系不大的。挑出的条目只看标题和摘要弄不清是什么的（比如 Hacker News 上链接到别的网站的文章，或标题里有没见过的缩写），用 fetch_url 打开原文看一下再写。只打开需要弄清楚的那几篇，不要每条都打开。
 
-挑出的条目只看标题和摘要弄不清是什么的（比如 Hacker News 上链接到别的网站的文章，或标题里有没见过的缩写），用 fetch_url 打开原文看一下再写。只打开需要弄清楚的那几篇，不要每条都打开。
+挑完后，**先在回复里把速览清单完整写出来**，这是写日报的底稿：接下来读深度解读的全文很长，早先读到的资料可能会被省略，日报只照这份清单写。按四个分组，每条一行：标题（英文标题可以保留原文，加中文译名）｜链接｜来源和日期｜两三句话说明是什么、为什么值得关注（论文写清楚是哪个机构或团队、核心做法和结果）。再写三条今日要点。
 
 ## 4. 选今天的深度解读
 
@@ -71,7 +77,7 @@
 - 「深度解读/」里没有解读过：同一篇论文、同一个模型的同一份报告，换了标题也算解读过。
 - 关注方向里的优先，但分量更要紧：明显更重要的那篇不在关注方向里，也选它。
 
-今天确实没有够格的，就不写深度解读，日报里写一句「今天没有够分量的，深度解读停一天」，不要硬凑。
+今天确实没有够格的，就不写深度解读，日报里写一句「今天没有够分量的，深度解读停一天」，不要硬凑。选中的这篇如果也在速览清单里，可以留在速览里，日报里两处都出现没关系。
 
 ## 5. 读全文，写解读笔记
 
@@ -94,17 +100,16 @@
 用 create_html 在你的文件夹里新建 `{{today}} AI 前沿日报.html`；如果已经有这个文件，改用 `{{today}} AI 前沿日报（2）.html`。
 
 - 照「输出模板」的结构和样式写，用中文。每个分组保留模板里的 class（models、papers、repos、news），标签颜色靠它区分。
+- **速览照第 3 步的速览清单写，清单里的每一条都写进去**，不要删减、不要合并。
 - 开头一行的「本期 N 条」写这期速览里实际的条数。
-- 开头「今日要点」：三条，每条一句话，说今天最重要的三件事。
+- 开头「今日要点」：清单里的三条。
 - 接着「今日深度解读」：标题和「读解读笔记」按钮都链接到第 5 步的笔记，写相对路径（`深度解读/文件名.html`，空格写成 `%20`）；来源后面链接到原文；一两句话说它做了什么、为什么今天选它；三条「读完能弄懂什么」。今天没写深度解读，这一块只写一句 `<p class="none">今天没有够分量的，深度解读停一天。</p>`。
-- 正文按「模型与产品」「论文」「开源项目」「行业动态」分组，没有内容的分组不写。深度解读的那篇不再放进速览。
-- 每一条：标题（链接到原文）、来源和日期（事情发布或发生的日期）、两三句话说明「是什么、为什么值得关注」。论文写清楚是哪个机构或团队、核心做法和结果。英文标题可以保留原文，再给一个中文译名。
-- 末尾「今天读取的来源」：列出每个来源，标明读到了几条，或者读取失败。
+- 正文按「模型与产品」「论文」「开源项目」「行业动态」分组，没有内容的分组不写。
+- 每一条：标题（链接到原文）、来源和日期（事情发布或发生的日期）、两三句话。
+- 末尾「今天读取的来源」：列出每个来源，标明读到了几条、用了几条，或者读取失败。
 - 只写这次真正读到的内容，不要凭记忆补充，也不要编造链接。
 
-写之前对照第 1 步记下的内容，把速览的每一条（包括今日要点）再查一遍：是上一期之后的事，最近几期没有写过。不符合的删掉。
-
-写完后用一两句话告诉我日报的文件名、今天解读了哪一篇。
+写完后用一两句话告诉我日报的文件名、速览一共几条、今天解读了哪一篇。
 
 ## 解读笔记模板
 
