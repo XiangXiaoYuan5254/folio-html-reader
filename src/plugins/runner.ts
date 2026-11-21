@@ -5,7 +5,7 @@ import type { Assistant, PluginOutcome } from '../ai/assistant';
 import { errorText } from '../ai/client';
 import { openSandbox } from './sandbox';
 import type { ScriptSandbox } from './sandbox';
-import { currentPlugins, loadPlugins, pluginRan } from './store';
+import { currentPlugins, installOfficial, isOfficial, loadPlugins, pluginRan } from './store';
 import { runtime } from './runtime';
 import type { PluginLoaded } from './types';
 import { prepareWebTool, webTools } from './web-tools';
@@ -97,6 +97,8 @@ export async function runPluginNow(
   try {
     // Noted before it starts, so a schedule doesn't run it again if the app stops midway.
     await pluginRan({ id, at: Date.now() });
+    // An official plugin being updated right now: its new files, not half of each.
+    await updates;
     const loaded = await invoke<PluginLoaded>('plugin-load', { id });
     const m = loaded.manifest;
     // Its folder, made now if it isn't there yet: its reports and its record of this run go
@@ -243,9 +245,48 @@ export async function runPluginNow(
   }
 }
 
+// Official plugins keep themselves up to date: a newer version in the signed list on the website
+// is installed as soon as the plugin isn't running, keeping its settings. Community plugins wait
+// for 检查更新, which shows what changed. Reading the plugins again every ten minutes has the
+// website checked at most every half hour (electron/official-plugins.cjs).
+const UPDATE_EVERY = 10 * 60_000;
+let updatesAt = 0;
+// Versions already tried since the list was last read, so one that fails waits for the next read.
+const tried = new Set<string>();
+let updates: Promise<void> | null = null;
+export function updateOfficial(host: PluginHost) {
+  updates ||= (async () => {
+    const reread = Date.now() - updatesAt > UPDATE_EVERY;
+    if (reread) {
+      updatesAt = Date.now();
+      tried.clear();
+    }
+    const list = await loadPlugins(reread);
+    for (const plugin of list?.plugins || []) {
+      const version = list!.recommendations.find((r) => r.id === plugin.id)?.version;
+      const m = plugin.manifest;
+      if (!isOfficial(plugin) || !m || !version || version === m.version) continue;
+      if (running.has(plugin.id) || tried.has(`${plugin.id}@${version}`)) continue;
+      tried.add(`${plugin.id}@${version}`);
+      try {
+        await installOfficial(plugin.id);
+        pluginLog(plugin.id, 'run', `自动更新：${m.version} → ${version}`);
+        if (plugin.enabled) host.notify(`「${m.name}」已自动更新到 ${version}`);
+      } catch (e) {
+        pluginLog(plugin.id, 'warn', `没能自动更新到 ${version}：${errorText(e)}`);
+      }
+    }
+  })()
+    .catch(() => {})
+    .finally(() => (updates = null));
+  return updates;
+}
+
 // Looked at every minute and when a project opens.
 export async function checkSchedule(host: PluginHost) {
   const root = host.root();
+  // A plugin due now runs as its newest version.
+  await updateOfficial(host);
   const list = await loadPlugins();
   if (!list) return;
   for (const due of duePlugins(list, root))

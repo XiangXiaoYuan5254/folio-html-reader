@@ -42,6 +42,7 @@ import {
   isDev,
   isOfficial,
   loadDirectory,
+  loadPlugins,
   pickLocalPlugin,
   pluginIcon,
   removePlugin,
@@ -84,6 +85,9 @@ export function PluginSettings(p: {
   const [dragging, setDragging] = useState(false);
   // An official plugin just installed: its card opens, to show what it does.
   const [fresh, setFresh] = useState('');
+  // Read again on opening: the list may be from when 页间 started, and reading it checks the
+  // website for newer official plugins (at most every half hour).
+  useEffect(() => void loadPlugins(true), []);
   if (!isDesktop) return <p className="settings-footnote">请在桌面版页间中使用插件。</p>;
   if (!list)
     return (
