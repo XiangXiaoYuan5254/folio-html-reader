@@ -303,19 +303,20 @@ try {
     .body.messages.find((m) => m.role === 'tool').content;
   assert.match(searched, /找到 \d+ 篇/, `paper search: ${searched.slice(0, 300)}`);
   assert.match(searched, /Attention Is All You Need/i, 'the paper is among the results');
-  // Windows can't store a colon in a name, so there the name is made valid before approval.
+  // Windows can't store a colon in a name, so there the name is made valid before saving.
   const expected = process.platform === 'win32' ? '论文/Attention - All You Need.pdf' : paperName;
-  const step = panel().locator('.agent-step.waiting', { hasText: `保存 PDF 到 ${expected}` });
-  await step.getByText(`${base}/paper.pdf`).waitFor();
-  await step.getByRole('button', { name: '应用', exact: true }).click();
+  // A new file only adds, so under the default 「自动」 it's saved without asking.
+  const step = panel().locator('.agent-step.done', { hasText: `保存 PDF 到 ${expected}` });
+  await step.waitFor();
   await panel().getByText('论文已经存好了').waitFor();
+  assert.equal(await panel().locator('.agent-step.waiting').count(), 0, 'nothing waited');
   assert.deepEqual(await fs.readFile(path.join(project, expected)), paperBytes);
   await page
     .getByRole('navigation', { name: '项目文件' })
     .getByRole('button', { name: path.basename(expected), exact: true })
     .waitFor();
   await page.screenshot({ path: path.join(evidence, 'papers-saved.png') });
-  console.log('PASS: assistant searches OpenAlex/arXiv and saves an approved PDF');
+  console.log('PASS: assistant searches OpenAlex/arXiv and saves the PDF without asking');
 
   // Themes change the interface and are remembered with the window colors.
   await page.getByLabel('界面主题', { exact: true }).click();

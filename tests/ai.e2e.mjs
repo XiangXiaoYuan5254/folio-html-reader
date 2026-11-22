@@ -670,9 +670,28 @@ try {
   await page.getByRole('button', { name: '阅读', exact: true }).click();
   console.log('PASS: source mode AI edit -> diff + preview -> applied and saved');
 
-  // The project agent reads, then waits for approval before each change.
+  // The project agent reads, then, set to 「每次询问」, waits for approval before each change.
   await showAssistant(page);
   if (!(await panel().isVisible())) await showAssistant(page);
+  const setApprove = async (label) => {
+    await panel().getByLabel('AI 设置', { exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'AI 设置' });
+    const approve = dialog.getByLabel('修改文件前');
+    await approve.selectOption({ label });
+    await dialog.getByRole('button', { name: '关闭 AI 设置' }).click();
+  };
+  assert.equal(
+    JSON.parse(await fs.readFile(path.join(userData, 'ai.json'), 'utf8')).prefs.approve,
+    undefined,
+    'no approve mode saved before one is picked',
+  );
+  await setApprove('每次询问');
+  await waitFor(
+    async () =>
+      JSON.parse(await fs.readFile(path.join(userData, 'ai.json'), 'utf8')).prefs.approve ===
+      'ask',
+    'approve mode saved',
+  );
   await panel().getByRole('tab', { name: '整个项目' }).click();
   await panel().getByLabel('向 AI 提问').fill('给这篇文档写三句话摘要');
   await panel().getByLabel('向 AI 提问').press('Enter');
@@ -700,6 +719,20 @@ try {
   const skipped = requests.findLast((r) => r.body?.tools);
   assert.ok(skipped.body.messages.at(-1).content.includes('用户没有同意'));
   console.log('PASS: agent reads, waits for approval, applies one change and skips another');
+
+  // 「自动」: words added after the note and a new highlight go ahead without asking.
+  await setApprove('自动（改动原有内容才问）');
+  await panel().getByRole('button', { name: '新对话' }).click();
+  const noteBefore = (await dataFor('01_注意力.html')).data.note;
+  await panel().getByLabel('向 AI 提问').fill('再写一遍三句话摘要');
+  await panel().getByLabel('向 AI 提问').press('Enter');
+  await panel().getByText('已写好摘要').waitFor();
+  assert.equal(await panel().locator('.agent-step.waiting').count(), 0, 'nothing waited');
+  const autoData = (await dataFor('01_注意力.html')).data;
+  assert.ok(autoData.note.startsWith(noteBefore.trimEnd()), 'note kept, words added after it');
+  assert.ok(autoData.note.length > noteBefore.length, 'summary appended');
+  assert.equal(autoData.annotations.length, before + 1, 'highlight added without asking');
+  console.log('PASS: 自动 applies changes that only add, without asking');
 
   // PDF: AI highlights keep page geometry.
   await page

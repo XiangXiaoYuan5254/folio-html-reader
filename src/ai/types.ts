@@ -49,6 +49,9 @@ export type AiPrefs = {
   // The reader's own writing for 精读笔记 in place of Folio's (src/ai/companion.ts); empty
   // uses Folio's. The format is always Folio's.
   companionPrompt?: string;
+  // Before the project agent changes a file: ask each time, ask only when it changes what's
+  // there (`auto`, the default), or never ask.
+  approve?: 'ask' | 'auto' | 'never';
 };
 // The parts of the app that ask the AI. Chat uses the active service; the others can each
 // have their own service, model and reasoning level, and follow chat when they don't. Each

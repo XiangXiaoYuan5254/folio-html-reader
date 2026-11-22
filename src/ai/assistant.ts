@@ -71,6 +71,7 @@ import {
 } from './prompts';
 import {
   agentTools,
+  onlyAdds,
   pluginToolDefs,
   prepareTool,
   readingTools,
@@ -2266,8 +2267,9 @@ export class Assistant {
     }
   }
 
-  // The project agent: the model reads, searches and proposes changes through tools; every
-  // change waits for the user's approval unless they chose to apply the rest automatically.
+  // The project agent: the model reads, searches and proposes changes through tools; a change
+  // waits for the user's approval as AI 设置's 「修改文件前」 says (by default only one that
+  // changes what's there), unless they chose to apply the rest of this task automatically.
   // `quote`: a passage of an earlier reply the request is about.
   async agent(text: string, images: string[] = [], how: { quote?: string } = {}) {
     const scope = 'project';
@@ -2700,24 +2702,28 @@ export class Assistant {
         }
         ui.patch(stepId, (s) => ({ ...s, title: tool.title, preview: tool.preview }));
       } else if (writes && tool.preview) {
+        const mode = (await loadAiConfig())?.prefs.approve || 'auto';
+        const asks =
+          !this.state.autoApply[threadId] &&
+          (mode === 'ask' || (mode === 'auto' && !onlyAdds(tool.preview)));
         ui.patch(stepId, (s) => ({
           ...s,
           title: tool.title,
           preview: tool.preview,
-          status: 'waiting',
-          detail: undefined,
+          status: asks ? 'waiting' : 'running',
+          detail: asks ? undefined : '正在应用…',
         }));
-        const ok =
-          this.state.autoApply[threadId] ||
-          (await new Promise<boolean>((resolve) => this.approvals.set(stepId, resolve)));
-        if (!ok) {
-          ui.patch(stepId, (s) => ({ ...s, status: 'skipped', detail: '已跳过' }));
-          return {
-            content: '用户没有同意这个修改，未执行。不要再次提出同样的修改。',
-            isError: true,
-          };
+        if (asks) {
+          const ok = await new Promise<boolean>((resolve) => this.approvals.set(stepId, resolve));
+          if (!ok) {
+            ui.patch(stepId, (s) => ({ ...s, status: 'skipped', detail: '已跳过' }));
+            return {
+              content: '用户没有同意这个修改，未执行。不要再次提出同样的修改。',
+              isError: true,
+            };
+          }
+          ui.patch(stepId, (s) => ({ ...s, status: 'running', detail: '正在应用…' }));
         }
-        ui.patch(stepId, (s) => ({ ...s, status: 'running', detail: '正在应用…' }));
       }
       const outcome = await tool.run();
       ui.patch(stepId, (s) => ({

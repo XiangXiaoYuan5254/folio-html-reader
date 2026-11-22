@@ -1018,6 +1018,17 @@ export function AiSettings({
                   <option value="en">总是英文</option>
                 </select>
               </label>
+              <label>
+                修改文件前
+                <select
+                  value={config?.prefs.approve || 'auto'}
+                  onChange={(e) => void savePrefs({ approve: e.target.value as 'auto' })}
+                >
+                  <option value="ask">每次询问</option>
+                  <option value="auto">自动（改动原有内容才问）</option>
+                  <option value="never">全部直接应用</option>
+                </select>
+              </label>
             </div>
           </div>
         </footer>

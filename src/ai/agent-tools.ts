@@ -64,7 +64,7 @@ export const agentTools: ToolDef[] = [
   {
     name: 'add_highlights',
     description:
-      '在文档中添加高亮批注（需要用户确认）。quote 必须从文档逐字复制；note 是附在高亮上的笔记；color 可选。',
+      '在文档中添加高亮批注（可能要用户确认）。quote 必须从文档逐字复制；note 是附在高亮上的笔记；color 可选。',
     parameters: {
       type: 'object',
       properties: {
@@ -92,7 +92,7 @@ export const agentTools: ToolDef[] = [
   {
     name: 'write_note',
     description:
-      '写入一篇文档的“文档笔记”（Markdown，需要用户确认）。mode 为 append（默认，追加到末尾）或 replace（替换全部）。',
+      '写入一篇文档的“文档笔记”（Markdown，可能要用户确认）。mode 为 append（默认，追加到末尾）或 replace（替换全部）。',
     parameters: {
       type: 'object',
       properties: {
@@ -107,7 +107,7 @@ export const agentTools: ToolDef[] = [
   {
     name: 'edit_html',
     description:
-      '修改一个 HTML 或 Markdown 文件（需要用户确认）。edits 中每项的 find 必须从文件逐字复制且只出现一次，replace 是替换后的内容。修改前先用 read_html_source 查看源码。',
+      '修改一个 HTML 或 Markdown 文件（可能要用户确认）。edits 中每项的 find 必须从文件逐字复制且只出现一次，replace 是替换后的内容。修改前先用 read_html_source 查看源码。',
     parameters: {
       type: 'object',
       properties: {
@@ -145,7 +145,7 @@ export const agentTools: ToolDef[] = [
   {
     name: 'create_html',
     description:
-      '在项目中新建一个 HTML 文件（需要用户确认）。path 以 .html 结尾，文件不能已存在；content 是完整的 HTML。',
+      '在项目中新建一个 HTML 文件（可能要用户确认）。path 以 .html 结尾，文件不能已存在；content 是完整的 HTML。',
     parameters: {
       type: 'object',
       properties: { path: { type: 'string' }, content: { type: 'string' } },
@@ -202,7 +202,7 @@ export const agentTools: ToolDef[] = [
   {
     name: 'save_pdf',
     description:
-      '把论文的 PDF 下载到项目中（需要用户确认）。url 是 PDF 链接：search_papers 给出的，或用户发来的；path 是项目内的目标路径，以 .pdf 结尾，文件夹不存在时会自动新建；title 是论文标题，给用户确认时看。',
+      '把论文的 PDF 下载到项目中（可能要用户确认）。url 是 PDF 链接：search_papers 给出的，或用户发来的；path 是项目内的目标路径，以 .pdf 结尾，文件夹不存在时会自动新建；title 是论文标题，给用户确认时看。',
     parameters: {
       type: 'object',
       properties: {
@@ -257,6 +257,16 @@ export const writeTools = new Set([
   'create_html',
   'save_pdf',
 ]);
+
+// A change that only adds: highlights, a new file, words after a note's. Under 「自动」 these
+// go ahead; a change to what's already there, or a plugin's, waits for the user.
+export function onlyAdds(preview: AgentPreview) {
+  if (preview.kind === 'highlights' || preview.kind === 'create' || preview.kind === 'download')
+    return true;
+  if (preview.kind === 'note')
+    return !preview.before.trim() || preview.after.startsWith(preview.before.trimEnd());
+  return false;
+}
 
 export type ToolOutcome = { content: string; isError?: boolean; detail?: string };
 export type PreparedTool = {

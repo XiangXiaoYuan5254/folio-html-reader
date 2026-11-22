@@ -336,6 +336,7 @@ function createAi({
         ...new Set(patch.disabledRoots.map((s) => clean(s, 4096)).filter(Boolean)),
       ].slice(0, 200);
     if (['auto', 'zh', 'en'].includes(patch?.language)) prefs.language = patch.language;
+    if (['ask', 'auto', 'never'].includes(patch?.approve)) prefs.approve = patch.approve;
     if (typeof patch?.profile === 'string') prefs.profile = clean(patch.profile, 2000);
     if (typeof patch?.companionPrompt === 'string')
       prefs.companionPrompt = clean(patch.companionPrompt, 20000);
