@@ -103,7 +103,7 @@ test('文件跟着论文：一个文件只属于一篇，移动、改名后还�
   // Paths that are not documents of the project never get in.
   const odd = await library.add(w, {
     title: 'C',
-    files: ['../外面.pdf', '/etc/passwd', '.html-reader/x.html', 'notes.txt'],
+    files: ['../外面.pdf', '/etc/passwd', '.html-reader/x.html', 'notes.zip'],
   });
   assert.deepEqual(odd.paper.files, []);
 });

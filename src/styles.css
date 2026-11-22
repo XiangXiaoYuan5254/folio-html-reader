@@ -631,7 +631,10 @@ button.brand {
 .tree-icon-image {
   color: var(--diff-add);
 }
-.tree-row.selected :is(.tree-icon-html, .tree-icon-markdown, .tree-icon-image) {
+.tree-icon-word {
+  color: var(--file-html);
+}
+.tree-row.selected :is(.tree-icon-html, .tree-icon-markdown, .tree-icon-image, .tree-icon-word) {
   color: var(--accent-text);
 }
 .tree-row.dragging {

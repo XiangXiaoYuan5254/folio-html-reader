@@ -5,7 +5,15 @@ const documentStore = require('./document-store.cjs');
 const backups = require('./backups.cjs');
 const hash = (text) => crypto.createHash('sha256').update(text).digest('hex');
 const hidden = new Set(['node_modules', 'dist', 'release', 'build', 'coverage']);
-const { isHtml, isPdf, isMarkdown, kindOf, isDocument, isEditable } = require('./formats.cjs');
+const {
+  isHtml,
+  isPdf,
+  isMarkdown,
+  kindOf,
+  isDocument,
+  isEditable,
+  unsupported,
+} = require('./formats.cjs');
 // The k-th name to try in place of one already taken, numbered before a file's extension:
 // 未命名.html → 未命名2.html, 未命名3.html…; a name ending in a number goes on from it, in as
 // many digits: 未命名2.html → 未命名3.html, 文档09.html → 文档10.html. A name that is only a
@@ -249,7 +257,7 @@ class Workspace {
   async document(relative) {
     return this.serial(async () => {
       const kind = kindOf(relative);
-      if (!kind) throw Error('请选择 HTML、PDF、Markdown 或图片文件');
+      if (!kind) throw Error(unsupported(relative));
       const full = await this.resolve(relative);
       const bytes = await fs.readFile(full);
       const source = kind === 'html' || kind === 'markdown' ? bytes.toString('utf8') : '';

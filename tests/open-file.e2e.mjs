@@ -14,7 +14,7 @@ await fs.mkdir(elsewhere, { recursive: true });
 await fs.writeFile(path.join(projectA, '首页.html'), page('首页'));
 await fs.writeFile(path.join(projectA, '章节/第二章.html'), page('第二章'));
 await fs.writeFile(path.join(elsewhere, '外部文章.html'), page('外部文章'));
-await fs.writeFile(path.join(elsewhere, '说明.txt'), '不是 HTML');
+await fs.writeFile(path.join(elsewhere, '归档.zip'), '不是文档');
 await fs.mkdir(path.join(projectA, '图'), { recursive: true });
 await fs.writeFile(
   path.join(projectA, '读书笔记.md'),
@@ -109,9 +109,9 @@ try {
   console.log('PASS: a picture opens in a tab');
 
   // Other file types are refused with a message.
-  await openFromFinder(path.join(elsewhere, '说明.txt'));
+  await openFromFinder(path.join(elsewhere, '归档.zip'));
   await win.getByRole('alert').waitFor();
-  assert.match(await win.getByRole('alert').innerText(), /只能打开 HTML、PDF、Markdown 或图片/);
+  assert.match(await win.getByRole('alert').innerText(), /暂不支持打开「归档\.zip」/);
   assert.deepEqual(consoleErrors, []);
   console.log('OPEN FILE E2E PASS');
 } catch (error) {

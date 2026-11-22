@@ -1,6 +1,6 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { isDocument } = require('./formats.cjs');
+const { isDocument, unsupported } = require('./formats.cjs');
 
 // Relative path of `file` inside `root`, or null when it is outside it or in a
 // hidden folder (projects keep their own data in `.html-reader`).
@@ -15,8 +15,7 @@ function inside(root, file) {
 // holds the file, else the innermost recent project that does, else the file's folder.
 async function projectFor(file, current, recent = []) {
   const real = await fs.realpath(file);
-  if (!isDocument(real))
-    throw Error(`页间只能打开 HTML、PDF、Markdown 或图片文件：${path.basename(file)}`);
+  if (!isDocument(real)) throw Error(unsupported(file));
   const roots = [];
   for (const root of recent)
     if (typeof root === 'string') {

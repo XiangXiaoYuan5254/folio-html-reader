@@ -46,11 +46,13 @@ test('隐藏文件夹里的文件不算在项目内，不支持的文件被拒�
     root: path.dirname(hidden),
     relative: 'd.html',
   });
-  await fs.writeFile(path.join(root, 'notes.txt'), 'x');
+  await fs.writeFile(path.join(root, 'notes.zip'), 'x');
   await assert.rejects(
-    projectFor(path.join(root, 'notes.txt'), current, []),
-    /只能打开 HTML、PDF、Markdown 或图片/,
+    projectFor(path.join(root, 'notes.zip'), current, []),
+    /暂不支持打开「notes\.zip」/,
   );
+  await fs.writeFile(path.join(root, '旧稿.doc'), 'x');
+  await assert.rejects(projectFor(path.join(root, '旧稿.doc'), current, []), /另存为 \.docx/);
 });
 test('通过符号链接打开时按真实路径归属项目', async (t) => {
   const root = await tree(t);
@@ -74,7 +76,8 @@ test('命令行参数只取出能打开的文档，并按工作目录解析相�
         path.resolve('/资料/论文.pdf'),
         '读书笔记.md',
         '截图.JPG',
-        'x.txt',
+        '报告.docx',
+        'x.zip',
       ],
       cwd,
     ),
@@ -83,6 +86,7 @@ test('命令行参数只取出能打开的文档，并按工作目录解析相�
       path.resolve('/资料/论文.pdf'),
       path.join(cwd, '读书笔记.md'),
       path.join(cwd, '截图.JPG'),
+      path.join(cwd, '报告.docx'),
     ],
   );
   assert.deepEqual(filesFromArgv([path.resolve('/资料/a.html')], cwd), []);

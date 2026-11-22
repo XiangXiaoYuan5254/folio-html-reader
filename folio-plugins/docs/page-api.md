@@ -142,7 +142,7 @@ interface Folio {
   library: FolioLibrary;
   /** permissions.documents */
   documents: {
-    /** 项目里的文档：路径和类型（pdf、html、markdown、image）。 */
+    /** 项目里的文档：路径和类型（pdf、html、markdown、image、word、code）。code 是代码和纯文本。 */
     list(): Promise<{ path: string; kind: string }[]>;
     /** 一篇文档的标题和文字（PDF 也行），最多 maxChars 个字（默认 20 万）。 */
     read(

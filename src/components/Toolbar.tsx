@@ -251,7 +251,7 @@ export function Toolbar(p: {
           title={
             hasSource(format)
               ? `编辑 ${kindName[format]} 源码`
-              : `${format === 'image' ? '图片' : `${kindName[format]} `}支持阅读和批注，源码编辑仅适用于 HTML 和 Markdown`
+              : `${kindName[format]}${/^[a-z]/i.test(kindName[format]) ? ' ' : ''}支持阅读和批注，源码编辑仅适用于 HTML 和 Markdown`
           }
           className={p.mode === 'source' ? 'active' : ''}
           onClick={() => p.onMode('source')}

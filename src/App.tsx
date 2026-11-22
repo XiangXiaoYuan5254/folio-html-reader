@@ -109,11 +109,12 @@ const toolHints: Record<Tool, string> = {
   rectangle: '拖动绘制矩形 · Esc 返回选择',
   eraser: '拖动擦除局部笔迹 · 一次拖动可一次撤销',
 };
-// The page a project opens on: its first HTML or PDF, else its first Markdown, else a
-// picture, so a folder of icons beside index.html doesn't open on one of them.
+// The page a project opens on: its first HTML, PDF or Word document, else its first
+// Markdown, else code or text, else a picture, so a folder of icons beside index.html
+// doesn't open on one of them.
 function firstDocument(tree: WorkspaceInfo['tree']): string | undefined {
   const all = readableFiles(tree);
-  for (const kinds of [['html', 'pdf'], ['markdown'], ['image']]) {
+  for (const kinds of [['html', 'pdf', 'word'], ['markdown'], ['code'], ['image']]) {
     const found = all.find((p) => kinds.includes(docKind(p) || ''));
     if (found) return found;
   }

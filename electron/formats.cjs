@@ -1,22 +1,49 @@
+const fs = require('node:fs/promises');
 const path = require('node:path');
 const MarkdownIt = require('markdown-it');
+const textTypes = require('./text-types.json');
 
-// The files 页间 opens as documents. HTML and PDF have always been read here; Markdown and
-// pictures are shown as a page of their own that the reader's runtime annotates like HTML.
+// The files 页间 opens as documents. HTML and PDF have always been read here; Markdown,
+// pictures, code and plain text, and Word documents are shown as a page of their own that
+// the reader's runtime annotates like HTML.
 const isHtml = (p) => /\.html?$/i.test(p);
 const isPdf = (p) => /\.pdf$/i.test(p);
 const isMarkdown = (p) => /\.(md|markdown)$/i.test(p);
 const isImage = (p) => /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i.test(p);
+const isWord = (p) => /\.docx$/i.test(p);
+// The highlight.js language of a code or text file (or text, plain, csv, tsv), from its
+// extension or, for a Makefile or LICENSE, its name.
+function textType(p) {
+  const name = path.posix.basename(String(p).replaceAll('\\', '/')).toLowerCase();
+  const dot = name.lastIndexOf('.');
+  const [table, key] =
+    dot > 0 ? [textTypes.extensions, name.slice(dot + 1)] : [textTypes.names, name];
+  return Object.hasOwn(table, key) ? table[key] : null;
+}
+const isCode = (p) => textType(p) !== null;
 const kindOf = (p) =>
-  isHtml(p) ? 'html' : isPdf(p) ? 'pdf' : isMarkdown(p) ? 'markdown' : isImage(p) ? 'image' : null;
+  isHtml(p)
+    ? 'html'
+    : isPdf(p)
+      ? 'pdf'
+      : isMarkdown(p)
+        ? 'markdown'
+        : isImage(p)
+          ? 'image'
+          : isWord(p)
+            ? 'word'
+            : isCode(p)
+              ? 'code'
+              : null;
 const isDocument = (p) => kindOf(p) !== null;
 // The documents with source to edit in 源码 mode.
 const isEditable = (p) => isHtml(p) || isMarkdown(p);
-const extensions = {
-  html: ['html', 'htm'],
-  pdf: ['pdf'],
-  markdown: ['md', 'markdown'],
-  image: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'bmp', 'svg'],
+// Why a file can't be opened; an old .doc can be, once saved again as .docx.
+const unsupported = (p) => {
+  const name = path.basename(String(p));
+  return /\.doc$/i.test(name)
+    ? `「${name}」是旧版 Word 格式，请在 Word 或 WPS 中另存为 .docx 后再打开`
+    : `页间暂不支持打开「${name}」这类文件`;
 };
 
 const escape = (s) =>
@@ -98,15 +125,42 @@ function renderImagePage(relative) {
   return `<!doctype html><html lang="zh-CN" data-folio-format="image"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(name)}</title><style>${imageStyle}</style></head><body><main class="folio-image"><img src="${escape(encodeURIComponent(name))}" alt="${escape(name)}"${vector}></main></body></html>`;
 }
 
+// The page a document other than a PDF is read on, from the file at `file`.
+async function renderPage(relative, file) {
+  const name = path.posix.basename(relative);
+  if (isImage(relative)) return renderImagePage(relative);
+  if (isMarkdown(relative)) return renderMarkdownPage(await fs.readFile(file, 'utf8'), name);
+  if (isWord(relative))
+    return require('./word-page.cjs').renderWordPage(await fs.readFile(file), name);
+  if (isCode(relative)) {
+    // A long log is read only as far as the page shows it.
+    const { renderCodePage, readLimit } = require('./code-page.cjs');
+    const handle = await fs.open(file);
+    try {
+      const { size } = await handle.stat();
+      const bytes = Buffer.alloc(Math.min(size, readLimit));
+      await handle.read(bytes, 0, bytes.length, 0);
+      return renderCodePage(bytes, name, textType(relative), size > readLimit);
+    } finally {
+      await handle.close();
+    }
+  }
+  return fs.readFile(file, 'utf8');
+}
+
 module.exports = {
   isHtml,
   isPdf,
   isMarkdown,
   isImage,
+  isWord,
+  isCode,
+  textType,
   kindOf,
   isDocument,
   isEditable,
-  extensions,
+  unsupported,
   renderMarkdownPage,
   renderImagePage,
+  renderPage,
 };

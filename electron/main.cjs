@@ -20,7 +20,7 @@ const { Workspace, atomicWrite } = require('./workspace.cjs');
 const { renderDocument, markSourceOffsets, mime } = require('./render.cjs');
 const { renderPDFDocument, pdfAssetPath } = require('./pdf.cjs');
 const { projectFor, filesFromArgv } = require('./open-file.cjs');
-const { isImage, isMarkdown, renderImagePage, renderMarkdownPage } = require('./formats.cjs');
+const { isMarkdown, renderMarkdownPage, renderPage } = require('./formats.cjs');
 const { createUpdates } = require('./updater.cjs');
 const { createAi } = require('./ai.cjs');
 const { createAnnouncements } = require('./announcements.cjs');
@@ -616,13 +616,9 @@ app
               },
             );
           }
-          const file = await workspace.asset(relative);
-          // Markdown and pictures become a page of their own, read and annotated like HTML.
-          source = isImage(relative)
-            ? renderImagePage(relative)
-            : isMarkdown(relative)
-              ? renderMarkdownPage(await fs.readFile(file, 'utf8'), path.basename(relative))
-              : await fs.readFile(file, 'utf8');
+          // Markdown, pictures, code and Word become a page of their own, read and annotated
+          // like HTML.
+          source = await renderPage(relative, await workspace.asset(relative));
         } else return new Response('', { status: 404 });
         const dir = relative.includes('/') ? relative.slice(0, relative.lastIndexOf('/') + 1) : '';
         const base = `folio://asset/${workspace.token}/${dir.split('/').map(encodeURIComponent).join('/')}`;

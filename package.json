@@ -2,7 +2,7 @@
   "name": "folio-html-reader",
   "productName": "页间",
   "version": "0.35.1",
-  "description": "本地 HTML / PDF / Markdown / 图片阅读、批注与项目管理",
+  "description": "本地 HTML / PDF / Markdown / Word / 代码 / 图片阅读、批注与项目管理",
   "type": "module",
   "main": "electron/main.cjs",
   "author": "XiangXiaoYuan5254",
@@ -14,7 +14,7 @@
     "build:plugins": "node scripts/build-plugins.mjs",
     "start": "electron .",
     "test": "node --test tests/*.test.cjs",
-    "test:e2e": "npm run build && node tests/layout.e2e.mjs && node tests/e2e.mjs && node tests/annotations.e2e.mjs && node tests/reading-interactions.e2e.mjs && node tests/zoom.e2e.mjs && node tests/pdf.e2e.mjs && node tests/tabs.e2e.mjs && node tests/text-width.e2e.mjs && node tests/source.e2e.mjs && node tests/open-file.e2e.mjs && node tests/markdown-edit.e2e.mjs && node tests/ai.e2e.mjs && node tests/reply-selection.e2e.mjs && node tests/chat-figures.e2e.mjs && node tests/settings.e2e.mjs && node tests/plugins.e2e.mjs && node tests/plugin-dev.e2e.mjs && node tests/plugin-update.e2e.mjs && node tests/plugin-sandbox.e2e.mjs && node tests/widget.e2e.mjs && node tests/library.e2e.mjs && node tests/paper-dashboard.e2e.mjs && node tests/paper-plugins.e2e.mjs",
+    "test:e2e": "npm run build && node tests/layout.e2e.mjs && node tests/e2e.mjs && node tests/annotations.e2e.mjs && node tests/reading-interactions.e2e.mjs && node tests/zoom.e2e.mjs && node tests/pdf.e2e.mjs && node tests/tabs.e2e.mjs && node tests/text-width.e2e.mjs && node tests/source.e2e.mjs && node tests/open-file.e2e.mjs && node tests/file-types.e2e.mjs && node tests/markdown-edit.e2e.mjs && node tests/ai.e2e.mjs && node tests/reply-selection.e2e.mjs && node tests/chat-figures.e2e.mjs && node tests/settings.e2e.mjs && node tests/plugins.e2e.mjs && node tests/plugin-dev.e2e.mjs && node tests/plugin-update.e2e.mjs && node tests/plugin-sandbox.e2e.mjs && node tests/widget.e2e.mjs && node tests/library.e2e.mjs && node tests/paper-dashboard.e2e.mjs && node tests/paper-plugins.e2e.mjs",
     "test:annotations": "npm run build && node tests/annotations.e2e.mjs",
     "pack": "npm run build && node scripts/build-speech.mjs && electron-builder --mac dir",
     "format": "prettier --write src electron scripts tests vite.config.ts",
@@ -27,6 +27,7 @@
     "test:text-width": "npm run build && node tests/text-width.e2e.mjs",
     "test:source": "npm run build && node tests/source.e2e.mjs && node tests/open-file.e2e.mjs",
     "test:open-file": "npm run build && node tests/open-file.e2e.mjs",
+    "test:file-types": "node --test tests/formats.test.cjs && npm run build && node tests/file-types.e2e.mjs",
     "test:markdown": "npm run build && node tests/markdown-edit.e2e.mjs",
     "test:ai": "npm run build && node tests/ai.e2e.mjs",
     "test:reply-selection": "npm run build && node tests/reply-selection.e2e.mjs",
@@ -71,8 +72,10 @@
     "@lezer/markdown": "^1.7.2",
     "codemirror": "^6.0.2",
     "electron-updater": "6.8.9",
+    "highlight.js": "^11.12.0",
     "katex": "^0.16.47",
     "lucide-react": "^0.468.0",
+    "mammoth": "^1.13.0",
     "markdown-it": "^15.0.3",
     "mpg123-decoder": "1.0.3",
     "react": "^19.1.0",
@@ -116,7 +119,8 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "package.json"
+      "package.json",
+      "!node_modules/highlight.js/{es,scss,styles,types}{,/**/*}"
     ],
     "extraResources": [
       {
@@ -190,12 +194,29 @@
           "name": "图片",
           "role": "Viewer",
           "rank": "Alternate"
+        },
+        {
+          "ext": [
+            "docx"
+          ],
+          "name": "Word 文档",
+          "role": "Viewer",
+          "rank": "Alternate"
+        },
+        {
+          "ext": [
+            "txt"
+          ],
+          "name": "纯文本",
+          "role": "Viewer",
+          "rank": "Alternate"
         }
       ],
       "files": [
         "dist/**/*",
         "electron/**/*",
         "package.json",
+        "!node_modules/highlight.js/{es,scss,styles,types}{,/**/*}",
         "!node_modules/sherpa-onnx-*{,/**/*}"
       ]
     },
@@ -207,6 +228,7 @@
         "dist/**/*",
         "electron/**/*",
         "package.json",
+        "!node_modules/highlight.js/{es,scss,styles,types}{,/**/*}",
         "!node_modules/sherpa-onnx-{darwin,linux}-*{,/**/*}"
       ],
       "extraResources": [

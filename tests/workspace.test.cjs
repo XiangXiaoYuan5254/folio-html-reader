@@ -129,7 +129,7 @@ test('打开文档过多时明确提示，而不是报无效会话', async (t) =
   const { w } = await setup(t);
   const paths = Array.from({ length: 101 }, (_, i) => `文档${i}.html`);
   await assert.rejects(w.saveSession({ paths, active: paths[0] }), /打开的文档过多/);
-  await assert.rejects(w.saveSession({ paths: ['笔记.txt'], active: '' }), /无效的阅读会话/);
+  await assert.rejects(w.saveSession({ paths: ['笔记.zip'], active: '' }), /无效的阅读会话/);
 });
 test('阻止路径穿越、隐藏数据访问和外部符号链接', async (t) => {
   const { w, root } = await setup(t);
@@ -495,14 +495,18 @@ test('Markdown 和图片作为文档打开，批注随重启恢复，重命名�
   await fs.writeFile(path.join(root, '读书笔记.md'), '# 标题\n\n正文');
   const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
   await fs.writeFile(path.join(root, '图/封面.PNG'), png);
-  await fs.writeFile(path.join(root, '说明.txt'), 'x');
+  await fs.writeFile(path.join(root, '说明.zip'), 'x');
+  await fs.writeFile(path.join(root, '脚本.py'), 'print(1)\n');
+  await fs.writeFile(path.join(root, '报告.docx'), 'x');
   const info = await w.summary();
   const kinds = (nodes) =>
     nodes.flatMap((n) => (n.children ? kinds(n.children) : [[n.path, n.kind]]));
   assert.deepEqual(Object.fromEntries(kinds(info.tree)), {
     '图/封面.PNG': 'image',
     '示例.html': 'html',
-    '说明.txt': 'asset',
+    '说明.zip': 'asset',
+    '脚本.py': 'code',
+    '报告.docx': 'word',
     '读书笔记.md': 'markdown',
   });
   const md = await w.document('读书笔记.md');
@@ -519,7 +523,7 @@ test('Markdown 和图片作为文档打开，批注随重启恢复，重命名�
   assert.deepEqual((await fresh.document('图/封面.PNG')).data, data);
   assert.deepEqual(await fs.readFile(path.join(root, '图/封面.PNG')), png);
   await assert.rejects(fresh.move({ from: '读书笔记.md', to: '读书笔记.txt' }), /保留 \.md/);
-  await assert.rejects(fresh.document('说明.txt'), /HTML、PDF、Markdown 或图片/);
+  await assert.rejects(fresh.document('说明.zip'), /暂不支持打开「说明\.zip」/);
   await fresh.move({ from: '图/封面.PNG', to: '图/封面2.png' });
   assert.deepEqual((await fresh.document('图/封面2.png')).data, data);
 });

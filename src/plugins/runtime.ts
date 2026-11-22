@@ -13,7 +13,8 @@ export type TreeBadge = {
   color: string;
   title: string;
 };
-// `kinds`: in fileMenu, only for these kinds of file ('pdf', 'html', 'markdown', 'image').
+// `kinds`: in fileMenu, only for these kinds of file ('pdf', 'html', 'markdown', 'image',
+// 'word', 'code').
 export type TreeMenuItem = { id: string; label: string; kinds?: string[] };
 export type TreeDecor = {
   badges: Record<string, TreeBadge>;

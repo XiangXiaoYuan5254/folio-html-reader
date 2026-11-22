@@ -8,12 +8,7 @@ const require = createRequire(import.meta.url);
 const { Workspace } = require('./electron/workspace.cjs');
 const { renderDocument, markSourceOffsets, mime } = require('./electron/render.cjs');
 const { renderPDFDocument, pdfAssetPath } = require('./electron/pdf.cjs');
-const {
-  isImage,
-  isMarkdown,
-  renderImagePage,
-  renderMarkdownPage,
-} = require('./electron/formats.cjs');
+const { isMarkdown, renderMarkdownPage, renderPage } = require('./electron/formats.cjs');
 async function buildPDF(minify = false) {
   await bundle({
     entryPoints: ['src/pdf/pdf.ts'],
@@ -178,12 +173,7 @@ export default defineConfig({
                 );
                 return;
               }
-              const file = await w.asset(relative);
-              source = isImage(relative)
-                ? renderImagePage(relative)
-                : isMarkdown(relative)
-                  ? renderMarkdownPage(await fs.readFile(file, 'utf8'), path.basename(relative))
-                  : await fs.readFile(file, 'utf8');
+              source = await renderPage(relative, await w.asset(relative));
             }
             const dir = docPath.includes('/') ? docPath.slice(0, docPath.lastIndexOf('/') + 1) : '';
             const base = `http://${req.headers.host}/__asset/${w.token}/${dir.split('/').map(encodeURIComponent).join('/')}`;

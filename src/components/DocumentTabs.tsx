@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import type { OpenDocument } from '../types';
 import { IconButton } from './IconButton';
+import { CodeIcon } from './CodeIcon';
 import { belowButton, PopupMenu, type MenuAnchor } from './PopupMenu';
 export function DocumentTabs({
   docs,
@@ -97,6 +98,10 @@ export function DocumentTabs({
       <FileType size={14} />
     ) : d.kind === 'image' ? (
       <FileImage size={14} />
+    ) : d.kind === 'word' ? (
+      <FileText className="tree-icon-word" size={14} />
+    ) : d.kind === 'code' ? (
+      <CodeIcon path={d.path} size={14} />
     ) : (
       <FileCode2 size={14} />
     );

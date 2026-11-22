@@ -24,6 +24,7 @@ import {
 import type { FileNode, WorkspaceInfo } from '../types';
 import { isDocKind } from '../doc-kind';
 import { IconButton } from './IconButton';
+import { CodeIcon } from './CodeIcon';
 import { atPointer, belowButton, PopupMenu, type MenuAnchor, type MenuItem } from './PopupMenu';
 import { fileManager, isMac, shortcut, trashName } from '../platform';
 import { SidebarResizer } from './SidebarResizer';
@@ -374,6 +375,10 @@ export function FileTree({
                   <FileType className="tree-icon-markdown" size={16} />
                 ) : n.kind === 'image' ? (
                   <FileImage className="tree-icon-image" size={16} />
+                ) : n.kind === 'word' ? (
+                  <FileText className="tree-icon-word" size={16} />
+                ) : n.kind === 'code' ? (
+                  <CodeIcon className="tree-icon-code" path={n.path} size={16} />
                 ) : (
                   <File size={16} />
                 )}

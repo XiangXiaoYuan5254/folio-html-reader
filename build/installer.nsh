@@ -1,4 +1,5 @@
-; Adds the app to Explorer's "Open with" list for .html / .htm, PDF, Markdown and picture files. Unlike
+; Adds the app to Explorer's "Open with" list for .html / .htm, PDF, Markdown, picture,
+; Word (.docx) and .txt files. Unlike
 ; electron-builder's fileAssociations, this leaves the user's default program
 ; (usually a browser) unchanged, like the "Alternate" role on macOS.
 ; Keep this file ASCII: makensis reads includes in the system code page.
@@ -22,6 +23,8 @@
   WriteRegNone SHELL_CONTEXT "Software\Classes\.avif\OpenWithProgids" "${FOLIO_PROGID}"
   WriteRegNone SHELL_CONTEXT "Software\Classes\.bmp\OpenWithProgids" "${FOLIO_PROGID}"
   WriteRegNone SHELL_CONTEXT "Software\Classes\.svg\OpenWithProgids" "${FOLIO_PROGID}"
+  WriteRegNone SHELL_CONTEXT "Software\Classes\.docx\OpenWithProgids" "${FOLIO_PROGID}"
+  WriteRegNone SHELL_CONTEXT "Software\Classes\.txt\OpenWithProgids" "${FOLIO_PROGID}"
   WriteRegStr SHELL_CONTEXT "Software\Classes\Applications\${APP_EXECUTABLE_FILENAME}\SupportedTypes" ".html" ""
   WriteRegStr SHELL_CONTEXT "Software\Classes\Applications\${APP_EXECUTABLE_FILENAME}\SupportedTypes" ".htm" ""
   WriteRegStr SHELL_CONTEXT "Software\Classes\Applications\${APP_EXECUTABLE_FILENAME}\SupportedTypes" ".pdf" ""
@@ -35,6 +38,8 @@
   WriteRegStr SHELL_CONTEXT "Software\Classes\Applications\${APP_EXECUTABLE_FILENAME}\SupportedTypes" ".avif" ""
   WriteRegStr SHELL_CONTEXT "Software\Classes\Applications\${APP_EXECUTABLE_FILENAME}\SupportedTypes" ".bmp" ""
   WriteRegStr SHELL_CONTEXT "Software\Classes\Applications\${APP_EXECUTABLE_FILENAME}\SupportedTypes" ".svg" ""
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Applications\${APP_EXECUTABLE_FILENAME}\SupportedTypes" ".docx" ""
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Applications\${APP_EXECUTABLE_FILENAME}\SupportedTypes" ".txt" ""
   WriteRegStr SHELL_CONTEXT "Software\Classes\Applications\${APP_EXECUTABLE_FILENAME}\shell\open\command" "" '"$appExe" "%1"'
   System::Call "shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)"
 !macroend
@@ -53,6 +58,8 @@
   DeleteRegValue SHELL_CONTEXT "Software\Classes\.avif\OpenWithProgids" "${FOLIO_PROGID}"
   DeleteRegValue SHELL_CONTEXT "Software\Classes\.bmp\OpenWithProgids" "${FOLIO_PROGID}"
   DeleteRegValue SHELL_CONTEXT "Software\Classes\.svg\OpenWithProgids" "${FOLIO_PROGID}"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.docx\OpenWithProgids" "${FOLIO_PROGID}"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.txt\OpenWithProgids" "${FOLIO_PROGID}"
   DeleteRegKey SHELL_CONTEXT "Software\Classes\${FOLIO_PROGID}"
   DeleteRegKey SHELL_CONTEXT "Software\Classes\Applications\${APP_EXECUTABLE_FILENAME}"
 !macroend

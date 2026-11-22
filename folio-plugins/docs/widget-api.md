@@ -72,7 +72,7 @@ interface FolioWidget {
 | 事件 | 数据 | 要写进 `widget.events` |
 | --- | --- | --- |
 | `ai` | `{ state }`：`'idle'` 空闲、`'thinking'` 在想（还没出字）、`'writing'` 在写回答、`'tool'` 在用工具（读文档、搜索…）、`'done'` 刚答完、`'error'` 出错了。`done` 和 `error` 过 3 秒回到 `idle`。插件运行时的 AI 也算在内。 | ✓ |
-| `reading` | `{ state: 'reading' \| 'away', kind: 'html' \| 'pdf' \| 'markdown' \| 'image' \| 'none' }`：用户 3 分钟没动、或窗口在后台超过 1 分钟，就是 `away`。 | ✓ |
+| `reading` | `{ state: 'reading' \| 'away', kind: 'html' \| 'pdf' \| 'markdown' \| 'image' \| 'word' \| 'code' \| 'none' }`：用户 3 分钟没动、或窗口在后台超过 1 分钟，就是 `away`。 | ✓ |
 | `document` | `{ title, kind }`：当前文档的标题（文件名，不带扩展名）。安装时用户会看到“能看到你正在读的文档标题”。 | ✓ |
 | `theme` | `{ dark, accent, reducedMotion }`：深色主题、强调色、系统是否开了“减少动态效果”（开了就别做动画）。 | 不用写 |
 | `visible` | `{ visible }`：挂件是否看得见（AI 助手没打开、窗口最小化时为 `false`）。看不见时请停掉动画，省电。 | 不用写 |
