@@ -1099,6 +1099,9 @@ function usageText(m: ChatMessage) {
   return lines.join('\n');
 }
 
+// One citation popover at a time: opening another closes this one.
+let closeShownCite: (() => void) | null = null;
+
 function CiteChip(p: {
   n: number;
   quote: string;
@@ -1107,45 +1110,75 @@ function CiteChip(p: {
   onJump: () => void;
   onHighlight: () => void;
 }) {
-  // The popover is placed in the window, so the sidebar's scrolling can't clip it.
-  const [open, setOpen] = useState<{ left: number; top: number; above: boolean } | null>(null);
+  // Hovering shows the quote without moving the page; a click also jumps to it and keeps the
+  // popover open. The popover is placed in the window, so the sidebar's scrolling can't clip it.
+  const [open, setOpen] = useState<{
+    left: number;
+    top: number;
+    above: boolean;
+    pinned: boolean;
+  } | null>(null);
   const host = useRef<HTMLSpanElement>(null);
   const pop = useRef<HTMLSpanElement>(null);
+  const timer = useRef<number | undefined>(undefined);
+  const shown = open !== null;
   useEffect(() => {
-    if (!open) return;
+    if (!shown) return;
+    const close = () => {
+      clearTimeout(timer.current);
+      setOpen(null);
+    };
+    closeShownCite?.();
+    closeShownCite = close;
     const dismiss = (e: PointerEvent) => {
       const target = e.target as Node;
-      if (!host.current?.contains(target) && !pop.current?.contains(target)) setOpen(null);
+      if (!host.current?.contains(target) && !pop.current?.contains(target)) close();
     };
-    const close = () => setOpen(null);
     document.addEventListener('pointerdown', dismiss, true);
     document.addEventListener('scroll', close, true);
     window.addEventListener('resize', close);
     return () => {
+      if (closeShownCite === close) closeShownCite = null;
       document.removeEventListener('pointerdown', dismiss, true);
       document.removeEventListener('scroll', close, true);
       window.removeEventListener('resize', close);
     };
-  }, [open]);
-  function toggle() {
-    if (open) return setOpen(null);
+  }, [shown]);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  function show(pinned: boolean) {
+    clearTimeout(timer.current);
     const r = host.current!.getBoundingClientRect();
     const above = r.top > 190;
     setOpen({
       left: Math.max(8, Math.min(innerWidth - 268, r.left + r.width / 2 - 130)),
       top: above ? r.top - 8 : r.bottom + 8,
       above,
+      pinned,
     });
   }
+  function later(run: () => void) {
+    clearTimeout(timer.current);
+    timer.current = window.setTimeout(run, 150);
+  }
+  // The short wait lets the pointer cross the gap into the popover, and keeps a pass over the
+  // chip on the way elsewhere from flashing it open.
+  const hoverIn = () => (open ? clearTimeout(timer.current) : later(() => show(false)));
+  const hoverOut = () => {
+    if (!open?.pinned) later(() => setOpen(null));
+  };
   const missing = p.found === false;
   return (
     <span className="cite" ref={host}>
       <button
         className={`cite-chip ${missing ? 'missing' : ''}`}
         aria-label={`引用 ${p.n}${missing ? '（未在原文中找到）' : ''}：${p.quote}`}
-        title={missing ? '没有在原文中找到这段引用' : p.quote}
+        onMouseEnter={hoverIn}
+        onMouseLeave={hoverOut}
         onClick={() => {
-          toggle();
+          if (open?.pinned) {
+            clearTimeout(timer.current);
+            setOpen(null);
+          } else show(true);
           if (!missing) p.onJump();
         }}
       >
@@ -1158,6 +1191,8 @@ function CiteChip(p: {
               className="cite-pop"
               role="dialog"
               aria-label="引用的原文"
+              onMouseEnter={() => clearTimeout(timer.current)}
+              onMouseLeave={hoverOut}
               style={{
                 left: open.left,
                 top: open.top,

@@ -1454,19 +1454,15 @@ async function localImages(provider, ids, fetch, signal) {
   return found;
 }
 
-// Keep chat models from the platform, including other makers. Dated versions must stay:
-// they are distinct callable models and can have their own free quota.
+// Keep chat models from the platform, including other makers. Dated and sized versions
+// (qwen3.5-122b-a10b) must stay: they are distinct callable models and can have their own
+// free quota.
 const qwenMakers = /^(qwen|deepseek|kimi|moonshot|glm|minimax)/i;
 const qwenOther =
   /tts|asr|speech|realtime|livetranslate|image|embedding|rerank|-mt-|ocr|s2s|deep-|audio|omni|math|character|gui|longcontext|^qwen-coder/i;
 function shown(preset, m, id) {
   if (preset === 'qwen')
-    return (
-      qwenMakers.test(id) &&
-      !qwenOther.test(id) &&
-      !/-\d+(\.\d+)?[bt](-|$)/i.test(id) &&
-      !/-(latest|preview)$/.test(id)
-    );
+    return qwenMakers.test(id) && !qwenOther.test(id) && !/-(latest|preview)$/.test(id);
   if (preset === 'doubao') return m?.status !== 'Shutdown' && ['LLM', 'VLM'].includes(m?.domain);
   if (preset === 'xiaomi') return !/tts|asr/i.test(id);
   return true;

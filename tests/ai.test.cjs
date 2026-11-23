@@ -326,6 +326,7 @@ test('Qwen, Doubao and MiMo lists keep chat models, Qwen and Doubao only usable 
   };
   const usable = [
     'qwen3.8-flash',
+    'qwen3.8-27b',
     'deepseek-v3.2',
     'deepseek-v4-pro-0813',
     'deepseek-v4-flash-0731',
@@ -380,6 +381,7 @@ test('Qwen, Doubao and MiMo lists keep chat models, Qwen and Doubao only usable 
       'deepseek-v3.2',
       'deepseek-v4-flash-0731',
       'deepseek-v4-pro-0813',
+      'qwen3.8-27b',
       'qwen3.8-flash',
     ]);
     assert.deepEqual(await list('doubao'), ['deepseek-v3-2-251201', 'doubao-seed-open']);
@@ -391,6 +393,7 @@ test('Qwen, Doubao and MiMo lists keep chat models, Qwen and Doubao only usable 
         .map((r) => r.body.model)
         .sort(),
       [
+        'deepseek-r1-distill-qwen-7b',
         'deepseek-v3-2-251201',
         'deepseek-v3.2',
         'deepseek-v4-flash-0731',
@@ -401,6 +404,7 @@ test('Qwen, Doubao and MiMo lists keep chat models, Qwen and Doubao only usable 
         'glm-other-parameter-error',
         'kimi-k3',
         'kimi-not-activated',
+        'qwen3.8-27b',
         'qwen3.8-flash',
         'qwen3.8-max-0902',
         'qwen3.8-plus',

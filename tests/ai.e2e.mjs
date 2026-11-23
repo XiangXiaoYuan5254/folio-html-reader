@@ -407,7 +407,16 @@ try {
   await usage.waitFor({ state: 'detached' });
   await panel().locator('.chat-reasoning summary').click();
   assert.ok((await panel().locator('.chat-reasoning').innerText()).includes('先找到文档'));
+  // Hovering a citation shows the quote and leaves the page where it is; a click jumps to it.
+  const citePop = page.getByRole('dialog', { name: '引用的原文' });
+  await panel().locator('.cite-chip').first().hover();
+  await citePop.waitFor();
+  assert.ok((await citePop.innerText()).includes(S1.slice(0, 8)), 'quote shown on hover');
+  assert.equal(await (await frame()).locator('[data-folio-cite]').count(), 0, 'no jump on hover');
+  await page.mouse.move(5, 5);
+  await citePop.waitFor({ state: 'detached' });
   await panel().locator('.cite-chip').first().click();
+  await citePop.waitFor();
   let f = await frame();
   await f.locator('[data-folio-cite] rect').first().waitFor({ state: 'attached' });
   await page.screenshot({ path: path.join(evidence, 'ai-answer-citation.png') });
