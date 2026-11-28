@@ -24,7 +24,7 @@ Get the latest version from [Releases](https://github.com/XiangXiaoYuan5254/foli
 **Read and annotate**
 - Open any folder of HTML and PDF files as a project, with tabs, search, drag-and-drop and a file tree.
 - Markdown, pictures, Word documents (.docx), code, plain text and CSV open in tabs too: code is highlighted with line numbers, CSV shows as a table, and Word keeps its headings, lists, tables and pictures. All of them can be annotated like HTML.
-- Highlight, underline, draw, erase, add sticky notes and text boxes, and keep notes beside the document. The original files are never changed: annotations live in a hidden `.html-reader` folder next to them.
+- Highlight, underline, strike through, draw, erase, add sticky notes and text boxes, and keep notes beside the document. The original files are never changed: annotations live in a hidden `.html-reader` folder next to them.
 - Read two documents side by side with optional synchronized scrolling, or switch to a distraction-free focus mode.
 - PDF support through PDF.js: text selection, highlights, ink, sticky notes, page jumps, rotation and password-protected files.
 

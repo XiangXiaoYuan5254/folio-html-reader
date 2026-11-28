@@ -11,6 +11,7 @@ import {
   MoveUpRight,
   Square,
   Underline,
+  Strikethrough,
   Check,
   AlertCircle,
   X,
@@ -34,6 +35,7 @@ export type InspectorTab = 'annotations' | 'note' | 'outline' | 'assistant';
 export const annotationLabels: Record<string, string> = {
   highlight: '高亮',
   underline: '下划线',
+  strike: '删除线',
   text: '文本注释',
   sticky: '便签',
   pen: '画笔',
@@ -43,6 +45,7 @@ export const annotationLabels: Record<string, string> = {
 const icons: Record<string, typeof Highlighter> = {
   highlight: Highlighter,
   underline: Underline,
+  strike: Strikethrough,
   text: Type,
   sticky: StickyNote,
   pen: PenIcon,

@@ -508,13 +508,19 @@ import { findQuote } from '../ai/quote-match';
         if (first) marked.set(a.id, first.top + scrollY);
         for (const rect of rects) {
           if (!rect.width || !rect.height) continue;
+          const line = a.type === 'underline' || a.type === 'strike';
           const e = svgEl('rect', {
             x: rect.left + scrollX,
-            y: (a.type === 'underline' ? rect.bottom - 2 : rect.top) + scrollY,
+            y:
+              (a.type === 'underline'
+                ? rect.bottom - 2
+                : a.type === 'strike'
+                  ? rect.top + rect.height / 2 - 1
+                  : rect.top) + scrollY,
             width: rect.width,
-            height: a.type === 'underline' ? 2 : rect.height,
+            height: line ? 2 : rect.height,
             fill: a.color,
-            opacity: a.type === 'underline' ? '.9' : '.28',
+            opacity: line ? '.9' : '.28',
             rx: 1,
             'data-annotation-id': a.id,
           });
@@ -653,7 +659,7 @@ import { findQuote } from '../ai/quote-match';
     scrollTo(0, top);
   }
   function annotate(type: string) {
-    if (type !== 'highlight' && type !== 'underline') return;
+    if (type !== 'highlight' && type !== 'underline' && type !== 'strike') return;
     const q = captureSelection();
     if (!q) return;
     const a: Annotation = {

@@ -179,6 +179,7 @@ export function highlightsPrompt(count: string, part?: string) {
 const typeNames: Record<string, string> = {
   highlight: '高亮',
   underline: '下划线',
+  strike: '删除线',
   text: '页面文字',
   sticky: '便签',
   pen: '手绘',

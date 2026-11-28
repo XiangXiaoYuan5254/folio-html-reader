@@ -11,6 +11,7 @@ import {
   Highlighter,
   MessageSquare,
   Underline,
+  Strikethrough,
   X,
   AlertCircle,
   ChevronDown,
@@ -1268,7 +1269,7 @@ export default function App() {
     chooseTool(next);
     setPinnedTool((current) => (current === next ? null : next));
   }
-  function annotateSelection(type: 'highlight' | 'underline') {
+  function annotateSelection(type: 'highlight' | 'underline' | 'strike') {
     sendToActive('annotate', { tool: type });
     setSelection(null);
   }
@@ -1521,9 +1522,16 @@ export default function App() {
         const a = e.annotation;
         if (
           !a?.id ||
-          !['highlight', 'underline', 'text', 'sticky', 'pen', 'arrow', 'rectangle'].includes(
-            a.type,
-          )
+          ![
+            'highlight',
+            'underline',
+            'strike',
+            'text',
+            'sticky',
+            'pen',
+            'arrow',
+            'rectangle',
+          ].includes(a.type)
         )
           return;
         model.annotate(id, (all) => [...all, a]);
@@ -1662,6 +1670,7 @@ export default function App() {
     const names: Record<string, string> = {
       highlight: '高亮',
       underline: '下划线',
+      strike: '删除线',
       text: '文本注释',
       sticky: '便签',
       pen: '画笔',
@@ -2410,6 +2419,10 @@ export default function App() {
                       <button onClick={() => annotateSelection('underline')}>
                         <Underline size={15} />
                         划线
+                      </button>
+                      <button onClick={() => annotateSelection('strike')}>
+                        <Strikethrough size={15} />
+                        删除线
                       </button>
                       {isDesktop ? (
                         <>

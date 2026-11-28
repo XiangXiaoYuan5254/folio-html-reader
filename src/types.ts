@@ -23,7 +23,8 @@ export type Point = { x: number; y: number };
 export type EraserMode = 'partial' | 'stroke';
 export type Annotation = {
   id: string;
-  type: Exclude<Tool, 'select' | 'eraser' | 'laser'>;
+  // 'strike' marks selected text with a line through it; it has no toolbar tool.
+  type: Exclude<Tool, 'select' | 'eraser' | 'laser'> | 'strike';
   color: string;
   createdAt: number;
   quote?: Anchor;

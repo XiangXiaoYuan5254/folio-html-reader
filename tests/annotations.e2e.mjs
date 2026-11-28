@@ -336,6 +336,45 @@ try {
     'PASS: unified highlight notes, explicit click to edit, note indicator and hover preview without the sidebar',
   );
 
+  // Strikethrough from the selection toolbar: a line through the middle of the text.
+  const heading = await screenBox(f.locator('h1'));
+  await moveMouse(
+    { x: heading.x + 2, y: heading.y + heading.height / 2 },
+    { x: heading.x + 180, y: heading.y + heading.height / 2 },
+  );
+  await page
+    .locator('.selection-toolbar')
+    .getByRole('button', { name: '删除线', exact: true })
+    .click();
+  let strike;
+  await waitFor(async () => {
+    strike = (await safeData(sampleName))?.data.annotations.find((a) => a.type === 'strike');
+    return !!strike;
+  }, 'strikethrough saved');
+  assert.ok('阅读是一场对话'.startsWith(strike.quote.exact.slice(0, 2)), strike.quote.exact);
+  const line = await f.evaluate((id) => {
+    const marks = [...document.querySelectorAll(`rect[data-annotation-id="${id}"]`)];
+    const h = document.querySelector('h1').getBoundingClientRect();
+    return marks.map((m) => {
+      const r = m.getBoundingClientRect();
+      return { height: r.height, middle: r.top + r.height / 2 - (h.top + h.height / 2) };
+    });
+  }, strike.id);
+  assert.ok(line.length > 0, 'strikethrough is drawn');
+  for (const m of line) {
+    assert.ok(m.height <= 3, `strikethrough is a thin line: ${m.height}`);
+    assert.ok(Math.abs(m.middle) < heading.height / 4, `line crosses the text middle: ${m.middle}`);
+  }
+  await page.mouse.click(heading.x + 40, heading.y + heading.height / 2);
+  await popup.waitFor();
+  assert.equal(await popup.locator('.head > span').innerText(), '删除线');
+  await popup.getByLabel('删除这条批注', { exact: true }).click();
+  await waitFor(
+    async () => !(await safeData(sampleName))?.data.annotations.some((a) => a.type === 'strike'),
+    'strikethrough removed',
+  );
+  console.log('PASS: strikethrough from the selection toolbar, drawn through the text middle');
+
   await page.getByLabel('珊瑚色', { exact: true }).click();
   await lineDraw('画笔', [35, 80], [600, 80]);
   await lineDraw('画笔', [35, 120], [600, 120]);

@@ -267,7 +267,8 @@ export class AnnotationPopup {
     this.clearPreview();
     this.current = a;
     this.group = `quote-note:${a.id}:${crypto.randomUUID()}`;
-    this.title.textContent = a.type === 'underline' ? '下划线' : '高亮';
+    this.title.textContent =
+      a.type === 'underline' ? '下划线' : a.type === 'strike' ? '删除线' : '高亮';
     this.input.value = a.note;
     this.input.hidden = this.footer.hidden = !edit;
     this.actions.hidden = this.colors.hidden = edit;
