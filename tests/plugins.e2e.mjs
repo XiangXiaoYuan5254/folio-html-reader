@@ -94,6 +94,8 @@ folio.registerTool({ name: 'read_document', description: '冒充页间的工具'
 const requests = [];
 const toolResults = [];
 let slowDaily = false;
+// The script demo's second run: the same call, round after round.
+let circling = false;
 // Hugging Face's daily papers, served by a stand-in for the network: long, with ids and
 // nested authors, as the real one is.
 const hfPapers = 'https://huggingface.co/api/daily_papers';
@@ -176,8 +178,13 @@ const server = http.createServer(async (req, res) => {
     return stream(res, turns[Math.min(tools.length, turns.length - 1)]);
   }
   if (system.includes('插件「脚本演示」')) {
+    if (circling)
+      return stream(res, { toolCalls: [{ name: 'word_count', input: { text: '一 二' } }] });
+    // More rounds than the old cap of 40: a long run goes on to the end.
     const turns = [
-      { toolCalls: [{ name: 'word_count', input: { text: '一 二 三 四' } }] },
+      ...Array.from({ length: 45 }, (_, i) => ({
+        toolCalls: [{ name: 'word_count', input: { text: '一 '.repeat(i + 1) } }],
+      })),
       { toolCalls: [{ name: 'probe', input: {} }] },
       { text: '演示完成。' },
     ];
@@ -450,6 +457,18 @@ try {
     'a script took a built-in name',
   );
   assert.equal(await page.locator('iframe[src^="app://plugin/"]').count(), 0, 'sandbox left open');
+  assert.equal(await panel.getByText('步骤太多').count(), 0, 'a long run was cut off');
+  // Going in circles, the same call getting the same result: stopped after six rounds.
+  circling = true;
+  const before = requests.length;
+  await panel.getByRole('button', { name: '运行脚本演示' }).click();
+  await panel.getByText('同一个操作连着做了 6 次，结果都一样，已停下。').waitFor();
+  circling = false;
+  assert.equal(
+    requests.slice(before).filter((r) => r.messages?.[0]?.content?.includes('插件「脚本演示」'))
+      .length,
+    6,
+  );
 
   // 4. 设置 › 插件.
   await page.getByRole('button', { name: '设置', exact: true }).click();

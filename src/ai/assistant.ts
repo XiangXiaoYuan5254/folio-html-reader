@@ -2535,7 +2535,10 @@ export class Assistant {
     let usage = o.usage;
     let model = '';
     let quota: Quota | null = null;
-    for (let round = 0; round < 40; round++) {
+    // No cap on rounds: it works until it answers or is stopped. Only a model going in
+    // circles — the same calls getting the same results round after round — is stopped.
+    let repeat = { key: '', times: 0 };
+    for (;;) {
       if (signal.aborted) throw new DOMException('已停止', 'AbortError');
       this.trimWire(wire, provider);
       let partIndex = -1;
@@ -2612,29 +2615,36 @@ export class Assistant {
               '输出达到长度上限，这次调用的参数不完整，没有执行。请把内容分成更小的几次调用。',
             isError: true,
           });
-        continue;
+      } else {
+        for (const call of result.toolCalls) {
+          if (signal.aborted) throw new DOMException('已停止', 'AbortError');
+          const outcome = await this.runTool(
+            threadId,
+            call.name,
+            call.input,
+            {
+              add: (step) => setParts((parts) => [...parts, { type: 'step', step }]),
+              patch: patchStep,
+            },
+            o.policy,
+          );
+          wire.push({
+            role: 'tool',
+            toolCallId: call.id,
+            content: outcome.content,
+            isError: outcome.isError,
+          });
+        }
       }
-      for (const call of result.toolCalls) {
-        if (signal.aborted) throw new DOMException('已停止', 'AbortError');
-        const outcome = await this.runTool(
-          threadId,
-          call.name,
-          call.input,
-          {
-            add: (step) => setParts((parts) => [...parts, { type: 'step', step }]),
-            patch: patchStep,
-          },
-          o.policy,
-        );
-        wire.push({
-          role: 'tool',
-          toolCallId: call.id,
-          content: outcome.content,
-          isError: outcome.isError,
-        });
+      const results = wire.slice(-result.toolCalls.length);
+      const key = JSON.stringify(
+        result.toolCalls.map((c, i) => [c.name, c.input, results[i]?.content]),
+      );
+      repeat = key === repeat.key ? { key, times: repeat.times + 1 } : { key, times: 1 };
+      if (repeat.times >= 6) {
+        patch((m) => ({ ...m, error: '同一个操作连着做了 6 次，结果都一样，已停下。' }));
+        break;
       }
-      if (round === 39)
-        patch((m) => ({ ...m, error: '步骤太多，已暂停。可以回复“继续”让它接着做。' }));
     }
     return { model, usage, quota };
   }
